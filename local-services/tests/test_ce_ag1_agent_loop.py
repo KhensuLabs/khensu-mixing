@@ -226,7 +226,8 @@ def test_agent_mix_validation(tmp_path):
     bad = client.post("/agent/mix", json={"file_path": src, "findings": [
         {"id": "x", "suggested_parameters": {"reverb_wet": 0.2}}]})
     assert bad.status_code == 422
-    outside = client.post("/agent/mix", json={"file_path": src, "output_dir": "Z:/not/allowed"})
+    not_allowed = "Z:/not/allowed" if os.name == "nt" else "/not/allowed"   # absolute, outside every root
+    outside = client.post("/agent/mix", json={"file_path": src, "output_dir": not_allowed})
     assert outside.status_code == 403
     assert client.get("/agent/mix/unknown").status_code == 404
     assert client.post("/agent/mix/unknown/cancel").json() == {"ok": False, "status": "unknown"}

@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   package:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 120
     env:
       HAS_CERTS: ${{ secrets.MACOS_CERTS_P12 != '' }}

@@ -10,7 +10,9 @@ def test_list_reports_every_component(client):
     assert r.status_code == 200, r.text
     rows = {c["id"]: c for c in r.json()["components"]}
     assert {"ai_detect", "asr", "copilot", "onnx", "stems", "vocal_pitch_model", "ffmpeg"} <= set(rows)
-    assert rows["onnx"]["installed"] is True          # the service venv has onnxruntime
+    import importlib.util
+    # onnxruntime is an optional extra: the row reports what this environment has.
+    assert rows["onnx"]["installed"] is (importlib.util.find_spec("onnxruntime") is not None)
     assert rows["stems"]["installable"] is False and rows["stems"]["how"]
     assert rows["ffmpeg"]["installable"] is False
 

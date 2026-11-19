@@ -126,7 +126,7 @@ jobs:
   # v1.1; the Windows job cross-compiles the core library for ARM64.
   macos-arm64-core:
     name: macOS arm64 core build + tests
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -153,7 +153,7 @@ jobs:
   # hosted job this is blocked while CFG-01 (billing) stands.
   macos-universal-full:
     name: macOS universal app + plug-ins (package)
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -206,7 +206,9 @@ jobs:
         run: cmake -B build-arm64 -S . -A ARM64 -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.fetchcontent"
 
       - name: Build shared core (ARM64)
-        run: cmake --build build-arm64 --config Release --target KhensuSharedCore --parallel 4
+        # KhensuSharedCore is an INTERFACE target over these four libraries
+        # (ENG-9) and has no project of its own to build.
+        run: cmake --build build-arm64 --config Release --target KhensuCommon KhensuDsp KhensuServiceClient KhensuData --parallel 4
 
   windows-cpp:
     name: Windows C++ build + tests

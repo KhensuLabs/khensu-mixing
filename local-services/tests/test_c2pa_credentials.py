@@ -80,6 +80,7 @@ def make_test_chain(dir_path) -> dict:
 
 @pytest.fixture
 def no_credentials(monkeypatch):
+    monkeypatch.setattr(cc, "c2pa_status", lambda: (True, ""))   # the SDK is present; only the keys are missing
     monkeypatch.setattr(cc, "signing_config", lambda settings=None: {
         "configured": False, "cert_path": "", "key_path": "", "tsa_url": "",
         "reason": "No signing certificate and key are set in Settings > Content credentials."})

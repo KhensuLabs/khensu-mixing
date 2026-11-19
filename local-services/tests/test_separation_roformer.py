@@ -100,6 +100,7 @@ def test_download_gated_by_online_toggles(fake_audio_separator, monkeypatch, tmp
 
 
 def test_roformer_vocal_plus_hpss_instrumental(fake_audio_separator, monkeypatch, tmp_path):
+    pytest.importorskip("torch")      # the device override is a torch.device; audio-separator needs torch
     from khensu_services.common import accel
     _cache_model(fake_audio_separator)
     monkeypatch.setattr(separator, "demucs_unavailable_reason", lambda: "no demucs (test)")

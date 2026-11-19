@@ -559,6 +559,7 @@ def test_evidence_graph_dedupes_and_drops_clipping_ceiling_edge():
 
 
 def test_demucs_model_cached_across_jobs(tmp_path, monkeypatch):
+    pytest.importorskip("torch")      # the loader goes through torch; not in the base install
     from khensu_services.analysis import separator
     ckpt = tmp_path / "m.th"
     ckpt.write_bytes(b"w")

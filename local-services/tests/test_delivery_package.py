@@ -62,7 +62,10 @@ def test_quantize_tpdf_is_exact_and_bounded():
     assert v24.dtype == np.int32 and abs(int(v24[1, 0] >> 8) - 4194304) <= 1
 
 
-def test_full_package_job(client, tmp_path):
+def test_full_package_job(client, tmp_path, monkeypatch):
+    # "Not set" is the no-certificate reason; it is only reached when the c2pa
+    # SDK is present, so say it is rather than depend on the c2pa extra.
+    monkeypatch.setattr(cc, "c2pa_status", lambda: (True, ""))
     src = _stereo(tmp_path / "Song.wav", level=0.25)
     sep = tmp_path / "stems"
     sep.mkdir()

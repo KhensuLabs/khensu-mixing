@@ -3,6 +3,8 @@ GET /diagnostics/accel."""
 from __future__ import annotations
 
 import json
+import sys
+import types
 
 import pytest
 
@@ -21,6 +23,16 @@ def settings_file(tmp_path, monkeypatch):
 def _write(path, data):
     path.write_text(json.dumps(data), encoding="utf-8")
     online._invalidate_cache()
+
+
+def _fake_onnxruntime(monkeypatch, providers):
+    """Pretend ONNX Runtime is installed with `providers`. accel_report also
+    imports onnxruntime for its version, so a stand-in module goes into
+    sys.modules too - the tests must not depend on whether the environment
+    has the real package (CI's base install does not)."""
+    monkeypatch.setitem(sys.modules, "onnxruntime", types.SimpleNamespace(__version__="0.0-test"))
+    monkeypatch.setattr(accel, "onnxruntime_installed", lambda: True)
+    monkeypatch.setattr(accel, "available_onnx_providers", lambda: list(providers))
 
 
 def test_mode_defaults_to_auto_without_settings(settings_file):
@@ -70,8 +82,7 @@ def test_torch_device_selection():
 
 
 def test_report_explains_gpu_request_without_gpu(monkeypatch):
-    monkeypatch.setattr(accel, "available_onnx_providers", lambda: ["CPUExecutionProvider"])
-    monkeypatch.setattr(accel, "onnxruntime_installed", lambda: True)
+    _fake_onnxruntime(monkeypatch, ["CPUExecutionProvider"])
     monkeypatch.setattr(accel, "_torch_probe", lambda: {
         "installed": True, "version": "2.2.2+cpu", "cuda_available": False,
         "mps_available": False, "device_name": None})
@@ -84,9 +95,7 @@ def test_report_explains_gpu_request_without_gpu(monkeypatch):
 
 
 def test_report_with_gpu(monkeypatch):
-    monkeypatch.setattr(accel, "available_onnx_providers",
-                        lambda: ["DmlExecutionProvider", "CPUExecutionProvider"])
-    monkeypatch.setattr(accel, "onnxruntime_installed", lambda: True)
+    _fake_onnxruntime(monkeypatch, ["DmlExecutionProvider", "CPUExecutionProvider"])
     monkeypatch.setattr(accel, "_torch_probe", lambda: {
         "installed": True, "version": "x", "cuda_available": True,
         "mps_available": False, "device_name": "Test GPU"})
