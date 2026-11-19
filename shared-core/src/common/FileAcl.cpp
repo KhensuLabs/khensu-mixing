@@ -6,6 +6,8 @@
 #include <aclapi.h>
 #include <sddl.h>
 #pragma comment(lib, "advapi32.lib")
+#else
+#include <sys/stat.h> // chmod; at file scope - inside the namespace it declared khensu::chmod
 #endif
 
 namespace khensu {
@@ -64,8 +66,6 @@ bool FileAcl::restrictToCurrentUser(const std::string& path)
       // restriction is portable and correct, so it's implemented rather than
       // no-op'd; the OS credential-store integration - Keychain/libsecret -
       // is the part that stays future work).
-
-#include <sys/stat.h>
 
 bool FileAcl::restrictToCurrentUser(const std::string& path)
 {

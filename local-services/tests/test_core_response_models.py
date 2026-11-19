@@ -95,3 +95,13 @@ def test_shutdown_reports_interrupted_jobs_without_exiting(client, monkeypatch):
     again = client.post("/shutdown")
     assert again.json() == {"status": "shutting_down", "interrupted_jobs": 0}
     assert len(kills) == 1   # only the first request schedules the exit
+
+
+def test_requests_survive_a_reset_app_state(client, monkeypatch):
+    """The shutdown flag is set when the server module loads; a reset
+    app.state (a test's teardown, a reloaded app) must not make every request
+    a 500 - Python 3.11 CI, 2026-11-19: 'State' object has no attribute
+    'shutting_down'."""
+    monkeypatch.delattr(app.state, "shutting_down", raising=False)
+    r = client.get("/updates/check", params={"current_version": "1.0.0"})
+    assert r.status_code == 200, r.text

@@ -172,7 +172,9 @@ class _RequestGateMiddleware:
             return
         path = scope.get("path", "")
         fastapi_app = scope.get("app", app)
-        if fastapi_app.state.shutting_down and path not in {"/health", "/shutdown"}:
+        # getattr: the flag is set at import / startup, but a reset app.state
+        # (tests, a reloaded app) must not turn every request into a 500.
+        if getattr(fastapi_app.state, "shutting_down", False) and path not in {"/health", "/shutdown"}:
             await _reply(scope, receive, send, 503, "Service is shutting down.")
             return
 
@@ -473,7 +475,7 @@ def _health_proof(nonce: str) -> str | None:
 @app.post("/shutdown", response_model=ShutdownResponse, response_model_exclude_unset=True)
 async def shutdown_service(background_tasks: BackgroundTasks, _: None = Depends(verify_token)) -> dict:
     """Controlled child-service exit requested by the desktop owner."""
-    if app.state.shutting_down:
+    if getattr(app.state, "shutting_down", False):
         return {"status": "shutting_down", "interrupted_jobs": 0}
     app.state.shutting_down = True
     from khensu_services.common.jobs import interrupt_all_jobs
