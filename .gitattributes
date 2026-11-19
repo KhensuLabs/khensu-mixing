@@ -1,0 +1,10 @@
+# Shell scripts must check out with LF even on Windows.
+#
+# core.autocrlf is true on the primary dev machine, so without this rule git
+# rewrites these files to CRLF on checkout. For a /bin/sh script that is not
+# cosmetic: `exit 1\r` makes the shell try to exit with the non-numeric status
+# "1\r", and the hook stops blocking anything while still printing its error
+# text — a guard that looks like it works and doesn't. (Observed exactly once
+# while building .githooks/pre-push; see audit CFG-01.)
+*.sh            text eol=lf
+.githooks/**    text eol=lf

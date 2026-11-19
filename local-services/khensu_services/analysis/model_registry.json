@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "note": "Canonical provenance for the bundled learned models. source_url is the update feed when one exists (a small JSON serving {version, sha256}); empty means the model is produced locally by produced_by and has no remote feed. The manifest falls back to these fields when a per-model sidecar omits them.",
+  "models": {
+    "ai_detector": {
+      "description": "Binary AI-generated-music detector (logistic head on librosa features).",
+      "produced_by": "python -m khensu_services.analysis.learned.train_sonics",
+      "provenance": "SONICS (AI) + MUSDB18 + MTG-Jamendo (real)",
+      "license": "internal weights; SONICS training data CC-BY-NC-4.0 (research/eval only); MTG-Jamendo Apache-2.0 distribution of Creative-Commons-sourced audio",
+      "source_url": ""
+    },
+    "ai_attribution": {
+      "description": "Closed-set per-service acoustic attribution model for AI-generated audio.",
+      "produced_by": "python -m khensu_services.analysis.learned.train_attribution",
+      "provenance": "SONICS generator labels (research/eval only)",
+      "license": "internal weights; SONICS training data CC-BY-NC-4.0 (research/eval only)",
+      "source_url": ""
+    },
+    "artifact_model": {
+      "description": "Multi-label forensic artifact classifier (RVQ ghosting, codec residue, HF aliasing, hollow compression).",
+      "produced_by": "python -m khensu_services.analysis.learned.make_real_artifact_model",
+      "provenance": "real audio (MUSDB18 + MTG-Jamendo) with real artifact injection: EnCodec RVQ round trip, real ffmpeg transcode, real bad-resample aliasing, real pedalboard compression/EQ",
+      "license": "internal weights; MUSDB18 non-commercial, MTG-Jamendo Apache-2.0 distribution of Creative-Commons-sourced audio",
+      "source_url": ""
+    },
+    "leak_gate": {
+      "description": "Per-band stem-bleed / separation-leak classifier.",
+      "produced_by": "python -m khensu_services.copilot.leak_gate_realdata",
+      "provenance": "MUSDB18 real stem bleed",
+      "license": "internal; MUSDB18 non-commercial",
+      "source_url": ""
+    },
+    "mood_tagger": {
+      "description": "Multi-label mood/theme classifier (per-tag logistic regression on named DSP features) - additional evidence alongside mood_energy.py's heuristic, not a replacement.",
+      "produced_by": "python -m khensu_services.analysis.learned.mood_tagger",
+      "provenance": "MTG-Jamendo official mood/theme tags (uploader-supplied, not expert-reviewed)",
+      "license": "internal weights; MTG-Jamendo audio is Creative-Commons-sourced, Apache-2.0 distribution",
+      "source_url": ""
+    },
+    "mix_quality": {
+      "description": "Self-supervised known-mix-defect classifier; not a subjective quality verdict.",
+      "produced_by": "python -m khensu_services.analysis.learned.train_mix_quality",
+      "provenance": "MUSDB18 + MTG-Jamendo audio with deterministic programmatic degradations",
+      "license": "internal weights; MUSDB18 non-commercial, MTG-Jamendo Creative-Commons-sourced audio",
+      "source_url": ""
+    },
+    "key_tempo": {
+      "description": "Optional key/tempo ONNX model (onnx_inference.py); not shipped - the chroma/librosa estimators are used when absent.",
+      "produced_by": "external (not produced in this repository)",
+      "provenance": "unspecified",
+      "license": "unspecified",
+      "source_url": ""
+    },
+    "vocal_pitch": {
+      "description": "Monophonic vocal pitch (CREPE-tiny, 360 bins of 20 cents) for pitch accuracy, the pitch editor and monophonic MIDI (NEW-7); pyin when absent.",
+      "produced_by": "python scripts/export_crepe_onnx.py (weights from the torchcrepe 0.0.24 wheel)",
+      "provenance": "CREPE, Kim, Salamon, Li & Bello 2018; trained by its authors on MIR-1K, Bach10, RWC-Synth, MedleyDB, MDB-STEM-Synth and NSynth",
+      "license": "MIT (torchcrepe)",
+      "source_url": "https://github.com/maxrmorrison/torchcrepe"
+    },
+    "beat_tracker": {
+      "description": "Beat and downbeat activations (Beat This! small0) for bar lines in song structure (NEW-6); the librosa tracker and meter estimate when absent.",
+      "produced_by": "python scripts/export_beat_this_onnx.py --checkpoint small0.ckpt (beat_this 1.1.0 + rotary-embedding-torch on PYTHONPATH)",
+      "provenance": "Beat This!, Foscarin, Schlueter & Widmer, ISMIR 2024; checkpoint small0 from the authors",
+      "license": "MIT (beat_this)",
+      "source_url": "https://github.com/CPJKU/beat_this"
+    },
+    "clap_mood_probe": {
+      "description": "Whole-track mood/theme tags (13 MTG-Jamendo tags): logistic heads on the CLAP track embedding (learned/clap_probes.py, NEW-9). Experimental; shown beside the emotional arc.",
+      "produced_by": "python scripts/train_clap_probes.py embed-mood && python scripts/train_clap_probes.py fit-mood",
+      "provenance": "MTG-Jamendo official mood/theme tags (uploader-supplied), the feature tagger's own train / validation split",
+      "license": "internal weights; MTG-Jamendo audio is Creative-Commons-sourced, Apache-2.0 distribution",
+      "source_url": ""
+    },
+    "clap_ai_probe": {
+      "description": "AI-generation likelihood: one logistic head on the CLAP track embedding (learned/clap_probes.py, NEW-9). Experimental evidence beside the AI Detection verdict, never in it.",
+      "produced_by": "python scripts/train_clap_probes.py embed-ai && python scripts/train_clap_probes.py fit-ai",
+      "provenance": "SONICS generated songs (Suno, Udio; CC-BY-NC-4.0) vs MTG-Jamendo tracks, both cut and MP3 round-tripped alike",
+      "license": "internal weights; SONICS CC-BY-NC-4.0 (research / non-commercial), MTG-Jamendo Apache-2.0 distribution",
+      "source_url": ""
+    }
+  }
+}

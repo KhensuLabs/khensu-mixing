@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<title>Evidence report{% if session_name %} - {{ session_name }}{% endif %}</title>
+<style>
+:root {
+  --bg: {{ theme.bg_base }}; --surface: {{ theme.bg_surface }}; --raised: {{ theme.bg_raised }};
+  --border: {{ theme.border_active }}; --text: {{ theme.text_primary }}; --muted: {{ theme.text_secondary }};
+  --accent: {{ theme.accent_teal }}; --red: {{ theme.accent_red }}; --amber: {{ theme.accent_amber }};
+  --blue: {{ theme.accent_blue }}; --green: {{ theme.accent_green }};
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 15px/1.55 "Segoe UI", system-ui, -apple-system, sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 1.6rem; margin: 0 0 4px; }
+h2 { font-size: 1.15rem; margin: 0 0 6px; }
+.meta { color: var(--muted); margin: 0 0 24px; }
+.intro { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--blue);
+        border-radius: 10px; padding: 14px 16px; margin: 16px 0; page-break-inside: avoid; }
+.card.sev-high { border-left-color: var(--red); }
+.card.sev-mid { border-left-color: var(--amber); }
+.action { margin: 6px 0 10px; }
+table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 0.92rem; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.basis { font-size: 0.9rem; color: var(--muted); margin-top: 8px; }
+.tag { display: inline-block; border: 1px solid var(--border); border-radius: 999px; padding: 0 8px;
+       font-size: 0.8rem; margin-right: 6px; }
+.tag.cal { border-color: var(--green); color: var(--green); }
+.chains li { margin: 4px 0; }
+footer { color: var(--muted); font-size: 0.85rem; margin-top: 32px; }
+@media print { body { background: #fff; color: #000; } .card, .intro { border-color: #ccc; background: #fff; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Why these recommendations</h1>
+<p class="meta">
+  {% if session_name %}{{ session_name }}{% endif %}{% if file_name %} &middot; {{ file_name }}{% endif %}
+  {% if computed_at %} &middot; analysed {{ computed_at }}{% endif %}
+  {% if genre %} &middot; genre norm: {{ genre }}{% endif %}
+  {% if reference_name %} &middot; reference: {{ reference_name }}{% endif %}
+</p>
+
+<div class="intro">
+  <p>Every recommendation below lists the measurements it is based on, the limit each one was
+  compared with, and where that limit comes from: the norm for the genre, your reference track, or an
+  absolute standard (for example the -1 dBTP true-peak ceiling streaming services recommend).</p>
+  <p>{{ recommendations|length }} recommendation(s): {{ calibrated_count }} calibrated against labelled
+  data, {{ heuristic_count }} heuristic (engineering rules that have not yet been measured against a
+  labelled set of mixes).</p>
+</div>
+
+{% for r in recommendations %}
+<section class="card {% if r.severity >= 66 %}sev-high{% elif r.severity >= 33 %}sev-mid{% endif %}">
+  <h2>{{ r.what }}</h2>
+  {% if r.suggested_action %}<p class="action"><strong>Suggested:</strong> {{ r.suggested_action }}</p>{% endif %}
+  {% if r.evidence %}
+  <table>
+    <thead><tr><th>Measurement</th><th>Measured</th><th>Limit</th><th>Limit comes from</th></tr></thead>
+    <tbody>
+    {% for e in r.evidence %}
+      <tr>
+        <td>{{ e.measurement }}</td>
+        <td class="num">{{ "%.2f"|format(e.value) }} {{ e.unit }}</td>
+        <td class="num">{% if e.threshold_low is defined and e.threshold_low is not none %}{{ "%.2f"|format(e.threshold_low) }} to {% endif %}{% if e.threshold is defined and e.threshold is not none %}{{ "%.2f"|format(e.threshold) }} {{ e.unit }}{% else %}-{% endif %}</td>
+        <td>{% if e.source == "genre_norm" %}Genre norm{% elif e.source == "reference" %}Reference track{% else %}Absolute standard{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="basis">No single measurement drives this one; it is a judgement from several analysis results.</p>
+  {% endif %}
+  <p class="basis">
+    {% if r.confidence_basis.kind == "calibrated" %}<span class="tag cal">calibrated (n={{ r.confidence_basis.n }})</span>{% else %}<span class="tag">heuristic</span>{% endif %}
+    {{ r.basis_text }}
+  </p>
+</section>
+{% endfor %}
+
+{% if chains %}
+<section class="intro">
+  <h2>How the findings connect</h2>
+  <ul class="chains">{% for c in chains %}<li>{{ c }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+<footer>Generated locally by Khensu Mixing. No audio left this computer to make this report.</footer>
+</main>
+</body>
+</html>

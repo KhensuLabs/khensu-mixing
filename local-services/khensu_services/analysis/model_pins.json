@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "note": "Repo-controlled SHA-256 pins for the bundled models (audit AID-14). A bundled model whose digest does not match its pin is refused (fail closed). Trainers update a pin via model_manifest.pin_model() when they export into resources/models, so a new pin shows up as a reviewed diff.",
+  "sha256": {
+    "ai_detector": "a3aecf91c74d8ed8564d1ed13f7b68a9a95b269c119fb6279a4d01f26b998d32",
+    "artifact_model": "0eb2f9b8718c3f816016ec040a17940c940aa0cf8e43e2629474ee80e7713253",
+    "leak_gate": "be560556fa86bcb680e88e19119b1b8b12a12e6002ecd13dd67cbe9d9e9155d4",
+    "mood_tagger": "fd349c94bf352da3312bde75521ac4e369c8bf1944273dc296b8b1d80ba436d4",
+    "vocal_pitch": "6bcf6ef8e6ca2e82c847e554f1d3488e5159cf615418d226e6b8b9f3fb2ad78a",
+    "clap_mood_probe": "ed7d4514bcf0f52b1b6e9fa4a482d382e148c5f78baaafe2ef3ec88417d575fa",
+    "clap_ai_probe": "e80f92b7dd31577f40fb3b2126abc5663681c67b5d2c9f995c57efc479173c22"
+  }
+}

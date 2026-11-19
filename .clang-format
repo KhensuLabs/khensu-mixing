@@ -1,0 +1,29 @@
+# Style baseline for new C++ files (frontend-review-2026-07-17.md P3 quality
+# gate). CI only enforces this on newly-added files, not the existing tree,
+# which predates this file and hasn't been reformatted yet.
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 120
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  AfterClass: false
+  AfterStruct: false
+  AfterNamespace: false
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterUnion: false
+  AfterExternBlock: false
+  BeforeElse: false
+  BeforeCatch: false
+  SplitEmptyFunction: false
+PointerAlignment: Left
+ReferenceAlignment: Left
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortBlocksOnASingleLine: Empty
+AllowShortLoopsOnASingleLine: false
+SpaceBeforeParens: ControlStatements
+NamespaceIndentation: None
+SortIncludes: false
+ReflowComments: false

@@ -1,0 +1,19 @@
+# Static-analysis baseline (CLN-5). Not a CI gate yet: run it on files you
+# touch, e.g. `clang-tidy -p build <file>` with a compile_commands.json from a
+# Ninja configure. Checks are the bug-finding families only; style is
+# .clang-format's job and JUCE's headers are excluded.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  cert-err33-c,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-slicing,
+  misc-redundant-expression,
+  performance-*,
+  -performance-enum-size
+HeaderFilterRegex: '(shared-core|desktop-app|plugin-copilot|tests)/.*'
+WarningsAsErrors: ''

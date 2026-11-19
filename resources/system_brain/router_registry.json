@@ -1,0 +1,77 @@
+{
+  "version": "1.0",
+  "routers": {
+    "router_file_analyses.py#quick_stats": {
+      "feature_id": "track_quick_stats",
+      "category": "Analysis",
+      "panel_location": "Vocal Workspace > Track Quick Stats panel",
+      "tags": ["technical", "analysis", "desktop-only"]
+    },
+    "router_file_analyses.py#mono_compat": {
+      "feature_id": "mono_compatibility_analysis",
+      "category": "Analysis",
+      "panel_location": "Dashboard > Stereo Field panel > Mono Compatibility section",
+      "tags": ["technical", "stereo", "analysis", "desktop-only", "sp16c"]
+    },
+    "router_artifacts_scan.py": {
+      "feature_id": "ai_artifact_detection",
+      "category": "Analysis",
+      "panel_location": "Analysis Dashboard > AI Artifacts panel",
+      "tags": ["technical", "analysis", "forensics", "ai", "desktop-only"]
+    },
+    "router_file_analyses.py#signal_integrity": {
+      "feature_id": "artifact_detection",
+      "category": "Analysis",
+      "panel_location": "Dashboard > Artifacts panel",
+      "tags": ["technical", "analysis", "quality-control", "desktop-only"]
+    },
+    "router_stem_taxonomy.py": {
+      "feature_id": "stem_taxonomy",
+      "category": "Analysis",
+      "panel_location": "Analysis Dashboard > Stem Energy Balance / Masking & Collision panels",
+      "tags": ["technical", "analysis", "stems", "desktop-only"]
+    },
+    "router_masking.py": {
+      "feature_id": "masking_collision",
+      "category": "Analysis",
+      "panel_location": "Analysis Dashboard > Masking & Collision panel",
+      "tags": ["technical", "analysis", "stems", "masking", "desktop-only"]
+    },
+    "router_file_analyses.py#loudness_curve": {
+      "feature_id": "lufs_timeline_waveform",
+      "category": "Analysis",
+      "panel_location": "Dashboard screen > structural flow timeline; also pinned at bottom of Vocal Workspace",
+      "tags": ["technical", "visual", "timeline", "waveform", "navigation", "desktop-only"]
+    },
+    "router_file_analyses.py#stem_energy_timeline": {
+      "feature_id": "stem_taxonomy",
+      "category": "Analysis",
+      "panel_location": "Analysis Dashboard > Stem Energy Timeline panel",
+      "tags": ["technical", "analysis", "stems", "visual", "desktop-only"]
+    },
+    "router_file_analyses.py#streaming_normalization": {
+      "feature_id": "translation_preview",
+      "category": "Analysis",
+      "panel_location": "Dashboard > Streaming Loudness Preview panel",
+      "tags": ["technical", "analysis", "loudness", "streaming", "desktop-only"]
+    },
+    "router_file_analyses.py#sub_bass_phase": {
+      "feature_id": "phase_correlation",
+      "category": "Analysis",
+      "panel_location": "Dashboard > Sub-Bass Phase panel",
+      "tags": ["technical", "analysis", "stereo", "phase", "desktop-only"]
+    },
+    "router_full_intake.py": {
+      "feature_id": "session_intake",
+      "category": "Session Management",
+      "panel_location": "Session Intake screen",
+      "tags": ["session-management", "analysis", "desktop-only"]
+    },
+    "router_file_analyses.py#source_triage": {
+      "feature_id": "recommendation_engine",
+      "category": "Analysis",
+      "panel_location": "Dashboard > Fix-at-Source Triage panel",
+      "tags": ["technical", "analysis", "recommendations", "explainable", "desktop-only"]
+    }
+  }
+}

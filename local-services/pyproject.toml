@@ -1,0 +1,244 @@
+[project]
+name = "khensu-services"
+version = "1.0.0"
+description = "Khensu Mixing Suite — Local Analysis Service"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110.0",
+    # Imported directly (request/response models), not only through FastAPI.
+    "pydantic>=2.0",
+    "uvicorn[standard]>=0.29.0",
+    "librosa>=0.10.2",
+    "soundfile>=0.12.1",
+    "numpy>=1.26.0",
+    "pyloudnorm>=0.1.1",
+    "scikit-learn>=1.4.0",
+    "jinja2>=3.1.3",
+    "scipy>=1.13.0",
+    "pedalboard>=0.9.10",
+    "reportlab>=4.2.0",
+    # Runtime: local-LLM fallback for /copilot when Claude API is unavailable
+    "httpx>=0.27.0",
+    # AI-artifact detection (spec §5.1): container/tag metadata tier
+    "mutagen>=1.47.0",
+    # MIDI MMC sync. The port backend (python-rtmidi) is the optional [midi]
+    # extra: without it the transport routes still work and MMC Locate is
+    # simply skipped (router_transport.get_midi_out returns None).
+    "mido>=1.3.0",
+    # Genre-target catalog JSON Schema validation (user-extensible schema)
+    "jsonschema>=4.21.0",
+]
+
+[project.optional-dependencies]
+pitch = [
+    # Exactly 0.4.0: [tool.uv] dependency-metadata restates its dependencies.
+    "basic-pitch==0.4.0",
+    # basic_pitch.note_creation imports resampy (only resampy.resample).
+    # basic-pitch caps it below 0.4.3, and those releases import
+    # pkg_resources, which setuptools >= 82 removed; 0.4.3 only swaps that
+    # for importlib.resources, so [tool.uv] dependency-metadata lifts the cap
+    # and the profile takes the setuptools security fix (SHIP-5).
+    "resampy>=0.4.3",
+    "setuptools>=84.1.0",
+    # basic-pitch runs its bundled ONNX model (midi_bp_worker blocks the
+    # TensorFlow import and selects it), so the profile installs onnxruntime
+    # and no TensorFlow (PKG-1): basic-pitch 0.4.0 - the latest - requires
+    # tensorflow<2.15.1 on Windows/3.11, which pins keras 2.x and protobuf<5,
+    # ~30 open Dependabot alerts fixed only in keras 3 / protobuf 5.29.6.
+    # [tool.uv] dependency-metadata removes it from the resolution and
+    # install-optional-stack.ps1 installs this profile with --no-deps.
+    "onnxruntime>=1.17.0",
+    # The profile was validated on NumPy 1.x (it carried TF 2.x, which needed
+    # it); kept until the pitch worker is checked on NumPy 2.
+    "numpy<2",
+]
+# ASR dependency decision (2026-07-09, lyric-aware mixing hints): faster-whisper
+# over openai-whisper or whisper.cpp. Rationale — CTranslate2-based inference is
+# meaningfully faster than openai-whisper on CPU (no GPU assumed for a desktop
+# app), it's a self-contained wheel (no separate torch dependency, unlike
+# openai-whisper which would pull in the same heavy torch stack as [stems] just
+# for transcription), and it stays in-process with the rest of khensu_services
+# instead of shelling out to a separately-built whisper.cpp binary. Word-level
+# timestamps (needed to pin intelligibility flags to a specific moment) are a
+# first-class feature of faster-whisper's API. Default model size is "base"
+# (74M params) — small enough to bundle, accurate enough for lyric timing.
+asr = [
+    "faster-whisper>=1.0.0",
+    # Security floor for the setuptools that ctranslate2 pulls in (PKG-1).
+    "setuptools>=84.1.0",
+]
+copilot = [
+    "anthropic>=0.40.0",
+]
+# CE-AG-2: run a downloaded GGUF model in-process (Settings > LLM provider
+# "llamacpp", llm.gguf_path). Local servers (llama.cpp server, Ollama,
+# LM Studio) need nothing extra - they are reached over loopback HTTP.
+local_llm = [
+    "llama-cpp-python>=0.3.0",
+]
+# CE-AG-3: the `khensu-mcp` stdio MCP server (see docs/manual.md). Capped
+# below 2: mcp 2.x pulls httpx2, which Starlette's TestClient then prefers.
+mcp = [
+    "mcp>=1.10,<2",
+]
+# CE-AI-4: BS-/Mel-RoFormer stem separation through audio-separator. Pulls a
+# newer torch/numpy than the reviewed Demucs `stems` profile, so install it in
+# its own environment or accept the upgrade; the service falls back to Demucs,
+# then HPSS, when it is absent. GPU: add onnxruntime-directml / a CUDA torch.
+# uv.lock treats it as conflicting with [pitch] and [ai_detect] (see
+# [tool.uv] conflicts below); no hashed export is generated for it yet.
+roformer = [
+    "audio-separator>=0.30",
+    # Security floor for the setuptools torch pulls in (PKG-1).
+    "setuptools>=84.1.0",
+]
+# MMC Locate output to a DAW (best-effort; the plugin's seek poll is primary).
+midi = [
+    "python-rtmidi>=1.5.0",
+]
+dev = [
+    "pytest>=8.1.0",
+    "pytest-asyncio>=0.23.0",
+    # A time limit per test (VER-4): one stuck test used to hold the whole run.
+    "pytest-timeout>=2.3.1",
+    # BLD-4: parallel local runs (verify_all passes -n auto when it is installed).
+    "pytest-xdist>=3.6.1",
+    "ruff>=0.15.0",
+]
+onnx = [
+    "onnxruntime>=1.17.0",
+]
+# C2PA content credentials (CE-DEL-2): sign / read manifests in delivered
+# audio. cryptography picks the signing algorithm from the user's key and
+# builds the throwaway test certificate chain.
+c2pa = [
+    "c2pa-python>=0.38.0",
+    "cryptography>=42.0",
+]
+# AI-detection / sound-recreation stack (2026-07-15). AudioSeal = generative-
+# audio watermark detect; laion-clap needs a torch/torchvision pair installed
+# by its own reviewed profile = timbre/audio embeddings for
+# sound classification; pyacoustid = Chromaprint fingerprinting (needs the
+# `fpcalc` binary on PATH for actual fingerprints; the API is guarded).
+# Pitched MIDI extraction is not here: basic-pitch runs from the separate
+# Python 3.11 `.venv311` (the `pitch` extra, see the README's optional components), and without it
+# the service falls back to librosa.pyin.
+ai_detect = [
+    # Imported directly by the watermark-model fetch/precache code.
+    "huggingface_hub>=0.20",
+    "audioseal>=0.2.0",
+    "laion-clap>=1.1.0",
+    "torchvision>=0.17.0",
+    "pyacoustid>=1.3.0",
+    "onnx>=1.16",             # torch.onnx export for the learned artifact model
+    "onnxruntime>=1.17",      # inference for the learned artifact model
+    "wavmark>=0.0.3",         # learned watermark ensemble (guarded)
+    # wavmark imports resampy; resampy < 0.4.3 imports pkg_resources, which
+    # setuptools >= 82 (needed for its security fix) no longer ships.
+    "resampy>=0.4.3",
+    # Real RVQ-codec ghosting for the artifact-model training corpus
+    # (real_artifact_corpus.py): encode/decode real audio through Meta's
+    # actual RVQ neural codec so rvq_ghosting positives are genuine
+    # quantization artifacts, not a synthesized tone comb. Small package on
+    # top of the torch already pulled in above; downloads its own small
+    # pretrained checkpoint on first use (same opt-in-download pattern as
+    # audioseal/wavmark).
+    "encodec>=0.1.1",
+    # Security floor for the setuptools torch pulls in (PKG-1).
+    "setuptools>=84.1.0",
+]
+
+[project.scripts]
+khensu = "khensu_services.cli:main"
+khensu-mcp = "khensu_services.mcp_server:main"
+
+[build-system]
+requires = ["setuptools>=77"]  # 77: the SPDX `license` string
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["khensu_services*"]
+
+# [pitch] never shares an interpreter with the other ML extras: basic-pitch's
+# TensorFlow pin lives in its own .venv311 (see the README's optional components). Declaring the
+# conflict lets uv.lock resolve it in a separate fork, so TF's protobuf<5 /
+# old setuptools / keras 2.x caps no longer hold back security fixes for
+# protobuf, onnx and setuptools in [ai_detect], [onnx] and [asr].
+[tool.uv]
+# basic-pitch's declared dependencies, minus TensorFlow (and coremltools on
+# macOS): the pitch worker runs basic-pitch's bundled ONNX model (see the
+# [pitch] extra), so TensorFlow - and the keras 2.x / protobuf<5 it pins, ~30
+# open Dependabot alerts - never enter the lock. These are basic-pitch 0.4.0's
+# own requirements otherwise; recheck them when bumping basic-pitch.
+dependency-metadata = [
+    { name = "basic-pitch", version = "0.4.0", requires-dist = [
+        "librosa>=0.8.0",
+        "mir-eval>=0.6",
+        "numpy>=1.18",
+        "pretty-midi>=0.2.9",
+        # Upstream says <0.4.3; 0.4.3 differs only in dropping pkg_resources.
+        "resampy>=0.2.2",
+        "scikit-learn",
+        "scipy>=1.4.1",
+        "typing-extensions",
+        "onnxruntime",
+    ] },
+]
+conflicts = [
+    [{ extra = "pitch" }, { extra = "ai-detect" }],
+    [{ extra = "pitch" }, { extra = "onnx" }],
+    [{ extra = "pitch" }, { extra = "asr" }],
+    # [roformer] (audio-separator) needs NumPy 2 and torch 2.14, which the
+    # pitch fork's numpy<2 cannot host (uv would otherwise lock a second,
+    # stale audio-separator 0.30 just for that fork).
+    [{ extra = "pitch" }, { extra = "roformer" }],
+    # audio-separator >= 0.4x pulls onnx2torch-py313 -> onnx-weekly, which
+    # installs the same top-level `onnx` package as [ai_detect]'s `onnx`, so
+    # the two would overwrite each other's files in one environment.
+    [{ extra = "ai-detect" }, { extra = "roformer" }],
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--basetemp=.pytest_tmp -m \"not bench\""
+# Per-test limit in seconds (pytest-timeout, VER-4). "thread" because Windows
+# has no SIGALRM: at the limit every thread's stack is printed and the run
+# ends, which beats a run that never ends. Raise one test's limit with
+# @pytest.mark.timeout(n) rather than raising this.
+timeout = 300
+timeout_method = "thread"
+markers = [
+    "quick: hermetic tests suitable for the fast local feedback loop",
+    "full: integration, corpus, or optional-model tests reserved for the full suite",
+    "bench: performance budgets, excluded by default; run with -m bench (scripts/bench/)",
+    "watermark_gate_real: use the real watermark gate_open (not force-closed)",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# Pyflakes (F) + pycodestyle errors/warnings (E/W). Deliberately not adding
+# import-sort (I) or docstring (D) rules yet - this is the first lint gate
+# for this codebase (backend-review-2026-07-17.md quality-gate item), scoped
+# to genuine bugs/style issues rather than a large reformat.
+select = ["E", "F", "W"]
+# E501 (line-too-long) is noisy pre-existing style, not a bug; revisit as a
+# deliberate reformat pass later rather than blocking this first lint gate.
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Both files order their imports after code on purpose:
+# - server.py: routers are imported after run_blocking is defined, to avoid
+#   a circular import (routers import run_blocking back from this module).
+# - analysis/router.py: the analyze_quick/analyze_advanced/... wrapper
+#   functions are defined first so unittest.mock.patch("...router.analyze_quick")
+#   keeps working regardless of router import order below them.
+"khensu_services/server.py" = ["E402"]
+"khensu_services/analysis/router.py" = ["E402"]
+# tests/conftest.py bootstraps sys.path (so `launch_service` imports regardless
+# of the pytest invocation directory, AQ-09) before its module-level imports.
+"tests/conftest.py" = ["E402"]

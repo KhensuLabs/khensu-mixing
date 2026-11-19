@@ -1,0 +1,131 @@
+# Build output
+build/
+out/
+.build-artifacts/
+
+# CMake generated
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+*.cmake
+!cmake/
+
+# MSVC / VS
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.suo
+*.user
+*.aps
+*.pdb
+*.ilk
+*.exp
+*.lib
+!*.cmake
+.vs/
+x64/
+Debug/
+Release/
+RelWithDebInfo/
+MinSizeRel/
+
+# JUCE
+JuceLibraryCode/
+*.jucer
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+*.egg
+
+# macOS (future)
+.DS_Store
+*.dSYM/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Google Drive sync staging (transient upload chunks — never commit)
+.tmp.driveupload/
+
+# Test artifacts
+test_output.txt
+local-services/pytest_temp/
+local-services/tests/.tmp/
+local-services/.pytest_tmp/
+local-services/.pytest_tmp*/
+.pytest_tmp/
+
+# Local training reference material (large binaries, not source)
+Books 4 training/
+
+# Large reference binaries (books/papers) — keep local, not in git history
+music_research_docs/
+
+# MCP tool descriptors (local, per machine) - purged from history in PKG-3
+mcps/
+
+# Scratch audio working files
+scratch_audio/
+
+# Learned AI-artifact model weights (reproduce via make_bootstrap_model; ~8MB binary)
+local-services/resources/models/
+
+# Python 3.11 sub-venv for basic-pitch/crepe MIDI extraction
+local-services/.venv311/
+
+# Google Drive sync artifacts (the repo lives in a Drive-synced folder;
+# keep these out of git and purge from
+# .venv with scripts/purge_drive_artifacts.ps1 when tests break)
+desktop.ini
+
+# Agent-tool runtime state. These are normally excluded per-machine via
+# .git/info/exclude (which the tools write themselves), but that file is local
+# and never shared - so a fresh clone has no protection. Listed here too.
+#
+# .claude/worktrees/ in particular is not just noise: a single abandoned agent
+# worktree grew to 9.2 GB (a bundled Python runtime + venv + build tree) before
+# anyone noticed. Prefer `git worktree remove` over deleting the folder, so the
+# branch and its commits survive.
+.claude/worktrees/
+.superpowers/
+
+# Local binary material - never commit
+Model Weights/
+Ui Fixes/
+# Large evaluation-corpus audio/metadata 
+corpus_data/*
+!corpus_data/README.md
+.fetchcontent/
+
+# Performance benchmark output (scripts/bench/run_all.ps1)
+bench-results/
+
+# The maintainer's local AI-agent guide (kept out of the repository since v1.0.0)
+CLAUDE.md

@@ -1,0 +1,125 @@
+#!/bin/sh
+# .githooks/pre-push — local stand-in for server-side branch protection.
+#
+# WHY THIS EXISTS (audit CFG-01): GitHub branch protection and rulesets both
+# require GitHub Pro for a private repository, and this repo is private on the
+# Free plan — the API returns 403 for both. So there is no server-side gate that
+# can reject a push which fails CI. This hook is the closest available
+# substitute: it runs CI's *fast* gates locally and refuses the push if they
+# fail.
+#
+# It is deliberately limited to checks that finish in seconds. The full pytest
+# suite takes ~10 minutes; a hook that slow gets bypassed with --no-verify and
+# then protects nothing. Fast-and-always-run beats thorough-and-skipped.
+#
+# What this catches (and CI would have caught, later and noisier):
+#   - scripts/check_doc_drift.py — analyzer/router counts, migration range, and
+#     the SERVICE_VERSION handshake drifting out of sync with the code. A real
+#     commit broke CI exactly this way on 2026-07-27.
+#   - ruff — Python lint.
+#
+# What it does NOT catch — CI (and, while CI is blocked, a full
+# `pwsh scripts/verify_all.ps1` run) remains the real gate:
+#   - the Python test suite + golden DSP-regression fingerprint
+#   - the Windows C++ build and Catch2 suites
+#
+# The gates live in scripts/verify_all.ps1 (`-Fast` = exactly these gates; the
+# full run is the local stand-in for hosted CI). When pwsh is not installed the
+# same three gates run inline below, so the hook still works without it.
+#
+# Enabled via `git config core.hooksPath .githooks` (see scripts/install-hooks).
+# Bypass intentionally with `git push --no-verify` when you know why.
+
+set -u
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root" || exit 0
+
+# --- Preferred: the shared fast gates in verify_all.ps1 ------------------
+if [ -f scripts/verify_all.ps1 ] && command -v pwsh >/dev/null 2>&1; then
+    if pwsh -NoProfile -File scripts/verify_all.ps1 -Fast; then
+        exit 0
+    fi
+    echo "" >&2
+    echo "pre-push: BLOCKED by the fast gates above (doc drift / i18n template / ruff)." >&2
+    echo "          i18n stale -> python scripts/extract_strings.py" >&2
+    echo "Push aborted. Re-run after fixing, or 'git push --no-verify' to override." >&2
+    exit 1
+fi
+
+# --- Fallback: the same gates inline (no pwsh) ---------------------------
+
+# Prefer the service venv, which is where ruff and the script's deps live.
+if [ -x "local-services/.venv/Scripts/python.exe" ]; then
+    PY="local-services/.venv/Scripts/python.exe"
+elif [ -x "local-services/.venv/bin/python" ]; then
+    PY="local-services/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+    PY=python3
+elif command -v python >/dev/null 2>&1; then
+    PY=python
+else
+    echo "pre-push: no Python found; skipping local gates (CI will still run)." >&2
+    exit 0
+fi
+
+failed=0
+
+# --- Doc drift ------------------------------------------------------------
+if [ -f scripts/check_doc_drift.py ]; then
+    if ! "$PY" scripts/check_doc_drift.py; then
+        echo "" >&2
+        echo "pre-push: BLOCKED — documentation drift. Fix the counts above, or" >&2
+        echo "          update scripts/check_doc_drift.py if the rule itself changed." >&2
+        failed=1
+    fi
+fi
+
+# --- i18n catalog ---------------------------------------------------------
+# The TRANS() string template must be regenerated when UI strings change.
+if [ -f scripts/extract_strings.py ]; then
+    if ! "$PY" scripts/extract_strings.py --check; then
+        echo "" >&2
+        echo "pre-push: BLOCKED — i18n template stale. Run: python scripts/extract_strings.py" >&2
+        failed=1
+    fi
+fi
+
+# --- Lint -----------------------------------------------------------------
+# Non-fatal if ruff isn't installed: a contributor without the dev extra should
+# not be blocked from pushing by a missing tool.
+# Resolve ONE ruff invocation. The old fallback prefixed "$repo_root/" onto a
+# bare interpreter name (python3 -> <repo>/python3, never runnable) and
+# re-ran a second ruff after a genuine lint failure, so a stray global ruff
+# of another version could turn a failure into a pass.
+# (A function, not a string: the repo path contains a space, so an unquoted
+# "$RUFF" command string word-splits.)
+RUFF_PY=""
+HAVE_RUFF=0
+if "$PY" -c "import ruff" >/dev/null 2>&1; then
+    case "$PY" in
+        */*) RUFF_PY="$repo_root/$PY" ;;
+        *) RUFF_PY="$PY" ;;
+    esac
+    HAVE_RUFF=1
+elif command -v ruff >/dev/null 2>&1; then
+    HAVE_RUFF=1
+fi
+run_ruff() {
+    if [ -n "$RUFF_PY" ]; then "$RUFF_PY" -m ruff "$@"; else ruff "$@"; fi
+}
+if [ "$HAVE_RUFF" -eq 1 ]; then
+    if ! (cd local-services && run_ruff check .); then
+        echo "" >&2
+        echo "pre-push: BLOCKED — ruff lint errors." >&2
+        failed=1
+    fi
+fi
+
+if [ "$failed" -ne 0 ]; then
+    echo "" >&2
+    echo "Push aborted. Re-run after fixing, or 'git push --no-verify' to override." >&2
+    exit 1
+fi
+
+exit 0

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  CE-PLT-5: hardened-runtime entitlements for Khensu Mixing.app.
+  The app spawns the bundled Python analysis service as a child process and
+  hosts third-party VST3 / AU plug-ins in-process, which are signed by other
+  teams - hence disable-library-validation. Nothing else is relaxed.
+  UNVERIFIED on a Mac (see build_and_package.sh).
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <false/>
+    <key>com.apple.security.device.audio-input</key>
+    <false/>
+</dict>
+</plist>

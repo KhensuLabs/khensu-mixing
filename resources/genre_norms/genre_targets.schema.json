@@ -1,0 +1,182 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://khensu.ai/schemas/genre_targets.json",
+  "title": "Khensu Genre Targets",
+  "description": "Production norms and stem-energy balance targets for genres used by the Khensu Mixing & Mastering Suite. The catalog is user-extensible: a companion user file with the same per-genre schema may override base entries by id or append new genres.",
+  "type": "object",
+  "required": ["version", "genres"],
+  "properties": {
+    "version": {
+      "type": "number",
+      "description": "Schema/catalog version. Bump when the shape or semantics change."
+    },
+    "note": {
+      "type": "string"
+    },
+    "tempo_convention": {
+      "type": "string",
+      "description": "The single tempo convention every typical_bpm_range uses (notated / DAW-project tempo); detected BPM is matched octave-folded."
+    },
+    "pending_p2_genres": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "genres": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/genre" }
+    }
+  },
+  "definitions": {
+    "stemBucket": {
+      "type": "string",
+      "enum": [
+        "vocals",
+        "bass",
+        "kick",
+        "snare",
+        "percussion",
+        "drums",
+        "synth",
+        "atmosphere_fx",
+        "other"
+      ]
+    },
+    "stemEnergyBalance": {
+      "type": "object",
+      "description": "Target energy share (0-100%) per canonical stem bucket. Values across all present buckets should sum to approximately 100. The 'drums' bucket is a rollup of kick+snare+percussion and is normally left at 0 so analyzers can derive it; if set explicitly it overrides the derived rollup.",
+      "properties": {
+        "vocals":       { "type": "number", "minimum": 0, "maximum": 100 },
+        "bass":         { "type": "number", "minimum": 0, "maximum": 100 },
+        "kick":         { "type": "number", "minimum": 0, "maximum": 100 },
+        "snare":        { "type": "number", "minimum": 0, "maximum": 100 },
+        "percussion":   { "type": "number", "minimum": 0, "maximum": 100 },
+        "drums":        { "type": "number", "minimum": 0, "maximum": 100 },
+        "synth":        { "type": "number", "minimum": 0, "maximum": 100 },
+        "atmosphere_fx":{ "type": "number", "minimum": 0, "maximum": 100 },
+        "other":        { "type": "number", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "genre": {
+      "type": "object",
+      "required": ["id", "name", "parent"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "Machine key used in URLs, file names, and persistence."
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable display name."
+        },
+        "parent": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "Parent genre id. May be the same as id for root families."
+        },
+        "notes": {
+          "type": "string"
+        },
+        "lufs_target": {
+          "type": "number"
+        },
+        "lufs_range": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number" }
+        },
+        "lra_range": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number" }
+        },
+        "true_peak_max": {
+          "type": "number"
+        },
+        "spectral_centroid_hz": {
+          "type": "number",
+          "minimum": 0
+        },
+        "low_end_weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "stereo_width_range": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "compression_ratio_typical": {
+          "type": "number",
+          "minimum": 1
+        },
+        "heaviness_distortion_norm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "heaviness_weight_norm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "heaviness_clarity_norm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "heaviness_extremity_norm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "hook_density_norm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "chorus_contrast_norm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "typical_bpm_range": {
+          "type": "array",
+          "description": "[min, max] notated / DAW-project tempo (see the catalog's tempo_convention); compare a detected BPM octave-folded.",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number", "minimum": 0 }
+        },
+        "vocal_presence_db": {
+          "type": "number"
+        },
+        "spectral_tilt_target_db_per_octave": {
+          "type": "number"
+        },
+        "crest_factor_target_db": {
+          "type": "number",
+          "minimum": 0
+        },
+        "stem_energy_balance": {
+          "$ref": "#/definitions/stemEnergyBalance"
+        },
+        "measured": {
+          "type": "object",
+          "description": "MEAS-1: which fields were measured from the on-disk corpus (genre_corpus_stats.json) instead of typed by hand.",
+          "properties": {
+            "tracks": { "type": "integer", "minimum": 1 },
+            "fields": { "type": "array", "items": { "type": "string" } },
+            "source": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

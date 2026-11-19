@@ -1,0 +1,392 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  # Manual runs, e.g. on a self-hosted runner while hosted CI is blocked (CE-ENG-1).
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# No job publishes, comments or pushes: a read-only token is all they need
+# (VER-7). A job that ever needs more asks for it in its own block.
+permissions:
+  contents: read
+
+# Runner selection (CE-ENG-1): set the repository variables
+# KHENSU_WINDOWS_RUNNER / KHENSU_LINUX_RUNNER to a JSON label list such as
+# '["self-hosted", "windows", "x64"]' to run on a self-hosted runner
+# on your own machine. Unset, the hosted runners are used.
+jobs:
+  python-tests:
+    name: Python analysis service + DSP regression
+    runs-on: ${{ fromJSON(vars.KHENSU_LINUX_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: local-services
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install uv
+        run: python -m pip install uv==0.10.0
+
+      - name: Verify lockfile and committed exports
+        run: |
+          uv lock --check --project .
+          python ../scripts/generate_hashed_requirements.py --check
+          python ../scripts/generate_demucs_stems_requirements.py --check
+
+      # soundfile needs libsndfile; mido/python-rtmidi need ALSA headers.
+      - name: Install system libraries
+        run: sudo apt-get update && sudo apt-get install -y libsndfile1 libasound2-dev
+
+      # requirements-hashed.txt is generated from uv.lock and pins the shipped
+      # CI/dev artifacts (sha256 per wheel/sdist), not just the versions
+      # (audit CFG-03). Hash mode forbids editable installs, hence the split:
+      # hashed deps first, then the package itself with --no-deps.
+      - name: Install package (hash-verified deps — no torch/demucs/whisper extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes -r requirements-hashed.txt
+          pip install -e . --no-deps
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Check doc drift (analyzer/router counts, migrations, SERVICE_VERSION)
+        working-directory: ${{ github.workspace }}
+        run: python scripts/check_doc_drift.py
+
+      - name: Check i18n string template (TRANS() catalog)
+        working-directory: ${{ github.workspace }}
+        run: python scripts/extract_strings.py --check
+
+      - name: Run test suite (includes golden DSP-regression gate)
+        run: python -m pytest -q
+
+  # Bounded compatibility coverage (audit CFG-02): a second interpreter on
+  # either side of the shipped 3.12, plus the optional `copilot` extra. These
+  # install from pyproject (not the 3.12 hash lock) and run the fast suite;
+  # the golden DSP gate stays on the pinned 3.12 job above.
+  python-compat:
+    name: Python ${{ matrix.python }} compatibility${{ matrix.extras && format(' (+{0})', matrix.extras) || '' }}
+    runs-on: ${{ fromJSON(vars.KHENSU_LINUX_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 3.11 is the SHIPPED runtime (packaging/build-python-env.ps1), so it
+          # runs the golden DSP gate as well - not just the dev 3.12 job.
+          - python: "3.11"
+            extras: ""
+            pytest_args: "-q -x"
+          # 3.13 runs nightly (nightly.yml, BLD-4): it is not a shipped runtime.
+          - python: "3.12"
+            extras: "copilot"
+            pytest_args: "-q tests/test_copilot_endpoints.py tests/test_llm_provider.py tests/test_llm_online_gate.py"
+    defaults:
+      run:
+        working-directory: local-services
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install system libraries
+        run: sudo apt-get update && sudo apt-get install -y libsndfile1 libasound2-dev
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          if [ -n "${{ matrix.extras }}" ]; then
+            pip install -e ".[dev,${{ matrix.extras }}]"
+          else
+            pip install -e ".[dev]"
+          fi
+
+      - name: Run tests
+        run: python -m pytest ${{ matrix.pytest_args }}
+
+  # Compile profiles beyond Windows x64 (audit CFG-02). macOS 14 runners are
+  # Apple Silicon, so this is the arm64 build CMake already scaffolds for
+  # v1.1; the Windows job cross-compiles the core library for ARM64.
+  macos-arm64-core:
+    name: macOS arm64 core build + tests
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Cache FetchContent sources
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .fetchcontent
+          key: fetchcontent-${{ runner.os }}-arm64-${{ hashFiles('cmake/Fetch*.cmake') }}
+
+      - name: Configure
+        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.fetchcontent"
+
+      - name: Build core tests
+        run: cmake --build build --config Release --target KhensuCoreTests --parallel 3
+
+      - name: Run core tests
+        run: ctest --test-dir build -C Release -L KhensuCoreTests --output-on-failure
+
+  # CE-PLT-5: the full macOS product - universal (arm64 + x86_64) app, VST3
+  # and AU, bundled and packaged by packaging/macos/build_and_package.sh.
+  # Signing and notarization run only when the repository secrets exist, so
+  # forks and an unconfigured repo still get an unsigned build. Like every
+  # hosted job this is blocked while CFG-01 (billing) stands.
+  macos-universal-full:
+    name: macOS universal app + plug-ins (package)
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Cache FetchContent sources
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .fetchcontent
+          key: fetchcontent-${{ runner.os }}-universal-${{ hashFiles('cmake/Fetch*.cmake') }}
+
+      - name: Build, bundle and package
+        env:
+          FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.fetchcontent
+          KHENSU_JOBS: "3"
+          KHENSU_CODESIGN_IDENTITY: ${{ secrets.KHENSU_MACOS_CODESIGN_IDENTITY }}
+          KHENSU_APPLE_ID: ${{ secrets.KHENSU_APPLE_ID }}
+          KHENSU_TEAM_ID: ${{ secrets.KHENSU_APPLE_TEAM_ID }}
+          KHENSU_APP_PASSWORD: ${{ secrets.KHENSU_APPLE_APP_PASSWORD }}
+        run: bash packaging/macos/build_and_package.sh
+
+      - name: Core tests (universal build)
+        run: |
+          cmake --build build-macos --config Release --target KhensuCoreTests --parallel 3
+          ctest --test-dir build-macos -C Release -L KhensuCoreTests --output-on-failure
+
+      - name: Upload packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: khensu-macos-universal
+          path: |
+            dist/macos/*.dmg
+            dist/macos/*.zip
+            dist/macos/SHA256SUMS.txt
+          if-no-files-found: error
+
+  windows-arm64-core:
+    name: Windows ARM64 core cross-compile
+    runs-on: ${{ fromJSON(vars.KHENSU_WINDOWS_RUNNER || '"windows-latest"') }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Cache FetchContent sources
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .fetchcontent
+          key: fetchcontent-${{ runner.os }}-arm64-${{ hashFiles('cmake/Fetch*.cmake') }}
+
+      - name: Configure (ARM64)
+        run: cmake -B build-arm64 -S . -A ARM64 -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.fetchcontent"
+
+      - name: Build shared core (ARM64)
+        run: cmake --build build-arm64 --config Release --target KhensuSharedCore --parallel 4
+
+  windows-cpp:
+    name: Windows C++ build + tests
+    runs-on: ${{ fromJSON(vars.KHENSU_WINDOWS_RUNNER || '"windows-latest"') }}
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The format check diffs against the PR base / pre-push commit; a
+          # depth-1 clone doesn't have it, so the check always skipped.
+          fetch-depth: 0
+
+      # FetchContent clones JUCE / SQLiteCpp / Catch2 at configure time; cache
+      # its whole base dir (sources AND populate stamps) so re-runs skip the
+      # downloads - restoring only build/_deps/*-src re-ran every populate.
+      - name: Cache FetchContent sources
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .fetchcontent
+          key: fetchcontent-${{ runner.os }}-${{ hashFiles('cmake/Fetch*.cmake') }}
+
+      - name: Configure
+        run: cmake -B build -S . -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.fetchcontent"
+
+      # --parallel 4, never unbounded: every core at once has failed this
+      # codebase with C1060 (compiler out of heap) and Win32 error 1455.
+      - name: Build test targets
+        run: cmake --build build --config Release --target KhensuCoreTests KhensuTests KhensuPluginTests --parallel 4
+
+      - name: Run tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      # Build the actual shipping artifacts (audit CFG-02) so a build-breaking
+      # change to the app/plugin targets (as opposed to the test targets
+      # above, which link the same shared-core but not the app/plugin source)
+      # fails CI instead of surfacing only when someone runs a full build
+      # locally.
+      - name: Build app + plugin artifacts
+        run: cmake --build build --config Release --target KhensuDesktop KhensuCopilot --parallel 4
+
+      - name: Generate release provenance manifest
+        shell: pwsh
+        run: |
+          python scripts/generate_release_provenance.py `
+            --artifact "build/desktop-app/KhensuDesktop_artefacts/Release/Khensu Mixing.exe" `
+            --artifact "build/plugin-copilot/KhensuCopilot_artefacts/Release/VST3/Khensu Copilot.vst3" `
+            --material ".github/workflows/ci.yml" `
+            --material "packaging/build-python-env.ps1" `
+            --material "packaging/install-optional-stack.ps1" `
+            --material "local-services/requirements-runtime-hashed.txt" `
+            --material "local-services/requirements-stems-hashed.txt" `
+            --material "local-services/demucs-stems-lock.json" `
+            --material "local-services/runtime-sbom.cdx.json" `
+            --output "build/release-provenance.json"
+
+      - name: Upload app + plugin artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: khensu-windows-release
+          path: |
+            build/desktop-app/KhensuDesktop_artefacts/Release/**
+            build/plugin-copilot/KhensuCopilot_artefacts/Release/**
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload release provenance manifest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: khensu-windows-release-provenance
+          path: build/release-provenance.json
+          if-no-files-found: error
+          retention-days: 7
+
+      # Plugin validation (audit CFG-02 / CQ-03): pluginval hosts the built
+      # VST3 like a real DAW and exercises parameter/state/threading/bus-layout
+      # invariants our own Catch2 tests can't (they link shared-core, not the
+      # JUCE plugin wrapper). Pinned to a specific pluginval release for
+      # reproducibility. GUI/editor tests are skipped for headless determinism.
+      #
+      # BLOCKING. The earlier non-blocking step invoked pluginval with `&`,
+      # but pluginval.exe is a GUI-subsystem binary: PowerShell does not wait
+      # for it and $LASTEXITCODE stays empty, so failures could never surface.
+      # Start-Process -Wait -PassThru gets the real exit code.
+      #
+      # Strictness 10 (pluginval's maximum): it found NaNs in the multiband
+      # path at 96 kHz with 32-sample sub-blocks that strictness 8 never
+      # exercised - fixed in CopilotCorrectiveDsp. Verified green locally
+      # twice at strictness 10, editor tests included, on 2026-10-10.
+      - name: Validate VST3 (pluginval)
+        shell: pwsh
+        run: |
+          # v1.0.4, not v1.0.3: 1.0.3's host (JUCE f9b6e2e) only delivered a
+          # parameter setValue() in the next process() call, so with --randomise
+          # "Fuzz parameters" -> "Plugin state restoration" compared against
+          # values the plugin never received ("HPF On not restored"). See
+          # tests/plugin/PluginvalStateRestorationTest.cpp.
+          $ver = "v1.0.4"
+          $url = "https://github.com/Tracktion/pluginval/releases/download/$ver/pluginval_Windows.zip"
+          Invoke-WebRequest -Uri $url -OutFile pluginval.zip
+          # SHIP-5: the same pin as scripts/verify_all.ps1.
+          $hash = (Get-FileHash -Algorithm SHA256 pluginval.zip).Hash.ToLowerInvariant()
+          if ($hash -ne "c08e61ce3b96db41636f8ec7e76f4c7e2c13ebdac7fa1b5a1f52b4f32ec715ab") { throw "pluginval.zip SHA-256 $hash does not match the pin" }
+          Expand-Archive -Path pluginval.zip -DestinationPath pluginval -Force
+          $exe = Get-ChildItem -Path pluginval -Recurse -Filter pluginval.exe | Select-Object -First 1
+          if (-not $exe) { throw "pluginval.exe not found in the downloaded archive" }
+          $vst3 = "build/plugin-copilot/KhensuCopilot_artefacts/Release/VST3/Khensu Copilot.vst3"
+          if (-not (Test-Path $vst3)) { throw "Built VST3 not found at $vst3" }
+          $vst3Full = (Resolve-Path $vst3).Path
+          # Two passes, both blocking, as in scripts/verify_all.ps1: the fixed
+          # order, then --randomise (the pass that found "HPF On not restored").
+          foreach ($pass in @(@{ Name = 'fixed'; Extra = @() }, @{ Name = 'random'; Extra = @('--randomise') })) {
+            $out = "pluginval-$($pass.Name)-out.txt"
+            $err = "pluginval-$($pass.Name)-err.txt"
+            $proc = Start-Process -FilePath $exe.FullName -Wait -PassThru -NoNewWindow `
+              -RedirectStandardOutput $out -RedirectStandardError $err `
+              -ArgumentList (@('--strictness-level', '10', '--skip-gui-tests', '--validate-in-process') +
+                             $pass.Extra + @('--validate', "`"$vst3Full`""))
+            Get-Content $out
+            Get-Content $err
+            if ($proc.ExitCode -ne 0) { throw "pluginval ($($pass.Name) order) reported failures (exit $($proc.ExitCode))" }
+          }
+
+      # Whole-app accessibility audit: launches the real app with
+      # --a11y-audit, which visits every screen and lists interactive controls
+      # lacking a spoken name or tooltip (exit 1 on any gap). Clean locally on
+      # 2026-10-10. Non-blocking until it has run green on a hosted runner -
+      # the app also spawns the Python service on launch, which a fresh
+      # runner bootstraps from scratch.
+      - name: Accessibility audit (whole app)
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $exe = "build/desktop-app/KhensuDesktop_artefacts/Release/Khensu Mixing.exe"
+          $report = Join-Path $env:RUNNER_TEMP "a11y-audit.txt"
+          $proc = Start-Process -FilePath $exe -ArgumentList "--a11y-audit=$report" -Wait -PassThru
+          if (Test-Path $report) { Get-Content $report }
+          if ($proc.ExitCode -ne 0) { throw "accessibility audit found gaps (exit $($proc.ExitCode))" }
+
+      # Static analysis (frontend-review-2026-07-17.md P3). Installed via pip
+      # rather than choco/vcpkg so it doesn't depend on the runner image
+      # having it preinstalled or on admin rights to install it.
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
+
+      # Pinned (VER-7): a new cppcheck release adds checks, and an unpinned
+      # install would fail a build nobody changed. Raise it deliberately.
+      - name: Install cppcheck
+        run: pip install cppcheck==1.5.3
+
+      - name: Static analysis (cppcheck)
+        shell: bash
+        run: |
+          CC=$(python -c "import cppcheck, os; print(os.path.join(os.path.dirname(cppcheck.__file__), 'Cppcheck', 'cppcheck.exe'))")
+          "$CC" --error-exitcode=1 --inline-suppr --std=c++17 -j 2 --language=c++ \
+            --suppress=unknownMacro --suppress=normalCheckLevelMaxBranches --suppress=missingIncludeSystem \
+            -I shared-core/include -I desktop-app/Source -I plugin-copilot/Source \
+            desktop-app/Source shared-core/src plugin-copilot/Source
+
+      # Format check (frontend-review-2026-07-17.md P3), scoped to newly
+      # ADDED files only - the existing tree predates .clang-format and
+      # hasn't been reformatted, so checking modified files would fail on
+      # pre-existing style rather than anything this PR/commit introduced.
+      - name: Install clang-format
+        shell: bash
+        run: pip install clang-format==23.1.5
+
+      - name: Format check (new files only)
+        shell: bash
+        run: |
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            echo "No usable base ref for a diff (e.g. first commit on the branch) - skipping."
+            exit 0
+          fi
+          NEW_FILES=$(git diff --diff-filter=A --name-only "$BASE" HEAD -- '*.cpp' '*.h' | grep -v '^tests/' || true)
+          if [ -z "$NEW_FILES" ]; then
+            echo "No newly-added C++ files in this diff."
+            exit 0
+          fi
+          CF=$(python -c "import clang_format, os; print(os.path.join(os.path.dirname(clang_format.__file__), 'data', 'bin', 'clang-format.exe'))")
+          echo "$NEW_FILES" | xargs "$CF" --dry-run --Werror

@@ -1,0 +1,32 @@
+# NOT the dependency source of truth — see pyproject.toml.
+#
+# AQ-06: this file used to hand-mirror the core runtime dependencies from
+# pyproject.toml and silently drifted from it (it was missing jsonschema and
+# mutagen). To make drift impossible there is now exactly one authoritative
+# dependency list — `[project.dependencies]` in pyproject.toml — and this file
+# no longer duplicates it.
+#
+# Install the service (base runtime deps, editable):
+#   pip install -e .
+#
+# Reproducible install matching CI (lock-derived, hash-verified base + dev):
+#   pip install --require-hashes -r requirements-hashed.txt
+#   pip install -e . --no-deps
+#
+# Human-readable base + dev freeze for review/diffing:
+#   requirements-lock.txt
+#
+# Reviewed hash-verified optional extra manifests currently exist for:
+#   requirements-asr-hashed.txt
+#   requirements-copilot-hashed.txt
+#   requirements-onnx-hashed.txt
+#   requirements-ai-detect-hashed.txt
+#   requirements-pitch-hashed.txt    # use from the dedicated .venv311
+#
+# The Demucs stems / ml profile is a separately reviewed Windows x64/Python
+# 3.11 install path: `requirements-stems-hashed.txt` pins the wheels and
+# `packaging/install-optional-stack.ps1` digest-verifies the Demucs source
+# archive. Do not use a generic `pip install -e ".[stems]"` / `.[ml]` route.
+#
+# `-r requirements.txt` intentionally installs nothing so it cannot drift from
+# the authoritative list above.

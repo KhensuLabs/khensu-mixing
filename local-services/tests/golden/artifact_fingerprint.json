@@ -1,0 +1,52 @@
+{
+  "ceiling_lp12k": {
+    "confidence": 0.0,
+    "kinds": [
+      "rvq_ghosting",
+      "rvq_ghosting",
+      "spectral_ceiling",
+      "uniform_noise_floor",
+      "watermark_presence"
+    ],
+    "n_timeline_windows": 2,
+    "timeline_confidences": [
+      0.0,
+      0.0
+    ],
+    "timeline_finding_counts": [
+      4,
+      4
+    ]
+  },
+  "noise_full": {
+    "confidence": 0.0,
+    "kinds": [
+      "uniform_noise_floor",
+      "watermark_presence"
+    ],
+    "n_timeline_windows": 2,
+    "timeline_confidences": [
+      0.0,
+      0.0
+    ],
+    "timeline_finding_counts": [
+      2,
+      2
+    ]
+  },
+  "sine_1k": {
+    "confidence": 0.0,
+    "kinds": [
+      "uniform_noise_floor"
+    ],
+    "n_timeline_windows": 2,
+    "timeline_confidences": [
+      0.0,
+      0.0
+    ],
+    "timeline_finding_counts": [
+      1,
+      1
+    ]
+  }
+}

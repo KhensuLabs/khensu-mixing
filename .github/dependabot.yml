@@ -1,0 +1,23 @@
+version: 2
+updates:
+  # uv.lock is the source of truth (PKG-1). The requirements-*-hashed.txt
+  # exports and runtime-sbom.cdx.json are generated from it, so a Dependabot
+  # PR also needs `python scripts/generate_hashed_requirements.py` run on its
+  # branch before scripts/check_doc_drift.py passes. The old "pip" ecosystem
+  # edited those exports directly and left them out of step with uv.lock.
+  - package-ecosystem: "uv"
+    directory: "/local-services"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

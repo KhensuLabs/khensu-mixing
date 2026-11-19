@@ -1,0 +1,1931 @@
+{
+  "version": "1.9",
+  "note": "SP-16A-D & Phase 1/2: 37 feature entries (23 MVP + 10 audio intelligence + 4 calibration & interactive GUI features) | +9 entries (2026-07-08): built-in DSP effects (Glue Compressor, Tape Saturation, Stereo Widener, Bass Mono Maker, Transient Shaper), Multi-Band Parametric EQ, Interactive EQ Apply, Guided Assistant, Multi-Model Consensus. | +logic_and_math field on measurable entries and +11 entries (2026-07-11): Track Quick Stats, Drum Groove, Stem Taxonomy, Masking & Collision, AI Artifact Detection, Humanize, Deep Humanize, Dynamic De-Esser, Mix Note Colours, What Changed, Intake Progress HUD. | +2 entries and 2 updated (2026-07-16): Mix/Master Card Reorder, Multi-File Intake Queue (new); Deep Humanize (per-stem groove overrides beyond intensity) and What Changed (tree-aware arbitrary baseline + resolved/new mix-note diffing) updated. | +visualization backfill (2026-07-16): ai_artifact_detection, resonance_detection, masking_collision now wired to live session values (previously only 10 of 60 System Brain cards showed any bar/dot indicator). | +1 entry (2026-07-17): Mastering Agent (render->critique->adjust loop, previously undocumented despite being shipped) — added alongside a corpus-scale-up pass (MTG-Jamendo mood-tag overlap ~570->~18k tracks, artifact_model retrained on real MUSDB18/Jamendo audio instead of synthetic bootstrap clips; see corpus_data/README.md for exact outcomes). | +2 entries and 2 updated (2026-07-23): Targeted Humanize (closed-loop, per-tell, stem-aware POST /humanize/targeted) and Recreate Sound / MIDI Variation (new, previously undocumented). AI Artifact Detection updated - now documents the optional learned binary detector (calibration/ECE-gated numeric P(AI)), the per-window confidence timeline, per-service acoustic attribution that survives tag-stripping, and codec-matched training that breaks the source/codec confound. Humanize updated - per-mechanism intensities (timing/level/noise engage independently).",
+  "features": [
+    {
+      "id": "analysis_dashboard",
+      "name": "Analysis Dashboard",
+      "category": "Analysis",
+      "short_description": "Central hub showing all measured properties of your loaded audio.",
+      "detailed_description": "The Analysis Dashboard aggregates every computed metric from the analysis pipeline into a single scrollable view. It shows loudness (LUFS/LRA/true peak), spectral tonal balance, dynamics, stereo field, hook strength, memorability, structural flow, and heaviness — all in one place with visual overlays for genre-specific target ranges. Every panel supports hover/click explainer popups.",
+      "why_it_exists": "Engineers and producers need the full picture of a track before making decisions. Isolating metrics in separate views leads to missed relationships. The dashboard surfaces everything simultaneously with priority-ordered mix notes so the most important issues are always visible first.",
+      "when_to_use": "After loading any audio file. Review before starting vocal mixing, mastering, or style transfer work. Revisit after making changes to confirm improvements.",
+      "inputs": [
+        "Loaded audio session",
+        "Creative target settings",
+        "Analysis pipeline results"
+      ],
+      "tags": [
+        "technical",
+        "visual",
+        "desktop-only",
+        "analysis",
+        "foundational"
+      ],
+      "desktop_location": "Dashboard screen (main navigation, second item)",
+      "plugin_available": false,
+      "related_features": [
+        "mix_notes_checklist",
+        "sonic_fingerprint",
+        "hook_dashboard",
+        "system_brain",
+        "creative_target_system"
+      ]
+    },
+    {
+      "id": "hook_dashboard",
+      "name": "Hook Dashboard",
+      "category": "Musical Psychology",
+      "short_description": "Measures and visualises the strength, density, and type of hooks present in your track.",
+      "detailed_description": "The Hook Dashboard computes multiple hook dimensions across four taxonomic types: Topline hooks (melodic pitch/rhythm/performance/production/lyrical), Backing Track hooks (riff/groove/harmonic/instrumentation/sound design), Structural hooks (verse-chorus contrast/pre-chorus tension/tension-release arcs/repetition strategy), and Compound hooks (hook stacks/multi-hooks/riffs/samples). It displays a timeline of hook density so you can see exactly where hooks are concentrated and where gaps exist. The Salience Radar plots how each hook dimension contributes to overall memorability.",
+      "why_it_exists": "Hook strength is the single most reliable predictor of streaming success and listener retention. Most mix and mastering feedback ignores it entirely. This panel makes hook presence a measurable, improvable quantity with production-specific guidance.",
+      "when_to_use": "When evaluating how catchy or memorable a track feels, when choosing where to strengthen arrangement, or before deciding on vocal production strategy. Most useful after initial analysis when considering creative revisions.",
+      "inputs": [
+        "Deep analysis results from Python service",
+        "Creative target hook emphasis profile",
+        "Genre norms for hook density thresholds"
+      ],
+      "tags": [
+        "musical-psychology",
+        "ai-assisted",
+        "desktop-only",
+        "analysis",
+        "hook-intelligence",
+        "offline-only"
+      ],
+      "desktop_location": "Dashboard screen > Hook Dashboard panel (lower section)",
+      "plugin_available": false,
+      "related_features": [
+        "memorability_panel",
+        "structural_flow_panel",
+        "creative_target_system",
+        "local_analysis_service"
+      ]
+    },
+    {
+      "id": "system_brain",
+      "name": "System Brain",
+      "category": "Discoverability",
+      "short_description": "Interactive feature encyclopedia and capability atlas for the entire Khensu suite.",
+      "detailed_description": "System Brain is a searchable, filterable, category-browsable map of every feature in the desktop application and plugin copilot. Each entry includes: a short description for quick reference, a detailed explanation of what the feature does internally, the reason it exists, when to use it, what analysis results or inputs it depends on, its availability classification (desktop-only / plugin-available / AI-assisted / real-time safe / offline-only / advanced R&D), and links to related features. The feature atlas view shows all features as a visual category grid so you can explore the entire system at a glance.",
+      "why_it_exists": "Professional audio tools are complex. Users should not need to read a 200-page manual to discover features. System Brain makes the entire product explorable interactively, reduces the learning curve for new users, and rewards exploration by expert users discovering features they didn't know existed.",
+      "when_to_use": "Any time you want to understand what a feature does, find a feature by keyword or category, explore how features relate to each other, or understand why a recommendation or metric exists.",
+      "inputs": [
+        "feature_encyclopedia.json resource file (resources/system_brain/)"
+      ],
+      "tags": [
+        "discoverability",
+        "education",
+        "desktop-available",
+        "plugin-available",
+        "non-technical",
+        "foundational"
+      ],
+      "desktop_location": "Main navigation bar — rightmost item (brain icon)",
+      "plugin_available": true,
+      "related_features": [
+        "analysis_dashboard",
+        "hook_dashboard",
+        "recommendation_engine",
+        "creative_target_system"
+      ]
+    },
+    {
+      "id": "creative_target_system",
+      "name": "Creative Target System",
+      "category": "Session Setup",
+      "short_description": "Defines the creative, emotional, and technical intent that shapes every recommendation in the suite.",
+      "detailed_description": "The Creative Target System is a layered set of intent parameters that you set at session intake and can refine at any time: Primary Genre, Sub-Genre, Mood, Emotion, Energy (0–100), BPM, Genre Blend, Era/Style Profile, Playback Intent (Streaming / Club / Broadcast / Headphone / Reference Monitor), Vocal Intent, Mix Philosophy, Mastering Philosophy, Hook Emphasis Profile, Chorus Payoff Profile, Heaviness Profile, and Memorability Intention. These are not just labels — they actively adjust recommendation thresholds, EQ targets, loudness goals, hook scoring weights, heaviness norms, comparison baselines, and genre-specific visual overlays throughout the entire suite. A -14 LUFS master is correct for ambient but wrong for trap. Wide stereo is essential for shoegaze but may hurt mono translation for pop. Without intent context, recommendations would be generic and frequently incorrect.",
+      "why_it_exists": "Every engineering and production decision is relative to the genre, mood, energy, and playback context. The Creative Target System makes this context explicit and computational so every recommendation in the suite can be specific, not generic.",
+      "when_to_use": "Set at session intake before analysis runs. Refine any time — changes immediately update recommendation thresholds and visual target overlays across the entire dashboard. Re-run analysis after significant target changes.",
+      "inputs": [
+        "User selection via Target Setup Panel",
+        "genre_targets.json norms for default threshold values"
+      ],
+      "tags": [
+        "creative",
+        "session-management",
+        "desktop-available",
+        "plugin-available",
+        "foundational",
+        "non-technical"
+      ],
+      "desktop_location": "Session Intake screen > Target Setup Panel; also accessible from Dashboard toolbar (top-right target icon)",
+      "plugin_available": true,
+      "related_features": [
+        "session_intake",
+        "analysis_dashboard",
+        "recommendation_engine",
+        "hook_dashboard",
+        "heaviness_panel",
+        "memorability_panel",
+        "genre_database"
+      ]
+    },
+    {
+      "id": "recommendation_engine",
+      "name": "Recommendation Engine",
+      "category": "Analysis",
+      "short_description": "Generates explainable, genre-aware engineering and production suggestions from your analysis results.",
+      "detailed_description": "The Recommendation Engine processes the full AnalysisResult (loudness, spectral balance, stereo field, dynamics, hook strength, memorability, heaviness, structural flow, artifact detection) against your Creative Target and GenreDatabase norms to produce a prioritized list of actionable suggestions. Every recommendation strictly follows the full explainability schema: what was detected, where and when, how severe on a 0–100 scale with genre context, confidence level and why, most likely cause, why it helps musically or technically, specific suggested parameter ranges, safe-to-auto-apply flag with rationale, trade-offs if applied, BPM/mood/genre relevance, comparison to similar songs, and alternative strategies. Myth guardrails actively scan for and annotate common audio myths (e.g. 'louder masters always win on streaming') to prevent them from surfacing as recommendations.",
+      "logic_and_math": "Per-domain recommenders emit findings with severity = clamp(100*|measured-threshold|/|threshold|, 0, 100), confidence, and a processing-stage/chain-position for ordering. Sorted severity-desc; green Strength notes (severity 0) sort last.",
+      "why_it_exists": "The goal of the suite is not to produce magic one-click results — it is to act as an intelligent senior engineer who explains every decision. The Recommendation Engine makes every AI-assisted suggestion transparent, auditable, and trustworthy. It never pretends there is a single correct answer; it surfaces options with trade-offs.",
+      "when_to_use": "Automatically runs after analysis completes. Results appear in the Mix Notes panel and throughout the Dashboard. Re-run manually after changing Creative Target settings or after re-analysis. Results also feed into the plugin copilot suggestion feed.",
+      "inputs": [
+        "AnalysisResult (all computed metrics)",
+        "CreativeTarget (user-set intent)",
+        "UserPreferenceModel (learned preferences)",
+        "GenreDatabase norms"
+      ],
+      "tags": [
+        "technical",
+        "ai-assisted",
+        "explainable",
+        "desktop-available",
+        "plugin-available",
+        "foundational"
+      ],
+      "desktop_location": "Issues screen (the issue queue); Dashboard > Mix Notes panel; Vocal Workspace > Vocal Analysis panel; Mix/Master Engine > Suggestion List panel",
+      "plugin_available": true,
+      "related_features": [
+        "analysis_dashboard",
+        "mix_notes_checklist",
+        "creative_target_system",
+        "genre_database"
+      ]
+    },
+    {
+      "id": "session_intake",
+      "name": "Session Intake",
+      "category": "Session Setup",
+      "short_description": "Entry point for every session — drag-and-drop audio loading, Creative Target setup, and session persistence.",
+      "detailed_description": "Session Intake is the first screen encountered when opening the application. It accepts audio files via drag-and-drop or a file picker, displays file metadata (sample rate, bit depth, duration, channels), and routes to the Creative Target Setup Panel so intent is established before analysis runs. Sessions are serialised to disk so that the audio path, target settings, and any saved analysis results are restored on next open. Multiple sessions can be saved and switched between without re-loading audio. Intake is step by step: before a file there is only the drop zone (plus recent sessions and trends); after a drop it shows what was detected - genre, key and BPM - with one Confirm genre, Change target... for the full target form, and Create Session. The pipeline controls (genre source, reference track, stage retry, cancel, target overrides) sit under Advanced. A detected genre only drives genre-relative targets once you confirm it or pick a genre yourself.",
+      "why_it_exists": "Analysis without intent produces irrelevant results. Forcing target setup before analysis ensures every metric, overlay, and recommendation is calibrated to the correct genre and playback context from the first run.",
+      "when_to_use": "At the start of every new session. Revisit when loading a different track or changing project context. Session persistence means returning to an existing project picks up exactly where you left off.",
+      "inputs": [
+        "Audio file (drag-and-drop or file picker)",
+        "User-defined Creative Target settings"
+      ],
+      "tags": [
+        "session-management",
+        "foundational",
+        "desktop-only",
+        "non-technical"
+      ],
+      "desktop_location": "Session Intake screen (main navigation, first item)",
+      "plugin_available": false,
+      "related_features": [
+        "creative_target_system",
+        "analysis_dashboard",
+        "genre_database"
+      ]
+    },
+    {
+      "id": "integrated_loudness",
+      "name": "Integrated Loudness (LUFS)",
+      "category": "Analysis",
+      "short_description": "Average perceived loudness of the whole track, in LUFS.",
+      "detailed_description": "Integrated loudness follows ITU-R BS.1770/EBU R128 gating to estimate how loud the master sounds overall. Streaming platforms normalise toward targets near -14 LUFS; club and competitive masters often sit hotter. The dashboard shows the measured value against the genre's target range.",
+      "logic_and_math": "LUFS = BS.1770-4 K-weighted mean loudness (stage-1 shelf +4 dB @ ~1.5 kHz, stage-2 high-pass). Gated: absolute -70 LUFS + relative -10 LU gate. Flagged when outside the genre's [lufs_range_min, lufs_range_max]; severity = clamp(100*|measured-threshold|/|threshold|, 0, 100).",
+      "why_it_exists": "Loudness is the single most consequential delivery decision. Mismatched loudness gets a track turned down (or sounds weak) on the platforms that matter. [Common Misconception: Louder masters always win. In reality, streaming platforms use normalization, so an over-compressed, ultra-loud track will simply be turned down, resulting in a flat, small, and lifeless sound compared to a dynamic, well-balanced master.]",
+      "when_to_use": "Check before export and when matching a reference. Compare against your Creative Target's playback intent.",
+      "inputs": [
+        "Loaded audio session"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "desktop-only",
+        "loudness"
+      ],
+      "desktop_location": "Dashboard screen > Loudness panel",
+      "plugin_available": false,
+      "related_features": [
+        "loudness_range",
+        "true_peak",
+        "peak_to_loudness_ratio",
+        "analysis_dashboard"
+      ],
+      "visualization": {
+        "type": "bar",
+        "min": -30.0,
+        "max": -4.0
+      }
+    },
+    {
+      "id": "loudness_range",
+      "name": "Loudness Range (LRA)",
+      "category": "Analysis",
+      "short_description": "Macro-dynamic span of the track in loudness units (LU), per EBU R128.",
+      "detailed_description": "Loudness Range (LRA) measures the statistical spread of short-term loudness across the track using EBU R128 gating. A high LRA indicates wide dynamic variation between loud and quiet passages; a low LRA indicates a heavily compressed or limited master. Genre norms from the GenreDatabase define the appropriate LRA range — classical and ambient tracks expect LRA > 10 LU; club and hip-hop masters typically target LRA < 6 LU.",
+      "logic_and_math": "LRA (EBU R128) = P95 - P10 of the gated short-term (3 s) loudness distribution, in LU. Flagged outside [lra_range_min, lra_range_max]; low LRA = over-compressed, high = too dynamic for the genre.",
+      "why_it_exists": "LRA quantifies the perceived dynamic expressiveness of a master. Over-compression kills LRA and produces listener fatigue; under-compression produces inconsistent loudness that disrupts narrative flow.",
+      "when_to_use": "When assessing how punchy, dynamic, or compressed a master feels. Compare against genre-specific norms and playback intent before finalising compression and limiting settings.",
+      "inputs": [
+        "Loaded audio session"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "desktop-only",
+        "loudness",
+        "dynamics"
+      ],
+      "desktop_location": "Dashboard screen > Loudness panel",
+      "plugin_available": false,
+      "related_features": [
+        "integrated_loudness",
+        "true_peak",
+        "dynamics_range",
+        "analysis_dashboard"
+      ],
+      "visualization": {
+        "type": "bar",
+        "min": 0.0,
+        "max": 20.0
+      }
+    },
+    {
+      "id": "true_peak",
+      "name": "True Peak (dBTP)",
+      "category": "Analysis",
+      "short_description": "Maximum inter-sample peak level, in dBTP — catches clipping invisible to sample-level meters.",
+      "detailed_description": "True peak uses oversampled (4x or 8x) peak detection per ITU-R BS.1770 to find inter-sample peaks that occur between digital samples and would cause audible distortion after digital-to-analogue conversion or codec encoding. Sample-peak meters miss these; true peak meters do not. Streaming platforms enforce true peak ceilings of -1 dBTP or stricter; exceeding them triggers automatic peak limiting by the platform before delivery.",
+      "logic_and_math": "True peak = 4x-oversampled (polyphase resample) max|x| in dBTP (BS.1770-4). Ceiling -1.0 dBTP for lossy-codec headroom; > -0.3 dBTP = 'will clip after encoding'. inter_sample_overshoot = dBTP - sample-peak dBFS.",
+      "why_it_exists": "Inter-sample clipping is a pervasive mastering error that produces harsh digital distortion on playback systems and lossy codec artefacts. It is not detectable from the waveform view or a standard peak meter.",
+      "when_to_use": "Before finalising any master, especially for streaming delivery. Check after any limiting or saturation processing that may raise inter-sample peaks.",
+      "inputs": [
+        "Loaded audio session"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "desktop-only",
+        "loudness",
+        "clipping",
+        "quality-control"
+      ],
+      "desktop_location": "Dashboard screen > Loudness panel",
+      "plugin_available": false,
+      "related_features": [
+        "integrated_loudness",
+        "peak_to_loudness_ratio",
+        "artifact_detection",
+        "analysis_dashboard"
+      ],
+      "visualization": {
+        "type": "dot",
+        "min": -6.0,
+        "max": 2.0
+      }
+    },
+    {
+      "id": "peak_to_loudness_ratio",
+      "name": "Peak-to-Loudness Ratio (PLR)",
+      "category": "Analysis",
+      "short_description": "Difference between true peak and integrated loudness, quantifying available headroom.",
+      "detailed_description": "PLR = TruePeak (dBTP) − IntegratedLoudness (LUFS). It describes how much headroom exists between the loudest transient and the average perceived loudness. A high PLR (> 14 LU) indicates a dynamic, uncompressed master with natural transient character. A low PLR (< 6 LU) indicates heavy limiting that has brought peaks close to the loudness floor. Streaming normalisation behaviour means low-PLR masters often sound harsh after platform gain reduction.",
+      "logic_and_math": "PLR = sample-peak dBFS - integrated LUFS. 8-16 dB is a healthy dynamic master; < 8 dB indicates heavy limiting.",
+      "why_it_exists": "PLR gives a single headroom metric that explains how streaming normalisation will interact with a master. Mastering purely for LUFS without checking PLR is a common error that degrades perceived quality on normalised platforms.",
+      "when_to_use": "When assessing whether a master has sufficient dynamic headroom for normalised streaming delivery without introducing pumping or harshness artefacts.",
+      "inputs": [
+        "Loaded audio session"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "desktop-only",
+        "loudness",
+        "dynamics"
+      ],
+      "desktop_location": "Dashboard screen > Loudness panel",
+      "plugin_available": false,
+      "related_features": [
+        "integrated_loudness",
+        "true_peak",
+        "loudness_range",
+        "analysis_dashboard"
+      ],
+      "visualization": {
+        "type": "bar",
+        "min": 0.0,
+        "max": 20.0
+      }
+    },
+    {
+      "id": "spectral_balance",
+      "name": "Spectral Balance",
+      "category": "Analysis",
+      "short_description": "Energy distribution across the frequency spectrum — octave bands, low/mid/high ratios, and spectral centroid.",
+      "detailed_description": "Analyses the frequency content of the track across octave bands (sub 20–60 Hz, bass 60–250 Hz, low-mid 250–500 Hz, mid 500–2 kHz, high-mid 2–6 kHz, high 6–12 kHz, air 12–20 kHz). Shows energy percentage per band and computes the spectral centroid (the perceived brightness centre of mass). Overlays genre-specific target curves from the GenreDatabase in a visual curve plot so deviations are immediately visible. Also reports low/mid/high macro balance ratios.",
+      "logic_and_math": "Averaged Hann-windowed |FFT| split into low/mid/high energy fractions (sum = 1). Compared to the genre's low_end_weight +/- 0.2 band; deviation drives the tonal-balance recommendation.",
+      "why_it_exists": "Tonal balance is the most fundamental determinant of mix translation across playback systems. Imbalances cause muddy, harsh, or thin mixes on unfamiliar speakers and are frequently invisible until the track is played outside the studio.",
+      "when_to_use": "When diagnosing tonal issues, comparing a mix to a reference, checking genre fitness, or after any equalisation that may have shifted the tonal balance.",
+      "inputs": [
+        "Loaded audio session",
+        "Creative target genre for overlay thresholds"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "desktop-only",
+        "spectral",
+        "visual"
+      ],
+      "desktop_location": "Dashboard screen > Spectral Balance panel",
+      "plugin_available": false,
+      "related_features": [
+        "analysis_dashboard",
+        "sonic_fingerprint",
+        "recommendation_engine",
+        "genre_database",
+        "heaviness_panel"
+      ],
+      "visualization": {
+        "type": "bar",
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    {
+      "id": "dynamics_range",
+      "name": "Dynamic Range (DR)",
+      "category": "Analysis",
+      "short_description": "Crest factor and EBU DR score quantifying the peak-to-RMS dynamic range.",
+      "detailed_description": "Computes the EBU DR (Dynamic Range) score and crest factor — the ratio between the RMS peak level and the RMS level over a measurement window. High DR indicates a wide short-term dynamic spread with preserved transient character; low DR indicates heavy limiting or brick-wall compression where transients have been attenuated to the noise floor. GenreDatabase norms define appropriate DR per genre — metal and rock typically tolerate DR 6–9; jazz and classical target DR 12+.",
+      "logic_and_math": "Crest factor = 20*log10(peak/RMS) dB. Healthy transient headroom >= 6 dB; < 5 dB warns of squashed dynamics. Dynamic range uses windowed crest distribution.",
+      "why_it_exists": "Over-compressed masters cause listener fatigue, reduce perceived punch, and sound worse after streaming normalisation. Under-limited masters may clip on consumer playback systems with auto gain. DR score calibrates the appropriate compression depth for the genre and intent.",
+      "when_to_use": "When assessing compression depth, comparing to genre-specific DR norms, or diagnosing listener fatigue complaints. Compare against LRA for a complete picture of both macro and micro dynamics.",
+      "inputs": [
+        "Loaded audio session"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "desktop-only",
+        "dynamics",
+        "loudness"
+      ],
+      "desktop_location": "Dashboard screen > Dynamics panel",
+      "plugin_available": false,
+      "related_features": [
+        "loudness_range",
+        "integrated_loudness",
+        "peak_to_loudness_ratio",
+        "analysis_dashboard",
+        "recommendation_engine"
+      ],
+      "visualization": {
+        "type": "bar",
+        "min": 0.0,
+        "max": 24.0
+      }
+    },
+    {
+      "id": "stereo_field",
+      "name": "Stereo Field",
+      "category": "Analysis",
+      "short_description": "Stereo width, correlation, and mid/side energy balance of the master.",
+      "detailed_description": "Analyses the stereo image by computing width (side-to-mid energy ratio), Pearson correlation coefficient between left and right channels, and M/S energy balance across frequency bands. A correlation near +1 means the mix is effectively mono; values near 0 indicate significant stereo width; negative values indicate polarity issues that cause cancellation in mono. Also reports low-frequency mono compatibility — excessive side energy below 100 Hz causes bass loss on mono playback systems.",
+      "logic_and_math": "Width from mid/side RMS: side=(L-R)/2, mid=(L+R)/2; width scaled 0 (mono) .. 1 (wide). Compared to genre [stereo_width_min, max].",
+      "why_it_exists": "Stereo image determines translation to mono playback (clubs, phones, PA systems), headphone experience quality, and genre-appropriate spaciousness. Too wide with low correlation causes mono cancellation; too narrow loses immersion and may sound unprofessional in context.",
+      "when_to_use": "When diagnosing mono compatibility issues, checking low-frequency stereo content, assessing immersion quality for headphone listening, or before club or broadcast delivery.",
+      "inputs": [
+        "Loaded audio session"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "desktop-only",
+        "stereo",
+        "visual"
+      ],
+      "desktop_location": "Dashboard screen > Stereo Field panel",
+      "plugin_available": false,
+      "related_features": [
+        "phase_correlation",
+        "translation_preview",
+        "analysis_dashboard",
+        "recommendation_engine"
+      ],
+      "visualization": {
+        "type": "bar",
+        "min": 0.0,
+        "max": 1.0
+      }
+    },
+    {
+      "id": "phase_correlation",
+      "name": "Phase Correlation",
+      "category": "Analysis",
+      "short_description": "Channel polarity and phase relationship analysis for mono compatibility and comb filtering detection.",
+      "detailed_description": "Measures the phase correlation coefficient between left and right channels on a continuous scale from -1 (fully out of phase — complete mono cancellation) to +1 (fully in phase — mono equivalent). Values below +0.5 indicate potential mono compatibility issues. Also performs frequency-domain phase analysis to detect comb filtering patterns — characteristic notch-and-peak spectral shapes caused by misaligned multi-mic recordings, parallel processing with offset delays, or stereo widening plugins introducing time-based artifacts.",
+      "logic_and_math": "Pearson correlation of L/R over the track, [-1, 1]. > 0 mono-safe; < 0 flags polarity/cancellation risk (energy lost when summed to mono).",
+      "why_it_exists": "Phase cancellation causes partial or complete energy loss when a mix is summed to mono, directly harming playback on phones, club PA systems, broadcast, and some streaming device outputs. Comb filtering impairs clarity and translation even in stereo.",
+      "when_to_use": "When checking mono compatibility before club or broadcast delivery, troubleshooting hollow or thin stereo mixes, diagnosing unusual spectral shapes in the balance panel, or reviewing multi-mic source material.",
+      "inputs": [
+        "Loaded audio session"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "desktop-only",
+        "stereo",
+        "mono-compatibility"
+      ],
+      "desktop_location": "Dashboard screen > Stereo Field panel",
+      "plugin_available": false,
+      "related_features": [
+        "stereo_field",
+        "translation_preview",
+        "analysis_dashboard",
+        "artifact_detection"
+      ],
+      "visualization": {
+        "type": "bar",
+        "min": -1.0,
+        "max": 1.0
+      }
+    },
+    {
+      "id": "artifact_detection",
+      "name": "Artifact Detection",
+      "category": "Analysis",
+      "short_description": "Scans for digital clipping, elevated noise floors, and AI/codec processing artefacts.",
+      "detailed_description": "Runs a multi-stage artefact scan across the loaded audio: (1) Sample-level clipping detection — counts clipped samples and clusters them into burst events with timestamps; (2) Noise floor analysis — measures the noise floor dB level in silent or near-silent passages and flags elevated background noise from analogue sources, noisy interfaces, or processing chains; (3) AI and codec artefact detection — detects spectral smearing, pre-ringing, quantisation noise patterns, and metallic shimmer characteristic of neural audio models (stem separators, AI enhancers) and lossy codec encoding. All detections are time-stamped for direct navigation to the artefact location.",
+      "logic_and_math": "Clipping census = runs of >= 2 consecutive samples at |x| >= 0.999 (single full-scale samples are honest limiting, not truncation). DC offset = mean(x).",
+      "why_it_exists": "Artefacts undermine perceived quality regardless of how good the mix decisions are. Many artefacts are subtle enough to be missed during a focused session but are immediately audible to fresh ears or on different playback systems. AI-generated artefacts have become increasingly common as stem separation tools enter standard workflows.",
+      "when_to_use": "On every import, and especially when working with audio that has been through AI stem separation, heavy limiting, analogue tape transfers, or multiple generations of lossy encoding.",
+      "inputs": [
+        "Loaded audio session"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "desktop-only",
+        "quality-control",
+        "ai-assisted"
+      ],
+      "desktop_location": "Dashboard screen > Artifact Detection panel",
+      "plugin_available": false,
+      "related_features": [
+        "true_peak",
+        "phase_correlation",
+        "translation_preview",
+        "analysis_dashboard"
+      ]
+    },
+    {
+      "id": "translation_preview",
+      "name": "Translation Preview",
+      "category": "Analysis",
+      "short_description": "Heuristic simulation of how the mix translates to mono, phone, car, and club playback contexts.",
+      "detailed_description": "Applies heuristic frequency response profiles to simulate four common real-world playback contexts: Mono (channels summed, full stereo width removed), Phone (small speaker response with limited bass extension and reduced high-frequency reach), Car (dashboard speaker response with significant mid-frequency emphasis and positional listening acoustics), and Club (large PA system response with substantial sub-bass reinforcement and distance-induced high-frequency roll-off). Simulations in the MVP are filter-based rather than impulse response convolutions — they approximate the character of each context rather than emulating a specific system model.",
+      "why_it_exists": "The majority of commercial streams are consumed on phones and in cars, not on studio monitors. Production decisions that work perfectly in the studio often cause significant translation failures on real-world systems. Hearing the simulation inline during session work closes this feedback loop without requiring external speaker switching.",
+      "when_to_use": "After major mixing or mastering decisions, before finalising a master, and when comparing competing mix approaches. Identify which translation context causes the most significant degradation to prioritise fixes.",
+      "inputs": [
+        "Loaded audio session"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "desktop-only",
+        "translation",
+        "visual"
+      ],
+      "desktop_location": "Dashboard screen > Translation Preview panel",
+      "plugin_available": false,
+      "related_features": [
+        "stereo_field",
+        "phase_correlation",
+        "spectral_balance",
+        "analysis_dashboard"
+      ]
+    },
+    {
+      "id": "sonic_fingerprint",
+      "name": "Sonic Fingerprint",
+      "category": "Analysis",
+      "short_description": "Six-axis radar snapshot of the track's sonic character: brightness, warmth, width, density, punch, and air.",
+      "detailed_description": "Aggregates six perceptual dimensions into a single radar/spider chart visualisation calibrated against genre norms from the GenreDatabase: Brightness (spectral centroid + high-band energy percentage), Warmth (low-mid energy + harmonic saturation character), Width (stereo field width + phase correlation), Density (inverse of dynamic range + spectral complexity), Punch (transient sharpness + short-term dynamic contrast), and Air (12 kHz+ presence + harmonic shimmer). Each axis is expressed as a genre-relative score (0–100) so the chart shows sonic character deviation from genre norms, not raw physical measurements. This makes cross-track and cross-genre comparison meaningful.",
+      "why_it_exists": "Producers and A&R need to communicate and evaluate sound character quickly without reading six separate metric panels. The fingerprint radar makes a track's sonic identity legible in seconds and immediately reveals which character dimensions are strong, weak, or mismatched against genre expectations.",
+      "when_to_use": "When evaluating the overall sonic identity of a track, comparing to reference tracks, communicating character in creative briefs, or identifying which perceptual dimensions need strengthening.",
+      "inputs": [
+        "Loaded audio session",
+        "Genre norms for axis calibration"
+      ],
+      "tags": [
+        "technical",
+        "visual",
+        "analysis",
+        "desktop-only",
+        "musical-psychology"
+      ],
+      "desktop_location": "Dashboard screen > Sonic Fingerprint panel",
+      "plugin_available": false,
+      "related_features": [
+        "spectral_balance",
+        "stereo_field",
+        "dynamics_range",
+        "analysis_dashboard",
+        "creative_target_system"
+      ]
+    },
+    {
+      "id": "memorability_panel",
+      "name": "Memorability Panel",
+      "category": "Musical Psychology",
+      "short_description": "Scores overall track memorability, earworm likelihood, and melodic salience.",
+      "detailed_description": "Combines three measured components into a composite Memorability Score (0-1, shown as 0-100). Earworm likelihood (50% of the score) is hook strength x melody salience, where melody salience is the mean strength of the detected topline and compound hooks. Structural predictability (30%) comes from the sequence of section labels: 1.0 for a common pop pattern (ABAB, AABA-style recurrence and similar), 0.6 when any section recurs, 0.3 when none does. A tempo prior (20%) is a Gaussian centred on 120 BPM (sigma 40) applied to the octave-folded quarter-note tempo: 120 BPM -> 1.0, 80 -> 0.61, 170 -> 0.46, floored at 0.1. It does not analyse lyrics, interval patterns, syncopation or harmonic surprise; the scores are heuristics, not a validated model of listener recall.",
+      "why_it_exists": "Memorability is the primary driver of streaming replays, word-of-mouth spread, and long-term artist recognition — yet most mix and mastering feedback focuses exclusively on technical qualities and ignores the psychological dimension entirely. Making memorability measurable and improvable fills this gap.",
+      "when_to_use": "When evaluating arrangement and production choices, comparing to commercial references in the same genre, or deciding whether a pre-chorus or hook section needs strengthening. Most informative after the arrangement is structurally complete.",
+      "inputs": [
+        "Deep analysis results from Python service",
+        "Creative target hook emphasis profile"
+      ],
+      "tags": [
+        "musical-psychology",
+        "ai-assisted",
+        "desktop-only",
+        "hook-intelligence",
+        "analysis"
+      ],
+      "desktop_location": "Dashboard screen > Memorability panel",
+      "plugin_available": false,
+      "related_features": [
+        "hook_dashboard",
+        "structural_flow_panel",
+        "creative_target_system",
+        "recommendation_engine",
+        "local_analysis_service"
+      ]
+    },
+    {
+      "id": "structural_flow_panel",
+      "name": "Structural Flow Panel",
+      "category": "Musical Psychology",
+      "short_description": "Section timeline showing arrangement structure and arc quality scores.",
+      "detailed_description": "Splits the song into sections from the Python analysis service (8-bar chunks on the detected meter, clustered by timbre and labelled A, B, C...; repeats share a letter - sections are not named verse or chorus). Renders a horizontal timeline with section labels and relative energy levels, plus an Arc Quality score: it starts at 1.0 and loses 0.25 each when every section has the same label, when the opening section is at least as loud (RMS) as the most-repeated section (taken as the chorus), and when the closing section is too. It is a coarse contrast check, not a genre-specific arc template.",
+      "why_it_exists": "Arrangement structure is the skeleton of listener engagement. A weak arc — flat energy, underpowered chorus, or missing pre-chorus tension — is one of the most common reasons commercially viable productions still feel flat or fail to hold listener attention past the 30-second mark.",
+      "when_to_use": "When evaluating overall arrangement effectiveness, identifying sections with insufficient energy contrast, deciding where to add or remove arrangement elements, or before presenting a track to A&R or collaborators.",
+      "inputs": [
+        "Deep analysis results from Python service",
+        "Creative target genre for structural pattern norms"
+      ],
+      "tags": [
+        "musical-psychology",
+        "ai-assisted",
+        "desktop-only",
+        "visual",
+        "analysis"
+      ],
+      "desktop_location": "Dashboard screen > Structural Flow panel",
+      "plugin_available": false,
+      "related_features": [
+        "hook_dashboard",
+        "memorability_panel",
+        "creative_target_system",
+        "local_analysis_service"
+      ]
+    },
+    {
+      "id": "heaviness_panel",
+      "name": "Heaviness Panel",
+      "category": "Musical Psychology",
+      "short_description": "Distortion content, low-end weight, mix clarity, and genre-relative extremity score.",
+      "detailed_description": "Measures four heaviness axes and scores each 0–100 calibrated against the genre's typical heaviness profile from the GenreDatabase: Distortion (harmonic distortion content + saturation density in the signal), Weight (sub-bass and bass energy + transient thickness + perceived low-end mass), Clarity (spectral separation between frequency bands + mid-frequency definition — inversely correlated with perceived heaviness), and Extremity (composite deviation from all three genre norms, indicating how far outside typical genre territory the track sits on the heaviness spectrum). A hip-hop master with a high heaviness score is not judged by metal production norms.",
+      "why_it_exists": "Heaviness is a core sonic-identity dimension in many contemporary genres. Mixes that are tonally too clean feel weak and uncommitted in genre context; mixes that push too heavy lose clarity, translation quality, and commercial accessibility. Genre-calibrated scoring makes heaviness a quantifiable production parameter.",
+      "when_to_use": "When mixing or mastering music with significant weight, distortion, or low-end content. When targeting a specific heaviness aesthetic or comparing against genre norms. When deciding whether to add saturation, sub reinforcement, or clarity-focused processing.",
+      "inputs": [
+        "Loaded audio session",
+        "Creative target genre heaviness profile"
+      ],
+      "tags": [
+        "musical-psychology",
+        "analysis",
+        "desktop-only",
+        "technical"
+      ],
+      "desktop_location": "Dashboard screen > Heaviness panel",
+      "plugin_available": false,
+      "related_features": [
+        "spectral_balance",
+        "dynamics_range",
+        "sonic_fingerprint",
+        "creative_target_system",
+        "analysis_dashboard"
+      ]
+    },
+    {
+      "id": "mix_notes_checklist",
+      "name": "Mix Notes Checklist",
+      "category": "Analysis",
+      "short_description": "Prioritized, explainable engineering and production recommendations from the full analysis.",
+      "detailed_description": "Aggregates all findings from the analysis pipeline (loudness, spectral balance, dynamics, stereo field, artifact detection, heaviness, hook strength, memorability) into a prioritized checklist of actionable mix and mastering recommendations. Each note includes: the specific detected issue, its severity score (0–100), confidence level with reasoning, most likely cause, specific suggested fix with parameter ranges, and a plain-language explanation of why it matters in the context of the genre and creative target. Notes are sorted by impact score. Completed notes can be checked off to track session progress. The checklist reflects the Recommendation Engine output and updates automatically after re-analysis or target changes.",
+      "why_it_exists": "Engineers need a single ordered task list rather than scanning multiple metric panels for issues. Priority ordering ensures the most impactful issues are addressed first and prevents productive sessions from getting lost in low-severity details.",
+      "when_to_use": "After initial analysis to plan the session workflow. Revisit after each round of processing changes to verify improvement and discover remaining issues. Use as the primary session progress tracker.",
+      "inputs": [
+        "AnalysisResult (all computed metrics)",
+        "Creative target settings",
+        "Recommendation Engine output"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "explainable",
+        "desktop-only",
+        "visual"
+      ],
+      "desktop_location": "Dashboard screen > Mix Notes panel (Apply / Mark done / Dismiss go through the Issue Queue)",
+      "plugin_available": false,
+      "related_features": [
+        "recommendation_engine",
+        "analysis_dashboard",
+        "creative_target_system"
+      ]
+    },
+    {
+      "id": "genre_database",
+      "name": "Genre Database",
+      "category": "Foundational",
+      "short_description": "Genre-specific norm library that drives all target-relative thresholds, overlays, and comparisons.",
+      "detailed_description": "A structured JSON database of genre profiles organised as a primary genre → sub-genre hierarchy. Each profile contains: target LUFS range, LRA norms, typical crest factor (DR) values, spectral balance curves (octave-band energy targets), stereo width expectations, heaviness axis profiles (distortion/weight/clarity), hook density norms, structural arc templates (section order and relative energy shapes), memorability benchmarks, and genre-appropriate creative target defaults. All analysis panel overlays, recommendation severity thresholds, sonic fingerprint axis calibrations, and Creative Target System defaults reference the GenreDatabase. Ships with norms for 40+ genres derived from analysis of commercial releases.",
+      "why_it_exists": "Every metric in the suite is contextually meaningless without genre comparison. A -8 LUFS track is appropriate for competitive metal mastering but extreme for ambient or jazz. The GenreDatabase makes all comparisons contextually valid and prevents recommendations from being generic or genre-inappropriate.",
+      "when_to_use": "Automatically consulted by every analysis metric and recommendation. Manually browsable when researching what norms apply to a specific genre or sub-genre, or when configuring a custom Creative Target.",
+      "inputs": [
+        "genre_targets.json resource file"
+      ],
+      "tags": [
+        "foundational",
+        "technical",
+        "desktop-only",
+        "data"
+      ],
+      "desktop_location": "Internal (not directly user-facing); accessed via Creative Target System and all analysis panel overlays",
+      "plugin_available": false,
+      "related_features": [
+        "creative_target_system",
+        "recommendation_engine",
+        "analysis_dashboard",
+        "spectral_balance",
+        "sonic_fingerprint"
+      ]
+    },
+    {
+      "id": "local_analysis_service",
+      "name": "Local Analysis Service",
+      "category": "Infrastructure",
+      "short_description": "Optional Python FastAPI sidecar providing deep analysis — beat, key, structure, and hook detection.",
+      "detailed_description": "A locally-running Python FastAPI microservice that provides advanced audio analysis beyond what is feasible in real-time C++ without shipping a Python runtime: beat grid and tempo tracking (beat-synchronous analysis frame alignment), musical key detection, section segmentation (8-bar chunks on the detected meter, clustered by timbre and labelled with letters - A, B, C... - so repeats share a letter; it does not name sections intro / verse / chorus), hook density analysis across taxonomic hook types, and vocal presence detection. The service runs on localhost and is queried over HTTP by the desktop application. It is entirely optional — core loudness, spectral, dynamics, and stereo analysis run entirely in-process in C++ with no service dependency. When the service is unavailable, features that depend on deep analysis (Hook Dashboard, Structural Flow Panel, Memorability Panel) display a service-unavailable indicator rather than failing silently.",
+      "why_it_exists": "Beat, key, and structural analysis require ML models (librosa, essentia, Python scientific stack) that are impractical to compile or ship as native JUCE components. A sidecar service architecture keeps the C++ core lightweight and dependency-free while unlocking AI-assisted musical psychology features for users who run the service.",
+      "when_to_use": "Start the service before loading a session when you need hook intelligence, structural flow, or memorability analysis. The desktop application detects service availability automatically on startup and after audio load. Not required for loudness, spectral, dynamics, stereo, or artefact analysis.",
+      "inputs": [
+        "Audio file path (sent over HTTP to the service)",
+        "Analysis request parameters"
+      ],
+      "tags": [
+        "infrastructure",
+        "ai-assisted",
+        "desktop-only",
+        "offline-only",
+        "advanced"
+      ],
+      "desktop_location": "Not directly visible; status shown in Dashboard toolbar (service health indicator dot)",
+      "plugin_available": false,
+      "related_features": [
+        "hook_dashboard",
+        "structural_flow_panel",
+        "memorability_panel",
+        "analysis_dashboard"
+      ]
+    },
+    {
+      "id": "processing_stage_attribution",
+      "name": "Processing Stage Attribution",
+      "category": "Recommendation Engine",
+      "short_description": "Every recommendation now tells you exactly which production stage should address it — arrangement, mix channel, mix bus, master, or monitoring.",
+      "detailed_description": "SP-16A introduces a ProcessingStage enum that classifies every recommendation by where in the production chain it should be addressed: Arrangement (composition and arrangement decisions), SoundDesign (synthesis and sound selection), Edit (comping, timing, tuning), MixChannel (individual channel processing), MixBus (group bus or sub-mix processing), Master (mastering chain), and Monitoring (room or monitoring environment). Each recommendation also carries a chain_position integer so that recommendations within the same stage are ordered — low numbers mean 'fix this first'. A taste flag (is_taste_decision) distinguishes objective technical problems from subjective stylistic suggestions. And a how_to_verify string provides a specific listening test the engineer can perform to confirm the fix worked.",
+      "why_it_exists": "Without stage attribution, engineers don't know whether a recommendation should be addressed on a channel insert, a group bus, or in mastering. Mixing a bass heavy recommendation as a master move, when it should be addressed on the bass channel, produces sub-optimal results and can damage other elements. Stage attribution closes this gap.",
+      "when_to_use": "Visible on every recommendation card in the Mix Notes panel, Suggestion Feed Panel (plugin), and any future recommendation list views. Filter by stage to see only mix bus issues, or only mastering issues, without noise from other stages.",
+      "inputs": [
+        "Recommendation struct (stage, chain_position, is_taste_decision, how_to_verify fields)",
+        "ProcessingStage enum"
+      ],
+      "tags": [
+        "technical",
+        "recommendation-engine",
+        "desktop-available",
+        "plugin-available",
+        "sp16a"
+      ],
+      "desktop_location": "Dashboard > Mix Notes panel > each recommendation card (stage badge + chain order number)",
+      "plugin_available": true,
+      "related_features": [
+        "recommendation_engine",
+        "mix_report",
+        "contradiction_detection"
+      ]
+    },
+    {
+      "id": "mix_report",
+      "name": "Mix Report",
+      "category": "Recommendation Engine",
+      "short_description": "A complete, structured output from the recommendation engine — readiness score, contradiction list, no-action evidence, and prioritised suggestions.",
+      "detailed_description": "SP-16B introduces MixReport, a rich output wrapper that replaces the simple flat recommendation list with a structured report object. A MixReport contains: (1) All recommendations, sorted by severity then chain_position. (2) A mastering_readiness_score from 0–100 and a readiness label ('Ready for mastering', 'Near-ready', 'Mix fixes needed', 'Major issues') computed from headroom, crest factor, low-end clarity, stereo correlation, and count of critical mix-stage issues. (3) A no_action_needed list — explicit measurement evidence for every dimension that passed ('Integrated LUFS: -12.0 LUFS — within Pop range [-14, -8]. No action needed.'). (4) A conflicts list of ConflictPair entries marking recommendations that contradict each other so the engineer knows to resolve the conflict before acting. (5) Confidence-threshold filtering — set a minimum confidence on your CreativeTarget to suppress low-certainty suggestions.",
+      "why_it_exists": "A flat list of recommendations is useful but incomplete. Engineers also need to know: which suggestions conflict with each other, which dimensions are already healthy (to avoid over-engineering), how far the mix is from mastering readiness, and which suggestions to trust. MixReport surfaces all of this in a single structured object.",
+      "when_to_use": "Automatically produced every time analysis runs. Accessible from the Mix/Master Engine screen and the plugin copilot. The mastering readiness score is visible in the Dashboard header. Contradiction warnings appear inline on conflicting recommendation cards.",
+      "inputs": [
+        "RecommendationEngine::generateReport(AnalysisResult, GenreEntry, CreativeTarget)",
+        "MixReportBuilder (applies contradiction detection, chain ordering, readiness scoring)"
+      ],
+      "tags": [
+        "technical",
+        "recommendation-engine",
+        "desktop-available",
+        "plugin-available",
+        "sp16b"
+      ],
+      "desktop_location": "Mix/Master Engine screen > Report panel; Dashboard > Mix Notes panel header (readiness score badge)",
+      "plugin_available": true,
+      "related_features": [
+        "recommendation_engine",
+        "processing_stage_attribution",
+        "contradiction_detection",
+        "mastering_readiness_score"
+      ]
+    },
+    {
+      "id": "contradiction_detection",
+      "name": "Contradiction Detection",
+      "category": "Recommendation Engine",
+      "short_description": "Automatically flags pairs of recommendations that contradict each other so you don't waste time acting on conflicting advice.",
+      "detailed_description": "The MixReportBuilder runs a post-pass contradiction detection step using a static conflict matrix. Known conflicting pairs include: lufs_too_loud vs. lufs_too_quiet (mutually exclusive loudness direction), centroid_too_bright vs. centroid_too_dark (contradictory spectral balance), low_end_heavy vs. low_end_light, over_compressed vs. under_compressed, stereo_too_narrow vs. stereo_too_wide, and cross-domain pairs like stereo_too_narrow + phase_issue (widening stereo worsens existing phase issues). When a conflict is detected, both recommendations are flagged with each other's IDs in their conflicts_with field, and a ConflictPair entry is added to the MixReport. The UI surfaces this as a warning badge on the conflicting recommendations.",
+      "why_it_exists": "Two true observations can suggest contradictory actions. If both fire without qualification, an engineer may spend time acting on advice that cancels itself out. Explicit contradiction markers let the engineer understand that they need to resolve a tension, not blindly follow both suggestions.",
+      "when_to_use": "Visible in the Mix Notes panel as warning badges on conflicting recommendation pairs. The MixReport.conflicts list is also available for programmatic use.",
+      "inputs": [
+        "MixReportBuilder conflict matrix (static table of known conflicting code pairs)"
+      ],
+      "tags": [
+        "technical",
+        "recommendation-engine",
+        "desktop-available",
+        "plugin-available",
+        "sp16b"
+      ],
+      "desktop_location": "Dashboard > Mix Notes panel > conflicting recommendation cards (yellow warning badge + 'Conflicts with' tooltip)",
+      "plugin_available": true,
+      "related_features": [
+        "mix_report",
+        "recommendation_engine",
+        "processing_stage_attribution"
+      ]
+    },
+    {
+      "id": "mastering_readiness_score",
+      "name": "Mastering Readiness Score",
+      "category": "Recommendation Engine",
+      "short_description": "A 0–100 score indicating how prepared your mix is for mastering, with a plain-English readiness label.",
+      "detailed_description": "The MixReportBuilder computes a mastering readiness score from 5 weighted components: (1) Headroom — true peak vs. genre ceiling (0–25 penalty for clipping). (2) Crest factor — whether transient headroom is sufficient (0–20 penalty for crushed dynamics). (3) Low-end clarity — how well the spectral balance_low matches the genre target (0–20 penalty for excess or deficit). (4) Stereo health — correlation coefficient as proxy for phase and mono compatibility (0–15 penalty for poor correlation). (5) Critical mix-stage issues — count of MixChannel/MixBus recommendations with severity ≥ 60 (5 pts each, max 20). The composite score maps to four labels: 85–100 = 'Ready for mastering', 70–84 = 'Near-ready — address critical issues first', 50–69 = 'Mix fixes needed before mastering', 0–49 = 'Major issues — mastering will not fix these'.",
+      "logic_and_math": "Weighted blend of category scores (loudness/dynamics/spectral/stereo/artifacts); each category = 100 - clamp(mean severity of its stage recommendations, 0, 100). Strength notes (severity 0) are excluded.",
+      "why_it_exists": "Mastering a mix with significant unresolved mix issues produces a master with permanent baked-in problems. The readiness score makes the go/no-go decision explicit and computational, preventing engineers from mastering prematurely.",
+      "when_to_use": "Check before starting mastering. If the score is below 70, address the flagged mix issues first. The score updates every time analysis is re-run.",
+      "inputs": [
+        "MixReport (from MixReportBuilder)",
+        "AnalysisResult (true_peak_dbtp, crest_factor_db, balance_low, stereo.correlation)",
+        "GenreEntry (true_peak_max, low_end_weight)"
+      ],
+      "tags": [
+        "technical",
+        "mastering",
+        "recommendation-engine",
+        "desktop-available",
+        "plugin-available",
+        "sp16b"
+      ],
+      "desktop_location": "Dashboard header (readiness badge); Mix/Master Engine screen (full score breakdown)",
+      "plugin_available": true,
+      "related_features": [
+        "mix_report",
+        "recommendation_engine",
+        "processing_stage_attribution"
+      ]
+    },
+    {
+      "id": "harshness_detection",
+      "name": "Harshness Detection",
+      "category": "Analysis",
+      "short_description": "Detects elevated 2.5–5 kHz energy that causes listener fatigue, and identifies the dominant harsh frequency.",
+      "detailed_description": "SP-16C adds a harshness analysis pass that measures the ratio of upper-mid energy (2.5–5 kHz) to the overall mid band (500 Hz–8 kHz) using zero-phase bandpass filtering. The result is a harshness_score from 0–1, where values above 0.35 fire the HarshessRecommender (stage: Master, chain_position: 7). When the score exceeds 0.2, the dominant harsh frequency is identified via magnitude spectrum peak detection in the 2.5–5 kHz band and stored as harshness.peak_hz + harshness.peak_db in AnalysisResult. The recommendation includes the specific frequency, a suggested EQ cut depth (starting at 2–3 dB), and a concrete listening verification test ('Listen on consumer earbuds for 90 seconds — if fatigue sets in before 90s, harshness persists').",
+      "logic_and_math": "Energy ratio in the 2-5 kHz ear-fatigue band vs broadband, mapped to a 0-100 score; < 35 comfortable. Sustained high band ratio => harsh.",
+      "why_it_exists": "The 2.5–5 kHz range is the most fatiguing to human hearing in extended listening sessions. Over-represented energy in this zone is one of the most common reasons listeners abandon tracks before the chorus. Explicit harshness detection and localization helps engineers identify and address this without guesswork.",
+      "when_to_use": "Automatically computed as part of the /analyze/extended Python analysis pass. Visible in the Mix Notes panel if harshness is detected. Also surfaced in the Analysis Dashboard spectral section.",
+      "inputs": [
+        "Audio file (via /analyze/extended endpoint)",
+        "numpy/scipy bandpass filtering at 2.5–5 kHz"
+      ],
+      "tags": [
+        "technical",
+        "spectral",
+        "analysis",
+        "ai-assisted",
+        "desktop-only",
+        "sp16c"
+      ],
+      "desktop_location": "Dashboard > Spectral Balance panel > Harshness indicator (if detected); Mix Notes panel as HarshessRecommender output",
+      "plugin_available": false,
+      "related_features": [
+        "translation_risk",
+        "mono_compatibility_analysis",
+        "recommendation_engine",
+        "local_analysis_service"
+      ],
+      "visualization": {
+        "type": "percentile",
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    {
+      "id": "mono_compatibility_analysis",
+      "name": "Mono Compatibility Analysis",
+      "category": "Analysis",
+      "short_description": "Per-band stereo correlation analysis showing exactly which frequency range has mono compatibility problems.",
+      "detailed_description": "SP-16C adds per-band stereo correlation analysis across 5 frequency bands: Sub (20–80 Hz), Bass (80–250 Hz), Midrange (250–2000 Hz), Upper-mid (2–6 kHz), and Air (6–20 kHz). Each band is isolated with a zero-phase Butterworth bandpass filter and the left-right correlation is computed per band. Additionally, a low_end_stereo_pct metric measures how much of the sub+bass energy is uncorrelated (stereo) content — values above 30% fire the MonoCompatRecommender (stage: MixBus, chain_position: 6). The recommendation includes specific advice: use a mid-side EQ or bass mono plugin below 100–120 Hz, or reduce stereo processing on the problem band.",
+      "logic_and_math": "Per-band L/R correlation below ~120 Hz; low-end stereo % = share of sub energy that is decorrelated. < 20% keeps bass mono-solid on club/vinyl/phone systems that sum low frequencies.",
+      "why_it_exists": "Broad stereo correlation measurements miss the critical distinction that wide sub-bass and wide air are very different problems. Sub-bass going wide loses energy and punch in mono playback (phones, club PA). Air going wide is usually harmless or desirable. Per-band analysis gives the engineer the specific problem frequency rather than a vague 'you have a phase issue'. [Common Misconception: Mono compatibility doesn't matter in the era of stereo playback systems. In reality, most consumer playback devices — including club PA systems, smartphones, smart speakers, and laptops — sum the low end or the entire signal to mono, causing severe phase cancellation and loss of bass punch if the low end is wide.]",
+      "when_to_use": "After mixing any track with stereo-processed bass elements, stereo saturation, or stereo reverb. Check before mixing down and before mastering. Critical for club/DJ mixes.",
+      "inputs": [
+        "Audio file stereo content (via /analyze/extended)",
+        "scipy butter bandpass + correlation per band"
+      ],
+      "tags": [
+        "technical",
+        "stereo",
+        "analysis",
+        "ai-assisted",
+        "desktop-only",
+        "sp16c"
+      ],
+      "desktop_location": "Dashboard > Stereo Field panel > Mono Compatibility section (per-band correlation bars)",
+      "plugin_available": false,
+      "related_features": [
+        "harshness_detection",
+        "translation_risk",
+        "recommendation_engine",
+        "local_analysis_service"
+      ],
+      "visualization": {
+        "type": "percentile",
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    {
+      "id": "translation_risk",
+      "name": "Translation Risk Scoring",
+      "category": "Analysis",
+      "short_description": "Per-environment risk scores (0–1) showing how well your mix will translate to earbuds, phone speakers, car audio, and club PA.",
+      "detailed_description": "SP-16C introduces translation risk scoring across 5 playback environments: Studio (full-range reference), Earbuds (penalises harsh upper-mid > 3 kHz and missing sub below 80 Hz), Phone speaker (penalises muddy low-mid, excess bass, and wide stereo that collapses poorly in mono), Car (penalises weak low-end and over-compression that removes dynamics perception), Club PA (penalises weak sub below 80 Hz and uncorrelated sub). Each risk score is 0–1, where 1 = high risk of poor translation. Scores above 0.6 fire the TranslationRiskRecommender for that environment (stage: MixBus, chain_position: 6). The computation draws on mono_compat data, spectral centroid, balance_low, crest factor, and LRA.",
+      "why_it_exists": "Most mixes are heard on phones, earbuds, or laptop speakers — not studio monitors. A mix that sounds perfect on reference monitoring can sound thin, harsh, or muddy on consumer devices. Translation risk scoring surfaces these issues before the mix is printed, while there is still time to address them.",
+      "when_to_use": "After completing a mix and before final export. Check the per-environment risk scores to identify which playback contexts have the highest risk. Prioritise the most common playback context for the target audience.",
+      "inputs": [
+        "MonoCompatData (per_band_correlation, low_end_stereo_pct)",
+        "SpectralData (centroid_hz, balance_low)",
+        "DynamicsData (crest_factor_db, lra)"
+      ],
+      "tags": [
+        "technical",
+        "translation",
+        "analysis",
+        "ai-assisted",
+        "desktop-only",
+        "sp16c"
+      ],
+      "desktop_location": "Dashboard > Stereo Field panel > Translation Risk section (5 environment bars)",
+      "plugin_available": false,
+      "related_features": [
+        "mono_compatibility_analysis",
+        "harshness_detection",
+        "recommendation_engine"
+      ]
+    },
+    {
+      "id": "resonance_detection",
+      "name": "Resonance Hotspot Detection",
+      "category": "Analysis",
+      "short_description": "Detects narrow-band resonance peaks (room modes, instrument resonances, mic colorations) with frequency and prominence.",
+      "detailed_description": "SP-16C adds resonance hotspot detection using scipy.signal.find_peaks on the magnitude spectrum with a minimum prominence threshold of 8 dB. Up to 5 hotspots are returned, sorted by prominence, each with the peak frequency (hz) and prominence in dB. The ResonanceRecommender fires for each hotspot with prominence > 10 dB (stage: MixBus, chain_position: 4). Recommendations include the exact frequency, a suggested EQ notch (Q=4–8), a computed cut depth based on prominence, and a verification test ('Solo with a narrow boost to confirm it sounds like a singing tone, then cut'). Suggested parameters (eq_center_hz, eq_q, eq_cut_db) are populated on the recommendation for potential auto-apply use.",
+      "logic_and_math": "Peak-picking on the long-term spectrum: bins whose prominence (peak minus local median, dB) exceeds a threshold are resonances. Suggested cut ~ the prominence, Q from peak width.",
+      "why_it_exists": "Spectral resonances from room modes, instrument body resonances, and microphone colorations are one of the most common sources of 'something sounds off but I can't identify it' problems in mixes. Automated peak detection with prominence scoring removes the tedious frequency sweep and provides a starting point for investigation.",
+      "when_to_use": "After mixing any acoustic or semi-acoustic material. Also useful for mastering as a final check. Fire on any mix where a specific frequency 'jumps out' on playback.",
+      "inputs": [
+        "Audio file (via /analyze/extended)",
+        "scipy.signal.find_peaks with prominence=8.0 on magnitude spectrum"
+      ],
+      "tags": [
+        "technical",
+        "spectral",
+        "analysis",
+        "ai-assisted",
+        "desktop-only",
+        "sp16c"
+      ],
+      "desktop_location": "Dashboard > Spectral Balance panel > Resonance Hotspots section (frequency markers on the spectrum display)",
+      "plugin_available": false,
+      "related_features": [
+        "harshness_detection",
+        "mono_compatibility_analysis",
+        "recommendation_engine"
+      ],
+      "visualization": {
+        "type": "percentile",
+        "min": 0.0,
+        "max": 20.0
+      }
+    },
+    {
+      "id": "reference_track_comparison",
+      "name": "Reference Track Delta Analysis",
+      "category": "Analysis",
+      "short_description": "Compare your mix against a reference track on every measurable dimension and see exactly where the deltas lie.",
+      "detailed_description": "SP-16D adds a /analyze/reference endpoint that accepts your target mix path and a reference track path, runs the same metric extraction on both, and returns per-dimension deltas: delta_lufs, delta_lra, delta_crest_db, delta_centroid_hz, delta_stereo_correlation, delta_balance_low. Positive values mean your mix is above the reference; negative means below. The C++ AnalysisResult gains a ReferenceDeltas struct to hold these values. When reference deltas are loaded, the recommendation engine populates the reference_delta field on relevant recommendations so the engineer can see not just 'your LUFS is too high for Pop' but 'your LUFS is 2.1 dB above your reference track'. The reference track path is stored in CreativeTarget.reference_track_paths.",
+      "why_it_exists": "Genre norms are averages, but engineers often mix to a specific reference. Delta comparison against a reference track makes the feedback specific to the engineer's actual target rather than a statistical average, which is far more actionable for professional work.",
+      "when_to_use": "After selecting a reference track in the Creative Target panel. Works best when the reference is at a similar stage (mastered vs. mastered, rough mix vs. rough mix). Use iteratively — reload after making changes to see the delta shrink.",
+      "inputs": [
+        "Target mix file path",
+        "Reference track file path",
+        "/analyze/reference Python endpoint"
+      ],
+      "tags": [
+        "technical",
+        "reference",
+        "analysis",
+        "ai-assisted",
+        "desktop-only",
+        "sp16d"
+      ],
+      "desktop_location": "Session Intake > Creative Target panel > Reference Track input; Dashboard > Analysis panels show reference delta overlays alongside genre norm overlays",
+      "plugin_available": false,
+      "related_features": [
+        "creative_target_system",
+        "recommendation_engine",
+        "mix_report",
+        "analysis_dashboard"
+      ]
+    },
+    {
+      "id": "section_aware_analysis",
+      "name": "Section-Aware Analysis",
+      "category": "Analysis",
+      "short_description": "Per-section LUFS, dynamics, spectral, and stereo analysis so you can see how each section of your track compares to genre norms.",
+      "detailed_description": "SP-16D adds a /analyze/sections endpoint that runs full metric extraction per section detected by the structural analysis pass. Each section shorter than 4 seconds is marked as partial (some metrics will be None). For sections 4 seconds and longer, the section analyzer computes: integrated LUFS, crest factor, LRA approximation, stereo correlation, low-end balance, and dominant frequency. The results are stored in AnalysisResult.sections as a vector of SectionAnalysis structs. This enables a new dashboard view where each section is colour-coded by energy level, making it easy to see whether the drop is actually louder than the verse, whether the bridge has inconsistent dynamics, or whether the outro has an unexpectedly high sub level.",
+      "why_it_exists": "Integrated loudness measurements across an entire track mask section-to-section variation that is often the actual problem. A verse that is significantly louder than the norm for that section type, or a chorus that doesn't outshine the verse, are the kinds of issues that only appear in per-section analysis.",
+      "when_to_use": "When investigating why a mix feels inconsistent or when the integrated LUFS is on target but something still feels 'off'. Also useful during arrangement revisions to track how section energy changes.",
+      "inputs": [
+        "/analyze/sections Python endpoint",
+        "quick_analyzer section markers",
+        "section_analyzer per-section metrics"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "section-aware",
+        "ai-assisted",
+        "desktop-only",
+        "sp16d"
+      ],
+      "desktop_location": "Dashboard > Analysis overview panel > Section view (timeline with per-section energy indicators)",
+      "plugin_available": false,
+      "related_features": [
+        "analysis_dashboard",
+        "hook_dashboard",
+        "structural_flow_panel",
+        "reference_track_comparison"
+      ]
+    },
+    {
+      "id": "feedback_loop",
+      "name": "Recommendation Feedback Loop",
+      "category": "Session Management",
+      "short_description": "Record which recommendations you acted on, so the system can track your decisions and future preference learning can use this data.",
+      "detailed_description": "SP-16D introduces a feedback loop backed by a SQLite table (recommendation_feedback). Engineers can mark each recommendation as acted_on (yes/no) via a click-to-toggle indicator in the Suggestion Feed Panel and the Mix Notes panel. Each interaction stores the recommendation ID, acted_on flag, an optional note, and timestamps. The C++ FeedbackManager class provides recordActedOn() and getActedOn() against the local database. The Python side exposes POST /feedback and GET /feedback/{id} endpoints for cross-process access. This data forms the foundation for v1.1's preference learning feature — the system will learn which types of recommendations you typically act on and adjust confidence levels accordingly.",
+      "why_it_exists": "An AI assistant that doesn't learn from your decisions is a static tool. By explicitly recording which recommendations you acted on, the suite can begin building a user preference model over time. Even before preference learning is active, the acted_on record gives the engineer a to-do list within the suggestion feed.",
+      "when_to_use": "As you work through the recommendation list in any session. Mark recommendations as acted when you've addressed them so the feed functions as a live to-do list. Notes can be added to record what change you made.",
+      "inputs": [
+        "Engineer click interaction in suggestion feed (SuggestionFeedPanel acted_on toggle)",
+        "FeedbackManager::recordActedOn(recommendation_id, acted_on, note)",
+        "POST /feedback Python endpoint"
+      ],
+      "tags": [
+        "session-management",
+        "feedback",
+        "desktop-available",
+        "plugin-available",
+        "sp16d",
+        "learning"
+      ],
+      "desktop_location": "Issues screen (Fix / Mark done / Dismiss / Reopen); Dashboard > Mix Notes cards and Mix/Master > Suggestion List act through the same queue; Plugin > Suggestion Feed Panel (right-side toggle on each row)",
+      "plugin_available": true,
+      "related_features": [
+        "recommendation_engine",
+        "mix_report",
+        "processing_stage_attribution"
+      ]
+    },
+    {
+      "id": "eq_curve_gui",
+      "name": "Interactive EQ Curve GUI",
+      "category": "Analysis",
+      "short_description": "Interactive parametric EQ curve editor showcasing real-time biquad response.",
+      "detailed_description": "EqCurveComponent provides an interactive visual EQ curve display with draggable handles. It plots the aggregate frequency response computed from active biquad peaking filters. Draggable nodes allow adjusting center frequency (horizontal drag) and gain boost/cut (vertical drag). It overlays detected resonance hazard markers as amber warning triangles, and draws genre-specific reference curves (dashed lines) to guide equalization adjustments.",
+      "why_it_exists": "Visualizing EQ response curves alongside spectral analysis data is critical for making accurate corrective decisions. This interactive GUI component bridges the gap between recommendations and real-world adjustment by letting engineers audition and shape EQ responses visually before exporting.",
+      "when_to_use": "When correcting low-end mud, boxiness, mid-range harshness, or narrow resonances. Accessible on the Mix/Mastering Engine screens and inside recommendation cards.",
+      "inputs": [
+        "Biquad peaking EQ parameters",
+        "Resonance peaks from AnalysisResult",
+        "Genre target centroid and low-end weight"
+      ],
+      "tags": [
+        "technical",
+        "visual",
+        "eq",
+        "interactive",
+        "foundational"
+      ],
+      "desktop_location": "Mix/Master Engine screen > Equalizer panel; also embedded inside EQ recommendation cards",
+      "plugin_available": false,
+      "related_features": [
+        "spectral_balance",
+        "resonance_detection",
+        "harshness_detection"
+      ]
+    },
+    {
+      "id": "safe_gain_recommender",
+      "name": "Loudness-Capped Safe Gain Recommendation",
+      "category": "Analysis",
+      "short_description": "Caps recommended gain boosts to stay below -0.1 dBTP, avoiding digital clipping.",
+      "detailed_description": "LoudnessRecommender calculates a safe limit for gain boost recommendations when a track is too quiet. Rather than applying a naive boost that could push inter-sample peaks past 0 dBFS into digital clipping, the recommender calculates the maximum headroom below -0.1 dBTP (using the measured true peak) and caps the recommended increase_gain_db to this safe value. The uncapped request is preserved separately as desired_gain_db.",
+      "logic_and_math": "Max safe boost = -1.0 dBTP - current true peak. Recommended gain = min(desired LUFS gain, headroom) so raising level never breaches the true-peak ceiling.",
+      "why_it_exists": "Exceeding the true peak ceiling during mastering causes digital distortion and encoding issues on streaming platforms. Ensuring all loudness recommendations respect measured true peak headroom preserves transient integrity.",
+      "when_to_use": "Automatically active during analysis. Recommendations in the Mix Notes panel to increase gain will automatically be capped at a safe value if headroom is limited.",
+      "inputs": [
+        "integrated_lufs",
+        "true_peak_dbtp",
+        "genre target LUFS"
+      ],
+      "tags": [
+        "technical",
+        "loudness",
+        "safety",
+        "recommender"
+      ],
+      "desktop_location": "Mix Notes panel > Loudness recommendations",
+      "plugin_available": true,
+      "related_features": [
+        "integrated_loudness",
+        "true_peak",
+        "recommendation_engine"
+      ]
+    },
+    {
+      "id": "lufs_timeline_waveform",
+      "name": "LUFS-Coloured Waveform Timeline",
+      "category": "Analysis",
+      "short_description": "Color-coded loudness timeline and wave visualizer with real-time hover readout.",
+      "detailed_description": "TimelineComponent renders a dual-channel audio waveform with separate outline and fill passes for visual clarity. Sections are color-coded based on EBU-gated short-term integrated loudness levels: red (>= -9 LUFS, clipping/hot), amber (>= -14 LUFS, streaming master), green (>= -18 LUFS, healthy pre-master), teal (>= -24 LUFS), and blue (< -24 LUFS, quiet). A real-time hover needle and popup box read out the current timeline position in M:SS format. Double-clicking invokes a direct SeekCallback to sync DAW playback.",
+      "why_it_exists": "Standard mono-coloured waveforms only show amplitude peaks, hiding structural loudness progression. Section-by-section LUFS color-coding lets engineers visually audit macro-dynamics, identifying over-compressed drops or quiet verses instantly.",
+      "when_to_use": "When reviewing song structure, checking energy progression between verse/chorus/drop, or navigating the DAW playback timeline.",
+      "inputs": [
+        "Audio file path",
+        "structural section markers",
+        "per-section integrated LUFS results"
+      ],
+      "tags": [
+        "technical",
+        "visual",
+        "timeline",
+        "waveform",
+        "navigation"
+      ],
+      "desktop_location": "Dashboard screen > structural flow timeline; also pinned at bottom of Vocal Workspace",
+      "plugin_available": false,
+      "related_features": [
+        "section_aware_analysis",
+        "structural_flow_panel",
+        "translation_preview"
+      ]
+    },
+    {
+      "id": "parameter_override_telemetry",
+      "name": "Parameter Override Telemetry",
+      "category": "Session Management",
+      "short_description": "Logs when engineers choose parameter values different from recommendations for adaptive learning.",
+      "detailed_description": "FeedbackManager logs parameters adjusted away from recommended values into a SQLite parameter_overrides table. It records the recommendation ID, parameter name, recommended value, user-selected value, and a timestamp. An index on recommendation_id allows fast queries. This persistent database log provides the necessary input dataset for adaptive recommendation calibration and localized preference learning.",
+      "why_it_exists": "To build an adaptive assistant that learns user style, the system needs to know not only if a recommendation was acted upon, but when and by how much the user disagreed with the recommended values. Logging overrides provides this dataset safely and locally.",
+      "when_to_use": "Automatically active whenever an engineer changes a slider or control after interacting with a related recommendation.",
+      "inputs": [
+        "Slider/UI parameter adjustments",
+        "FeedbackManager::recordOverride(rec_id, param, recommended, actual)"
+      ],
+      "tags": [
+        "session-management",
+        "telemetry",
+        "database",
+        "sqlite",
+        "learning"
+      ],
+      "desktop_location": "Underlying SQLite database; telemetry logs are written silently during interaction",
+      "plugin_available": true,
+      "related_features": [
+        "feedback_loop",
+        "recommendation_engine",
+        "mix_report"
+      ]
+    },
+    {
+      "id": "glue_compressor",
+      "name": "Glue Compressor",
+      "category": "Signal Processing",
+      "short_description": "Bus-style compressor with a musical soft-knee gain computer and program-dependent release.",
+      "detailed_description": "GlueCompressor implements a soft-knee gain computer following Giannoulis et al.'s quadratic-knee formulation, a switchable peak or RMS detector, and a program-dependent auto-release that adapts release time to the input's own dynamics rather than a single fixed constant. It's the built-in DSP-chain's compressor stage, replacing an earlier one-parameter placeholder with a real bus-glue character comparable to analog mix-bus compressors.",
+      "logic_and_math": "Soft-knee bus compressor: gain reduction interpolated quadratically across knee_db around threshold; auto_release makes release program-dependent (faster on transients, slower on sustained level).",
+      "why_it_exists": "A single hard-knee compressor with a fixed release sounds mechanical and pumps unpredictably across different material. Genre-aware mixer chains need a compressor that can sit transparently on a mix bus or vocal group without constant manual release-time tuning.",
+      "when_to_use": "Whenever a mixer-chain recipe or manual DSP-chain edit calls for a compressor stage - mix bus glue, vocal bus cohesion, or drum bus glue.",
+      "inputs": [
+        "Threshold",
+        "Ratio",
+        "Knee width",
+        "Detector mode (peak/RMS)",
+        "Attack",
+        "Auto-release toggle"
+      ],
+      "tags": [
+        "technical",
+        "dsp",
+        "desktop-available",
+        "plugin-available",
+        "real-time-safe"
+      ],
+      "desktop_location": "Mixer Chain Generator / DSP Control Grid panel (Comp stage); Plugin-Copilot built-in DSP chain",
+      "plugin_available": true,
+      "related_features": [
+        "mixer_chain_generator",
+        "dsp_control_grid",
+        "tape_saturation"
+      ]
+    },
+    {
+      "id": "tape_saturation",
+      "name": "Tape Saturation",
+      "category": "Signal Processing",
+      "short_description": "4x-oversampled waveshaper blending symmetric tube-style and asymmetric tape-style harmonics.",
+      "detailed_description": "TapeSaturation runs its waveshaping at 4x oversampling to control aliasing, blending a symmetric tanh curve (odd-harmonic, tube-like) with a DC-biased asymmetric tanh curve (even-harmonic, tape-like) under a single warmth control. The blend ratio and drive amount shape how much low-order versus high-order harmonic content is added.",
+      "logic_and_math": "4x-oversampled waveshaper; warmth blends odd (tanh, tube) vs even (x*|x|, tape) harmonic generation, then downsample + output trim. Mix = dry/wet.",
+      "why_it_exists": "Earlier saturation in the chain was a single fixed waveshape with no oversampling, producing audible aliasing on hot signals and no way to dial between tube- and tape-flavored coloration. This gives mixer-chain recipes a genuinely tunable, alias-controlled saturation stage.",
+      "when_to_use": "When a recipe calls for warmth, harmonic excitement, or tape-style glue on a bus or individual track.",
+      "inputs": [
+        "Drive",
+        "Warmth (symmetric/asymmetric blend)",
+        "Output trim"
+      ],
+      "tags": [
+        "technical",
+        "dsp",
+        "desktop-available",
+        "plugin-available",
+        "real-time-safe"
+      ],
+      "desktop_location": "Mixer Chain Generator / DSP Control Grid panel (Saturation stage); Plugin-Copilot built-in DSP chain",
+      "plugin_available": true,
+      "related_features": [
+        "glue_compressor",
+        "mixer_chain_generator",
+        "aliasing_report"
+      ]
+    },
+    {
+      "id": "stereo_widener",
+      "name": "Stereo Widener",
+      "category": "Signal Processing",
+      "short_description": "Mid/side side-gain scaling stage for adjusting perceived stereo width.",
+      "detailed_description": "StereoWidener encodes the signal to mid/side, scales the side channel's gain, and decodes back to left/right. It's a deliberately simple, phase-safe width control meant to be paired with BassMonoMaker so widening never destabilizes the low end.",
+      "why_it_exists": "Stereo-imaging control previously had no apply-layer effect at all - width recommendations from the Stereo analysis panel had nothing to render into. This closes that loop with a real, chainable stereo effect.",
+      "when_to_use": "When a recipe or manual recommendation calls for wider or narrower perceived stereo image, typically on synth/pad buses or the full mix bus (never on a mono-summed low end - pair with Bass Mono Maker).",
+      "inputs": [
+        "Side-gain scale factor"
+      ],
+      "tags": [
+        "technical",
+        "dsp",
+        "desktop-available",
+        "plugin-available",
+        "real-time-safe"
+      ],
+      "desktop_location": "Mixer Chain Generator / DSP Control Grid panel; Plugin-Copilot built-in DSP chain apply layer",
+      "plugin_available": true,
+      "related_features": [
+        "bass_mono_maker",
+        "phase_panel",
+        "mixer_chain_generator"
+      ]
+    },
+    {
+      "id": "bass_mono_maker",
+      "name": "Bass Mono Maker",
+      "category": "Signal Processing",
+      "short_description": "Zero-phase mono-sums the signal below a configurable crossover frequency.",
+      "detailed_description": "BassMonoMaker splits the signal at a crossover frequency and sums the band below it to mono using a zero-phase split, leaving everything above the crossover untouched in stereo. This prevents the low end from losing energy or translating poorly to mono playback systems (club systems, phone speakers, vinyl cutting) while preserving width above the crossover.",
+      "why_it_exists": "Wide low-end content is one of the most common mix-translation failures the Phase/Mono-Compatibility analysis already detects, but there was no apply-layer fix to pair with that diagnosis until this effect existed.",
+      "when_to_use": "Whenever mono-compatibility analysis flags poor low-end stereo translation, or as a standard mastering-chain safeguard before club/vinyl/streaming delivery.",
+      "inputs": [
+        "Crossover frequency (Hz)"
+      ],
+      "tags": [
+        "technical",
+        "dsp",
+        "desktop-available",
+        "plugin-available",
+        "real-time-safe"
+      ],
+      "desktop_location": "Mixer Chain Generator / DSP Control Grid panel; Plugin-Copilot built-in DSP chain apply layer",
+      "plugin_available": true,
+      "related_features": [
+        "stereo_widener",
+        "phase_panel",
+        "mixer_chain_generator"
+      ]
+    },
+    {
+      "id": "transient_shaper",
+      "name": "Transient Shaper",
+      "category": "Signal Processing",
+      "short_description": "Dual fast/slow envelope follower for independently adjusting attack punch and sustain body.",
+      "detailed_description": "TransientShaper compares a fast and a slow envelope follower to detect transient versus sustained energy, then applies independent attack-gain and sustain-gain controls to each portion. This lets a recipe add punch to a drum hit's transient without changing its sustained tail, or vice versa.",
+      "logic_and_math": "Dual-envelope follower (fast attack vs slow sustain env); gain applied to attack_gain_db * transient portion + sustain_gain_db * body. Positive attack + negative sustain punches drums without raising overall level.",
+      "why_it_exists": "Compression alone cannot independently control attack punch versus sustain body - the mixer chain needed a dedicated transient-shaping stage for drum and percussive material.",
+      "when_to_use": "Drum bus or individual percussive elements needing more punch (increase attack gain) or more room presence/sustain (increase sustain gain) without a full compressor rework.",
+      "inputs": [
+        "Attack gain",
+        "Sustain gain",
+        "Fast/slow envelope time constants"
+      ],
+      "tags": [
+        "technical",
+        "dsp",
+        "desktop-available",
+        "plugin-available",
+        "real-time-safe"
+      ],
+      "desktop_location": "Mixer Chain Generator / DSP Control Grid panel; Plugin-Copilot built-in DSP chain",
+      "plugin_available": true,
+      "related_features": [
+        "glue_compressor",
+        "mixer_chain_generator"
+      ]
+    },
+    {
+      "id": "multiband_parametric_eq",
+      "name": "Multi-Band Parametric EQ",
+      "category": "Signal Processing",
+      "short_description": "Three real parametric EQ bands in the built-in DSP chain, auto-assigned from the largest recommended moves.",
+      "detailed_description": "The built-in plugin DSP chain's EQ stage expanded from a single bell filter to three independent parametric bands (frequency, gain, Q each). DspChainMapper's EQ-move distribution algorithm assigns the three largest-magnitude EQ moves from a mixer-chain recipe across these bands automatically, instead of collapsing every recommendation into one filter.",
+      "why_it_exists": "A single EQ band could not represent recipes calling for simultaneous cuts and boosts at different frequencies (e.g. a low-end cut and a presence boost), so most of a generated chain's EQ intent was silently dropped.",
+      "when_to_use": "Any time a mixer-chain recipe or the drag-to-edit EQ curve specifies more than one EQ move - automatically engaged, no manual setup required.",
+      "inputs": [
+        "Up to 3x (frequency, gain, Q) band parameters"
+      ],
+      "tags": [
+        "technical",
+        "dsp",
+        "desktop-available",
+        "plugin-available",
+        "real-time-safe"
+      ],
+      "desktop_location": "Plugin-Copilot built-in DSP chain; driven by Mixer Chain Generator and Interactive EQ Curve",
+      "plugin_available": true,
+      "related_features": [
+        "mixer_chain_generator",
+        "interactive_eq_apply",
+        "eq_curve_gui"
+      ]
+    },
+    {
+      "id": "interactive_eq_apply",
+      "name": "Interactive Drag-to-Edit EQ (Apply)",
+      "category": "UI/UX",
+      "short_description": "Dragging EQ curve band handles now renders an audible, loudness-matched A/B comparison, not just a preference-learning log.",
+      "detailed_description": "EqCurveComponent already let you drag band handles on the EQ curve; previously that only logged a FeedbackManager override for preference learning and never became audible. AppController::applyEqBands() now builds one PeakFilter stage per enabled band from the current (possibly user-dragged) band list and renders it as the A/B loudness-matched B side, triggered by an Apply EQ button in Mix/Master Engine's EQ Curve tab.",
+      "why_it_exists": "Users could see and drag a proposed EQ curve but could not actually hear their edit - the loop from moving a band to hearing what that sounds like was broken.",
+      "when_to_use": "After dragging any EQ band handle in the Mix/Master Engine EQ Curve tab, to render and A/B-audition the edited curve.",
+      "inputs": [
+        "Current EQ band list (recommended or user-dragged)",
+        "Loaded audio session"
+      ],
+      "tags": [
+        "technical",
+        "visual",
+        "desktop-only",
+        "interactive"
+      ],
+      "desktop_location": "Mix/Master Engine screen > EQ Curve tab > Apply EQ button",
+      "plugin_available": false,
+      "related_features": [
+        "multiband_parametric_eq",
+        "analysis_dashboard",
+        "guided_assistant"
+      ]
+    },
+    {
+      "id": "guided_assistant",
+      "name": "Issue Queue",
+      "category": "UI/UX",
+      "short_description": "Every finding of the session in one queue: Fix, Mark done, Dismiss, and whether each fix worked.",
+      "detailed_description": "The Issues screen holds the one issue queue. Every finding of the analysis is listed once, most severe first, with Fix (renders a one-click correction from the current version, so fixes stack), Mark done (you handled it yourself), Dismiss (with a reason; Khensu learns from it), Reopen and Why? (the full reasoning). After a fix, Khensu re-analyses the new version and each finding shows whether it was resolved, improved, unchanged, got worse or is new. The header shows the open count, the mix milestone you are on (Balance, Frequency, Space & Depth, Polish), the latest check with Check again, and Hear A/B to compare the fixed version with the original in place. The Dashboard's Mix Notes, Mix/Master's suggestion list and the F key act through the same queue, so a finding fixed in one place reads fixed everywhere.",
+      "why_it_exists": "Findings used to be acted on in six places, each with its own idea of what was done. One queue gives every finding one state and one place to fix it, and the fix check answers the question that matters: did it work?",
+      "when_to_use": "Right after the analysis finishes: work down the open issues, fix or dismiss each one, and read the check after every fix. Press F anywhere to fix the top issue.",
+      "inputs": [
+        "The session's analysis findings",
+        "The fix check of the current version",
+        "Your done / dismissed choices (stored per finding)"
+      ],
+      "tags": [
+        "visual",
+        "desktop-only",
+        "non-technical",
+        "foundational"
+      ],
+      "desktop_location": "Main navigation - Issues (second item); F key; the Dashboard verdict card's Fix top issue",
+      "plugin_available": false,
+      "related_features": [
+        "recommendation_engine",
+        "fix_check",
+        "render_start_point",
+        "mix_notes_checklist",
+        "feedback_loop"
+      ]
+    },
+    {
+      "id": "multi_model_consensus",
+      "name": "Multi-Model Consensus (Mixer Chain)",
+      "category": "AI / Model Orchestration",
+      "short_description": "Queries multiple LLM providers for the same mixer-chain decision and measures how much they agree.",
+      "detailed_description": "When KHENSU_LLM_CONSENSUS_PROVIDERS names two or more providers, the mixer-chain generator queries all of them for the same decision and measures Jaccard similarity between the plugin-category sets each proposed. The primary (highest-priority-provider) response is returned, annotated with an agreement label (unanimous/high/low), an agreement score, which providers were queried versus responded, and the alternative descriptions from the other providers. It is a first slice of a longer-term bet: independent-model agreement as a real signal of decision soundness, distinct from a single model's confidence in itself.",
+      "why_it_exists": "A single LLM's stated confidence cannot detect its own blind spots. Querying independently-reasoning models and measuring whether they converge on the same plugin categories is a genuinely different signal - low agreement flags exactly the case a single-model pipeline cannot see.",
+      "when_to_use": "Backend-only currently (not yet surfaced in the desktop UI) - set KHENSU_LLM_CONSENSUS_PROVIDERS to a comma-separated provider list to enable it for mixer-chain generation.",
+      "inputs": [
+        "KHENSU_LLM_CONSENSUS_PROVIDERS env var",
+        "Same mixer-chain request sent to each named provider"
+      ],
+      "tags": [
+        "ai-assisted",
+        "explainable",
+        "long-term-bet",
+        "offline-only"
+      ],
+      "desktop_location": "Not yet surfaced in the desktop UI - backend only (mixer_chain_generator.py)",
+      "plugin_available": false,
+      "related_features": [
+        "mixer_chain_generator",
+        "recommendation_engine"
+      ]
+    },
+    {
+      "id": "track_quick_stats",
+      "name": "Track Quick Stats",
+      "category": "Analysis",
+      "short_description": "One-call aggregate of every format and level fact about the loaded file.",
+      "detailed_description": "Aggregates duration, sample rate, bit depth, channels, integrated LUFS, loudness range, true peak, crest factor, DC offset, stereo width, and a clipping census into a single grid below BPM/Key/Genre. Auto-fetches once per file.",
+      "logic_and_math": "LUFS=BS.1770-4; LRA=P95-P10 short-term; true peak=4x oversampled dBTP; crest=20*log10(peak/RMS); width%=100*sideRMS/midRMS; clipping=runs of >=2 samples at |x|>=0.999; DC=mean(x).",
+      "why_it_exists": "The fast analysis only carried BPM/Key/Genre; the format and level numbers lived across separate analyzers the card never called. This surfaces them in one place.",
+      "when_to_use": "Immediately after intake to sanity-check level, headroom, and clipping.",
+      "desktop_location": "Vocal Workspace > Track Quick Stats panel",
+      "inputs": [
+        "Loaded audio file"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "desktop-only"
+      ],
+      "related_features": [
+        "integrated_loudness",
+        "true_peak",
+        "artifact_detection"
+      ],
+      "plugin_available": false
+    },
+    {
+      "id": "drum_groove_detection",
+      "name": "Drum Groove Detection",
+      "category": "Analysis",
+      "short_description": "Kick/snare timeline and timing regularity from the mix or drum stem.",
+      "detailed_description": "Detects kick and snare onsets and characterises each hit (attack, body level, fundamental), then reports counts, hit rate (kicks/min - the number of hits per minute, not the track tempo: kicks on beats 1 and 3 at 120 BPM read 60), and timing regularity.",
+      "logic_and_math": "HPSS percussive isolation (margin 2.0), then band-limited spectral flux: kick 35-150 Hz, snare 150-2500 Hz, hats/perc >2500 Hz. Onset peaks must clear median+8*MAD of the flux AND >=15% of the band's strongest hit; edge frames guarded. Regularity = 1 - CV(inter-onset intervals).",
+      "why_it_exists": "The prior mel-onset detector missed 808 kicks under sustained bass and produced dozens of phantom onsets on drumless material; the flux+HPSS approach fixes both.",
+      "when_to_use": "To confirm the groove was detected and gauge quantization tightness.",
+      "desktop_location": "Analysis Dashboard > Drum Groove panel",
+      "inputs": [
+        "Full mix or separated drum stem"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "rhythm"
+      ],
+      "related_features": [
+        "stem_taxonomy"
+      ],
+      "plugin_available": false
+    },
+    {
+      "id": "stem_taxonomy",
+      "name": "Stem Energy Balance & Taxonomy",
+      "category": "Analysis",
+      "short_description": "Nine canonical stem buckets with energy shares and per-bucket confidence.",
+      "detailed_description": "Derives Vocals, Bass, Synth, Kick, Snare, Percussion, Drums (rollup), Atmosphere/FX, and Other from the four Demucs stems, with an energy-share bar per bucket.",
+      "logic_and_math": "Drums band-split: kick<=150 Hz, snare 150-2500, percussion>2500. 'Other' HPSS-split: harmonic=synth, percussive-residual=atmosphere/fx. share%=100*bucketRMS^2/sum(leaf RMS^2); a bucket is absent when share<0.5%. Confidence: vocals/bass/drums 0.9, kick/snare/perc 0.6, synth/fx 0.5.",
+      "why_it_exists": "The mix smears instrument energy together; the taxonomy makes per-instrument balance and collisions measurable against genre targets.",
+      "when_to_use": "After separation, to see which buckets dominate and which are masking each other.",
+      "desktop_location": "Analysis Dashboard > Stem Energy Balance / Masking & Collision panels",
+      "inputs": [
+        "Demucs stems (vocals/drums/bass/other)"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "stems"
+      ],
+      "related_features": [
+        "masking_collision",
+        "drum_groove_detection"
+      ],
+      "plugin_available": false
+    },
+    {
+      "id": "masking_collision",
+      "name": "Masking & Frequency Collision",
+      "category": "Analysis",
+      "short_description": "Pairwise band-overlap collision scores between the stem buckets.",
+      "detailed_description": "Scores how much each pair of stem buckets fights for the same frequency bands, hottest pairs first, with teal/amber/red risk bars.",
+      "logic_and_math": "Per bucket: normalized 10-band energy profile p (sums to 1). collision(a,b) = sum(min(pa,pb)) / sum(max(pa,pb)) in [0,1]. Rollup-vs-child pairs and absent buckets are excluded. Risk: >=0.65 red, >=0.40 amber.",
+      "why_it_exists": "Two instruments sharing bands mask each other; the louder wins and the other turns to mud. This names the exact pair to EQ or sidechain first.",
+      "when_to_use": "When the mix sounds crowded or an instrument disappears in the full mix.",
+      "desktop_location": "Analysis Dashboard > Masking & Collision panel",
+      "inputs": [
+        "Demucs stems"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "stems",
+        "masking"
+      ],
+      "related_features": [
+        "stem_taxonomy",
+        "resonance_detection"
+      ],
+      "plugin_available": false,
+      "visualization": {
+        "type": "bar",
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    {
+      "id": "ai_artifact_detection",
+      "name": "AI Artifact Detection",
+      "category": "Analysis",
+      "short_description": "Multi-tier forensic scan for AI-generation signatures with per-service attribution, a per-window timeline, and an optional learned detector.",
+      "detailed_description": "Scans for AI-generation artifacts across metadata, spectral, watermark, forensic codec-residual, and per-stem deep tiers, plus two optional learned ONNX tiers (a real-data binary AI detector and a per-service acoustic attribution model). Produces a verdict, a 9-service checklist with attribution likelihoods, an evidence-backed summary, a clipping census, and a per-window confidence timeline showing WHICH parts of the track read as AI rather than a single whole-file number.",
+      "logic_and_math": "Each detector yields a weighted finding. Fused confidence = noisy-OR: 1 - prod(1 - w_i). Per-service attribution fused the same way per service. Spectral tells: vocoder ceiling (>30 dB cliff 10-17 kHz), noise-floor std <1 dB, section-level chroma corr >0.999, macro-dynamics 3s-frame std <1.2 dB. Watermark: stationary 6-14 kHz carrier (floor/median >0.18). Deep (stems): drum off-grid jitter <2%, near-duplicate hit MFCCs, vocal pitch <6 cents off grid. Timeline: the track is bucketed into ~5 s windows and each window is noisy-OR-fused from the findings that overlap it (a time-ranged tell raises only its windows; a whole-file tell is a baseline across all). Learned binary detector: forensic-feature CNN, temperature-scaled P(AI); the numeric probability is shown ONLY when the model is intervention-validated AND its measured calibration error (ECE) is at or below the exposure ceiling - otherwise it contributes fixed evidence weight with the number withheld. Acoustic attribution: a multi-class fingerprint over per-generator signatures emits a service only when the top class clears a margin over the runner-up, feeding the same noisy-OR attribution so a source can be named even after provenance tags are stripped.",
+      "why_it_exists": "Distinguishes human-made from AI-generated material and, when AI, names the likely service and pinpoints WHERE and WHEN the artifacts occur - evidence, never a bare verdict. Learned tiers stay opt-in and calibration-gated so a model never puts an untrustworthy number in front of the user.",
+      "when_to_use": "On any track of uncertain provenance, or before releasing AI-assisted material.",
+      "desktop_location": "Analysis Dashboard > AI Artifacts panel",
+      "inputs": [
+        "Loaded audio file",
+        "Optional Demucs stems (deep tier)"
+      ],
+      "tags": [
+        "technical",
+        "analysis",
+        "forensics",
+        "ai"
+      ],
+      "related_features": [
+        "artifact_detection",
+        "recreate_sound_midi",
+        "clean_delivery_metadata"
+      ],
+      "plugin_available": false,
+      "visualization": {
+        "type": "percentile",
+        "min": 0.0,
+        "max": 100.0
+      }
+    },
+    {
+      "id": "humanize",
+      "name": "Humanize",
+      "category": "Signal Processing",
+      "short_description": "Adds analog character - tape drift, a fader ride and room tone - to rigid programmed or in-the-box audio.",
+      "detailed_description": "A creative effect with three characters: tape-style wow/flutter, a slow level ride, and a breathing room-tone floor. Each has its own intensity and the global amount scales all three. Every render is non-destructive and loaded as the loudness-matched A/B B side, to be judged by ear. It is a sound-design tool: it does not change where the audio came from.",
+      "logic_and_math": "Wow/flutter = fractional-delay read along delay(t)=depth*(0.5+0.35*sin(2*pi*wow_rate*t)+0.15*randomwalk) - varying delay varies pitch, so one mechanism gives micro-timing AND micro-pitch drift. Level ride = cosine-interpolated random gain within +/-level_var_db (new target ~every 2 s). Floor = one-pole-LP white noise at noise_floor_db with +/-3 dB wander. timing_intensity/level_intensity/noise_intensity scale each mechanism independently (defaulting to the global intensity when unset); all-zero is an exact passthrough; seeded for reproducibility.",
+      "why_it_exists": "Programmed and in-the-box material often sounds stiff: grid-perfect timing, a static level and digital-black silence. Players, tape and a hand on the fader add small, musical variation.",
+      "when_to_use": "On stiff or quantized material that should feel played; 0.25/0.5/0.85 = slight/moderate/aggressive.",
+      "desktop_location": "Mix/Master > Analog Feel card > Custom Render (shaping sliders)",
+      "plugin_available": true,
+      "inputs": [
+        "Loaded audio or stem"
+      ],
+      "tags": [
+        "signal-processing",
+        "dsp",
+        "humanize"
+      ],
+      "related_features": [
+        "analog_feel",
+        "deep_humanize",
+        "dynamic_deesser"
+      ]
+    },
+    {
+      "id": "deep_humanize",
+      "name": "Per-Stem Render (Analog Feel)",
+      "category": "Signal Processing",
+      "short_description": "Per-stem analog character at independent amounts and groove shapes, re-summed to a new mix.",
+      "detailed_description": "Humanizes each Demucs stem at its own intensity (per-stem seed keeps them reproducible yet decorrelated) and sums to a new peak-safe mix, with an applied-changes report. Any stem lane can go beyond intensity: a \"Custom\" toggle (accordion — only one lane expanded at a time) reveals that stem's own wow rate, wow depth, level variation, and noise floor instead of sharing the global shaping row, so e.g. drums can wobble faster than vocals.",
+      "logic_and_math": "Each stem processed by Humanize with seed = 1000 + hash(stem_name) so vocal and drum wow/flutter don't move in lockstep. A stem with Custom groove enabled passes its own wow_rate_hz/depth_ms/level_var_db/noise_floor_db to that stem's _apply_humanize call; a stem without it falls back to the shared global scalar. Sum peak-normalized to -0.3 dBFS to prevent clipping. Non-destructive; result loaded as the loudness-matched A/B B (fires X-Ray + What Changed).",
+      "why_it_exists": "Different instruments need different amounts of loosening — and different KINDS of loosening; a single global groove shape can't make drums wobble faster than a vocal or give one stem a dirtier noise floor than another.",
+      "when_to_use": "When per-instrument control over humanization is needed and stems exist; reach for Custom groove specifically when one stem needs a different wow/depth/noise-floor character than the rest of the mix.",
+      "desktop_location": "Mix/Master > Analog Feel card > per-stem lanes + Per-Stem Render (Custom toggle per lane)",
+      "inputs": [
+        "Demucs stems"
+      ],
+      "tags": [
+        "signal-processing",
+        "dsp",
+        "humanize",
+        "stems"
+      ],
+      "related_features": [
+        "humanize",
+        "analog_feel"
+      ],
+      "plugin_available": false
+    },
+    {
+      "id": "analog_feel",
+      "name": "Analog Feel",
+      "category": "Signal Processing",
+      "short_description": "One-click analog character: tick tape drift, fader ride and/or room tone, pick an amount, render once.",
+      "detailed_description": "Renders the characters you tick at the chosen amount in a single pass and loads the result as the loudness-matched A/B B side. With stems, tape drift runs per stem (each with its own seed, so drums and vocals don't wobble in lockstep and no stem's transients are smeared), then the fader ride and room tone run once on the re-summed mix, true-peak capped at -1 dBTP. Reframed on 2026-11-07 from the closed-loop 'targeted humanize': it no longer runs the AI-artifact scanner, has no detector-confidence target and no escalate-until-it-passes loop. Endpoint: POST /humanize/analog_feel.",
+      "logic_and_math": "amount in [0,1]; timing_intensity = amount if tape_drift else 0, level_intensity = amount if fader_ride else 0, noise_intensity = amount if room_tone else 0, passed to the shared _apply_humanize. Stem branch: per-stem timing with seed + crc32(stem) % 1000, sum, then level/noise on the sum, then a true-peak-safe gain. Single pass; seeded for reproducibility.",
+      "why_it_exists": "A fast, musical starting point for making programmed parts feel played, without dialling four shaping sliders. Results are judged by ear in the A/B, because the goal is a better-sounding record, not a different detector score.",
+      "when_to_use": "When a stiff part needs life quickly; with stems when drums and vocals need their drift kept separate.",
+      "desktop_location": "Mix/Master > Analog Feel card > Analog Feel button + Tape drift / Fader ride / Room tone toggles",
+      "inputs": [
+        "Loaded audio file",
+        "Optional stems (per-stem tape drift)",
+        "Amount and characters"
+      ],
+      "tags": [
+        "signal-processing",
+        "dsp",
+        "humanize",
+        "analog",
+        "stems"
+      ],
+      "related_features": [
+        "humanize",
+        "deep_humanize"
+      ],
+      "plugin_available": false
+    },
+    {
+      "id": "clean_delivery_metadata",
+      "name": "Clean Delivery Metadata",
+      "category": "Delivery",
+      "short_description": "Writes a _clean copy without workflow / personal tags; keeps identity, rights and every AI-provenance or disclosure tag.",
+      "detailed_description": "Copies the file beside the source (audio byte-identical) and removes only workflow and personal clutter: comments, encoder / software / 'encoded by' tags, private application data (ID3 PRIV/GEOB), the original file name and file owner. Title, artist, ISRC, copyright, credits, lyrics and artwork stay. Any tag that carries AI-provenance or disclosure information is never removed and is reported back. Reframed on 2026-11-07 from 'Strip Metadata', which deleted every tag. Endpoint: POST /metadata/clean.",
+      "logic_and_math": "Each tag is classified provenance / workflow / keep. Provenance wins: a key naming C2PA, JUMBF, digital source type, content credentials or AI disclosure, or text matching the provenance detector's generator and generic-AI patterns (metadata_tier.match_services / match_generic). Workflow: ID3 COMM/TSSE/TENC/PRIV/GEOB/TOFN/TOWN, TXXX/Vorbis/APE/MP4 freeform keys such as comment, encoder, software, tool, project, path, and the MP4 comment/tool/encoder atoms. Everything else is kept. RIFF INFO/bext chunks are not edited.",
+      "why_it_exists": "Delivered files often carry private notes, project paths and software tags. A deliverable should keep its identity and rights, and provenance / disclosure information must survive.",
+      "when_to_use": "Before sending a master to a client, distributor or collaborator.",
+      "desktop_location": "Mix/Master > Analog Feel card > Clean Metadata",
+      "inputs": [
+        "Loaded audio file"
+      ],
+      "tags": [
+        "delivery",
+        "metadata",
+        "privacy",
+        "provenance"
+      ],
+      "related_features": [
+        "ai_artifact_detection"
+      ],
+      "plugin_available": false
+    },
+    {
+      "id": "targeted_humanize",
+      "name": "Targeted Humanize (Closed Loop)",
+      "category": "Signal Processing",
+      "short_description": "Scans for the specific AI tells that fired, humanizes only the matching mechanisms, and re-scans - escalating until confidence hits a target.",
+      "detailed_description": "Runs the AI-artifact scan, maps each fired tell to the one humanize mechanism that addresses it, renders, then re-scans and raises intensity until artifact confidence reaches the target or the iteration budget is spent. When stems are supplied it humanizes per-stem (drum-grid tells loosen the drum stem, vocal-pitch tells the vocal stem) and re-sums to a peak-safe mix. Tells that humanization cannot address (a hard spectral ceiling, copy-paste section similarity) are reported as unaddressable instead of being silently ignored. Endpoint: POST /humanize/targeted.",
+      "logic_and_math": "Per-tell mapping: uniform_noise_floor->noise, macro_dynamics->level, drum_timing_grid/repeated_hit_variance/vocal_micro_pitch->timing; metadata and spectral_ceiling/section_similarity engage nothing (the last two are surfaced as unaddressable). Only the mapped mechanisms' intensities are set; the rest stay 0 so an unrelated mechanism never touches audio that didn't trigger it. Closed loop: scan -> if confidence <= target or no mechanism engaged, stop; else render, re-scan, multiply intensity by 1.5 (cap 1.0), repeat up to max_iterations. Stem-aware branch routes deep tells to their own stem via a stem->(name, mechanism) table, sums, then applies mix-level noise/level to the sum and normalizes to -0.3 dBFS.",
+      "why_it_exists": "Global humanize at a manual 3-detent intensity over-processes audio for tells that never fired and can't tell whether it worked. Closing the loop against the detector, engaging only the mechanisms whose tells fired, and working per-stem removes just the statistical signatures that were actually present - the minimum intervention that clears the scan.",
+      "when_to_use": "When you want the tool to decide how much humanization a track needs rather than picking an intensity by hand, or when stems exist and different instruments need different loosening.",
+      "desktop_location": "Mix/Master > Humanize card > Targeted (closed-loop) action",
+      "inputs": [
+        "Loaded audio file",
+        "Optional Demucs stems (per-stem humanization)",
+        "Target artifact confidence"
+      ],
+      "tags": [
+        "signal-processing",
+        "dsp",
+        "humanize",
+        "closed-loop",
+        "stems",
+        "ai"
+      ],
+      "related_features": [
+        "humanize",
+        "deep_humanize",
+        "ai_artifact_detection"
+      ],
+      "plugin_available": false
+    },
+    {
+      "id": "recreate_sound_midi",
+      "name": "Recreate Sound (MIDI Variation)",
+      "category": "Signal Processing",
+      "short_description": "Transcribes a stem to MIDI and exports a humanized .mid variation to re-perform in a DAW, with an honest transcription-quality flag.",
+      "detailed_description": "Extracts MIDI from a source stem (polyphonic via the basic-pitch 3.11 sub-venv when installed, else a monophonic librosa.pyin fallback; drums via onset + band classification into GM kick/snare/hat) and writes a varied standard MIDI file with per-note timing, velocity, and probabilistic in-key pitch variation. This is a MIDI-EXPORT feature (give the user a varied part to re-perform), NOT an audio humanizer - to mask AI tells in audio use Targeted Humanize. The result reports its extraction_backend and sets low_quality_extraction on the monophonic fallback so a monophonic reduction of a polyphonic source is never presented as a faithful transcription.",
+      "logic_and_math": "Pitched: pyin F0 (or basic-pitch polyphonic) segmented into notes at semitone changes with per-note pitch-bend; drums: onset detection then low(<150 Hz)/mid/high(>4 kHz) STFT energy vote into kick/snare/hat. Variation: timing offset ~N(0, timing_variance), velocity ~N(0, velocity_variance), and with probability pitch_variation_prob a note moves one diatonic step up or down in the key estimated from the notes themselves (Krumhansl-Kessler profiles over duration x velocity weighted pitch classes); with no detectable key there is no pitch variation. RNG seeded from the file path. The file carries the detected quarter-note tempo (beat-fit BPM; 6/8 converted to its quarter-note session tempo) and the detected time signature, with bar 1 placed on the first detected downbeat - 120 BPM and 4/4 only when detection fails. 480 ticks/beat, drums on channel 10.",
+      "why_it_exists": "Sometimes the fix isn't reprocessing the audio but re-performing the part. A varied MIDI transcription lets a producer re-play a stiff or AI-generated line with a human touch. Its fidelity is bounded by transcription, so the quality flag keeps the output honest rather than overselling a monophonic reduction.",
+      "when_to_use": "When you want to re-perform a part in a DAW rather than DSP-process the existing audio; best on a clean isolated stem.",
+      "desktop_location": "Recreate Sound panel",
+      "inputs": [
+        "Loaded stem or audio file",
+        "Stem type hint",
+        "Variation amounts"
+      ],
+      "tags": [
+        "signal-processing",
+        "midi",
+        "recreate",
+        "export"
+      ],
+      "related_features": [
+        "analog_feel",
+        "humanize",
+        "ai_artifact_detection"
+      ],
+      "plugin_available": false
+    },
+    {
+      "id": "dynamic_deesser",
+      "name": "Dynamic De-Esser",
+      "category": "Signal Processing",
+      "short_description": "Program-dependent de-esser keyed on sibilance level relative to the whole vocal.",
+      "detailed_description": "Ducks the sibilance band using its level RELATIVE to the broadband signal, so one setting tracks quiet verses and loud choruses alike.",
+      "logic_and_math": "Detector = band_env / broadband_env (both ~8 ms one-pole followers), gated below -80 dBFS so filtfilt edge transients don't trigger during silence. Gain reduction applied when rel > rel_threshold_db (~-12 dB), ratio-scaled, floored at max_reduction_db. Zero-phase band isolation (sosfiltfilt).",
+      "why_it_exists": "A static threshold set for the chorus misses quiet-verse esses and chews the chorus; a relative detector rides the performance like an engineer would.",
+      "when_to_use": "On vocals with wide level swings where a static de-esser needs constant re-tuning.",
+      "desktop_location": "DSP chain builder / Copilot (effect name: DynamicDeEsser)",
+      "plugin_available": true,
+      "inputs": [
+        "Vocal track or stem"
+      ],
+      "tags": [
+        "signal-processing",
+        "dsp",
+        "vocal"
+      ],
+      "related_features": [
+        "humanize"
+      ]
+    },
+    {
+      "id": "mix_note_colors",
+      "name": "Mix Note Colour System",
+      "category": "Analysis",
+      "short_description": "Severity-coloured recommendations plus green notes for what the mix does right.",
+      "detailed_description": "Colours every recommendation by severity and adds green Strength notes so wins are as visible as problems, with a legend on the Analysis and Mix/Master screens.",
+      "logic_and_math": "severity in analyzers = clamp(100*|measured-threshold|/|threshold|,0,100). Colour: >=66 red (severe), 33-66 amber (moderate), <33 blue (minor). Strength notes carry type=Strength, severity 0 -> green and sorted last; excluded from Mix Balance scoring.",
+      "why_it_exists": "A clean mix used to show an empty list (reads as 'no info'); colours plus earned strengths tell the user what to fix, in what order, and what not to touch.",
+      "when_to_use": "Whenever reading Mix Notes to triage the highest-impact fix.",
+      "desktop_location": "Analysis Dashboard > Mix Notes; Mix/Master status legend",
+      "inputs": [
+        "Recommendation engine output"
+      ],
+      "tags": [
+        "analysis",
+        "ux",
+        "visual"
+      ],
+      "related_features": [
+        "recommendation_engine",
+        "mix_notes_checklist"
+      ],
+      "plugin_available": false
+    },
+    {
+      "id": "what_changed_diff",
+      "name": "What Changed (Version Diff)",
+      "category": "Analysis",
+      "short_description": "Per-metric before/after deltas plus resolved/new mix-note diffing between any two versions in the render tree.",
+      "detailed_description": "Compares any two versions from the branch-preserving render tree — not just the session original vs. the current A/B B render — across LUFS, true peak, LRA, crest, width, clipping, and AI-artifact confidence, colouring only where the healthy direction is unambiguous. Below the metric deltas, a Mix Notes section lists which artifact-scan findings were resolved (green) and which are new (amber) between the two versions.",
+      "logic_and_math": "Pure diff over the server-cached quick_stats + artifacts_scan results (no new analysis). Before/after combos are populated from controller_.renderTree() — every render ever applied, on every branch, using the same 'R<n>: <filename>' naming as the Render Tree panel — so a sibling branch's render can be picked as a baseline, not only the currently-synced linear path. Green/red on clipping-count down, true-peak crossing -1 dBTP, and artifact confidence down; taste metrics (LUFS, width) stay neutral with raw deltas. Mix-note diffing reuses the two artifact scans' finding summaries already fetched for the metric diff: a finding present in the before scan but absent from the after scan is Resolved; one only in the after scan is New — a free byproduct of the same two network calls, not a second analysis pass.",
+      "why_it_exists": "Answers 'what did that render actually do?' immediately after any apply, so changes are verified, not assumed — and against any point in the render tree, not only the original, since engineers often want to compare two experiments against each other rather than each against the untouched source.",
+      "when_to_use": "After applying any chain/EQ/macro/Humanize render, or when comparing two earlier experiments from different branches of the render tree.",
+      "desktop_location": "Mix/Master > What Changed card",
+      "inputs": [
+        "Original + processed (A/B B) cached analysis"
+      ],
+      "tags": [
+        "analysis",
+        "diff",
+        "ux"
+      ],
+      "related_features": [
+        "mastering_readiness_score",
+        "humanize"
+      ],
+      "plugin_available": false
+    },
+    {
+      "id": "intake_progress_hud",
+      "name": "Intake Progress HUD",
+      "category": "UI/UX",
+      "short_description": "Global six-stage analysis progress strip visible on every screen.",
+      "detailed_description": "A slim strip pinned above the content on every screen while an analysis pass runs, showing the six pipeline stages with the current one highlighted and an overall percentage; clicking jumps to the Dashboard.",
+      "logic_and_math": "Stages: Fast, Deep, Sections, Drums, Chords/Ref, Stems. overall% = completed_slots/6. Driven by AppController forwarding onPipelineProgress; auto-hides ~4 s after completion.",
+      "why_it_exists": "Heavy analysis + Demucs can take 15-60 s; without visible progress the app looks frozen or like it might be sending data to the cloud.",
+      "when_to_use": "Automatically, whenever intake analysis is running.",
+      "desktop_location": "Global, above the content area on every screen",
+      "inputs": [
+        "Analysis pipeline progress callbacks"
+      ],
+      "tags": [
+        "ux",
+        "visual",
+        "trust"
+      ],
+      "related_features": [
+        "local_analysis_service",
+        "session_intake"
+      ],
+      "plugin_available": false
+    },
+    {
+      "id": "mix_master_drag_reorder",
+      "name": "Mix/Master Card Reorder",
+      "category": "UI/UX",
+      "short_description": "Drag any Mix/Master right-stack card to reorder it; the order persists.",
+      "detailed_description": "The right-hand card stack (Variant Compare, Streaming Impact, What Changed, Timeline, Signal Rack, X-Ray, Presets, Humanize) can be dragged by its header to a new position. The two compound rows — the EQ Curve card with its Apply button, and the side-by-side Snapshots/Render-Tree pair — stay full members of the same ordered list so other cards can be dragged past or around them, but aren't drag sources themselves since neither has one single header to arm a drag from. A teal insertion line shows where a dragged card will land.",
+      "logic_and_math": "The stack is a data-driven ordered section list (previously a hand-rolled sequence of fixed setBounds calls) so reordering is a list-splice, not a layout rewrite. Each section carries its own layout closure plus a collapsed-height override, so per-card collapse (already-shipped layout memory) and reordering compose without conflicting. Order is serialized as a comma-joined id list and restored on next open the same way per-card collapse state already persists; any id missing from the saved order (e.g. a card added since it was written) is appended in its default position instead of disappearing.",
+      "why_it_exists": "Engineers don't all work the cards in the same sequence — someone doing a mastering pass wants X-Ray and Presets up top, someone chasing an artifact wants What Changed and Humanize together. A fixed stack forced everyone into one workflow.",
+      "when_to_use": "Whenever the default Mix/Master card order doesn't match how you work a session — drag a card's header to move it.",
+      "desktop_location": "Mix/Master screen, right-hand card stack",
+      "plugin_available": false,
+      "inputs": [
+        "Mouse drag on a card header"
+      ],
+      "tags": [
+        "ux",
+        "layout",
+        "desktop-only"
+      ],
+      "related_features": [
+        "what_changed_diff",
+        "humanize"
+      ]
+    },
+    {
+      "id": "multi_file_intake_queue",
+      "name": "Multi-File Intake Queue",
+      "category": "Session Setup",
+      "short_description": "Drag-reorderable, per-file-cancellable queue for analyzing several tracks in one intake pass.",
+      "detailed_description": "Session Intake accepts multiple files at once and analyzes them sequentially, showing each file's status (Pending/Analyzing/Done/Failed/Cancelled). Rows can be dragged to reorder the queue before or during analysis, and each row has its own Cancel control. The first file to finish auto-populates the Creative Target panel so Create Session unlocks without waiting for the whole queue.",
+      "logic_and_math": "Each file is analyzed via the job-based API (startAnalysisJob, then polling getAnalysisProgress every 100 ms) instead of one blocking analyze() call per file. Cancel sets a per-path atomic flag checked on every poll tick; a flagged file calls cancelAnalysisJob and breaks out of the poll loop immediately, then the queue moves on to the next file. This replaced an earlier version where Cancel only skipped files that hadn't started yet — clicking Cancel on the file currently being analyzed did nothing until its single blocking HTTP call finished (up to 60 s later).",
+      "why_it_exists": "Batch intake of an EP or album shouldn't require babysitting one file at a time, and a queue without real mid-flight cancellation means a wrong file dropped in can waste a full analysis pass with no way to stop it.",
+      "when_to_use": "Loading more than one track at intake — an EP, an album, or several mix revisions to compare.",
+      "desktop_location": "Session Intake screen, file queue below the drop zone",
+      "plugin_available": false,
+      "inputs": [
+        "Multiple dropped/chosen audio files"
+      ],
+      "tags": [
+        "session-management",
+        "ux",
+        "desktop-only",
+        "batch"
+      ],
+      "related_features": [
+        "session_intake"
+      ]
+    },
+    {
+      "id": "mastering_agent",
+      "name": "Mastering Agent",
+      "category": "Mastering",
+      "short_description": "Iterative render → re-analyze → critique → adjust loop that polishes a chain toward genre targets.",
+      "detailed_description": "Renders the current chain, re-measures LUFS/crest/spectral-centroid against the genre target, picks whichever dimension is furthest out of tolerance, nudges the one chain stage that addresses it (gain, compressor ratio, or a broad shelf), and repeats. Every iteration is checked against the same post-render guardrail used elsewhere (matched-level true-peak/clipping/mono-fold/vocal-presence/artifact regressions) before it can be promoted as a candidate — an iteration that regresses a safety metric stops the loop rather than being scored on numeric closeness alone. The agent never auto-applies a result: it proposes a best-safe candidate and the desktop A/B's it against the source at matched loudness for the user to accept.",
+      "logic_and_math": "Objective score = |lufs_delta|/0.5dB + |crest_delta|/1.5dB + |centroid_delta|/400Hz, plus a safety penalty term (vocal-presence drop / 0.05, artifact-score rise / 0.15, each floored at 0 so an improvement never helps the score beyond neutral). Converges when all three deltas are within tolerance; stops early on a safety regression, a soft-safety warning, or 2 consecutive non-improving iterations. The critique step is a deterministic heuristic (worst-dimension-first), not an LLM call, so the loop always completes without any network dependency — an LLM-backed critique is a documented drop-in replacement, not the current implementation.",
+      "why_it_exists": "Manually chasing a genre-target render by ear across many small adjustments is slow; this automates the repetitive polishing step while keeping every decision traceable (each iteration records its chain, metrics, deltas, and a plain-English critique) and keeping the user as the final approver rather than silently swapping in a render.",
+      "when_to_use": "After an initial mix/master chain is in place and you want to close the remaining gap to a genre's loudness/dynamics/tonal targets without manually re-rendering and re-measuring by hand.",
+      "desktop_location": "Mix / Master screen → Mastering Agent action",
+      "plugin_available": false,
+      "inputs": [
+        "Current processing chain (or none, to start from the source)",
+        "Selected genre target profile",
+        "Rendered audio at each iteration (via the Python analysis service)"
+      ],
+      "tags": [
+        "mastering",
+        "ai-assisted",
+        "desktop-only",
+        "iterative",
+        "safety-gated"
+      ],
+      "related_features": [
+        "creative_target_system",
+        "post_render_guardrail",
+        "loudness_matched_ab"
+      ]
+    },
+    {
+      "id": "fix_check",
+      "name": "Fix Check (Did it work?)",
+      "category": "Analysis",
+      "short_description": "After each fix, Khensu re-analyses the new version and says, finding by finding, whether the fix worked.",
+      "detailed_description": "Every time a version is accepted (a fix, an EQ, a master, a chain), Khensu analyses that version in the background and compares it with the original's findings: each one is resolved, improved, unchanged (within 5 severity points), worse or new, with the loudness, true peak, loudness range, crest, tonal tilt, width and correlation deltas behind it. The result shows in the issue queue and the sidebar. Checks are kept per version, so undo and redo show the right one without re-analysing.",
+      "why_it_exists": "A fix that only sounds better because it is louder, or that fixes one thing and breaks another, should be caught. The check is the audit trail for every change.",
+      "when_to_use": "Read it after every fix; press Check again in the issue queue to re-run it.",
+      "inputs": [
+        "The original's analysis",
+        "The accepted version's analysis"
+      ],
+      "tags": [
+        "technical",
+        "desktop-only",
+        "foundational"
+      ],
+      "desktop_location": "Issues screen header (Current version checked: ...) and each issue's check label; sidebar status",
+      "plugin_available": false,
+      "related_features": [
+        "guided_assistant",
+        "render_start_point",
+        "what_changed_diff"
+      ]
+    },
+    {
+      "id": "render_start_point",
+      "name": "Start From: Current Version",
+      "category": "UI/UX",
+      "short_description": "Renders process the current version, so fixes stack; switch to the original to start over.",
+      "detailed_description": "Every render - a fix, the EQ, a cleanup, a chain, the Mastering Agent, chat, AutoMix, presets, the hosted plugin chain, the vocal editors' mix renders - processes the current version by default, so fixing issue 2 keeps the fix for issue 1 and a master carries the EQ before it. The transport bar's Start from choice switches to the original for a fresh branch. The render tree shows each version as a child of the version it was made from.",
+      "why_it_exists": "Fixes used to replace each other: every render started from the original file.",
+      "when_to_use": "Leave it on Current version while working through the issue queue; choose Original to try a different approach from scratch.",
+      "inputs": [
+        "The accepted version (render history)",
+        "The original file"
+      ],
+      "tags": [
+        "workflow",
+        "desktop-only"
+      ],
+      "desktop_location": "Transport bar, right of Undo / Redo (once a version exists)",
+      "plugin_available": false,
+      "related_features": [
+        "guided_assistant",
+        "fix_check"
+      ]
+    },
+    {
+      "id": "results_gate",
+      "name": "Results Gate & Provisional Readings",
+      "category": "Analysis",
+      "short_description": "Findings and grades appear when everything a grade is built from has finished; the fast loudness reading shows at once.",
+      "detailed_description": "While a track is analysed, the result screens show progress instead of findings, so grades never move while you read. The gate waits only for the main analysis (deep pass, sections, drums, reference, chords, measurement trust); the Dashboard's other scans fill in their panels afterwards, and the sidebar says while they run. The fast native pass - integrated loudness, true peak, clipping - shows on the progress card at once, marked provisional. Scan results are kept on disk by the file's content, so reopening a session or restarting the app reads them back instead of scanning again.",
+      "why_it_exists": "Results used to stay hidden until a dozen scans that cannot change a grade had finished - up to minutes for nothing.",
+      "when_to_use": "Automatic on every analysis.",
+      "inputs": [
+        "The analysis pipeline's stages"
+      ],
+      "tags": [
+        "technical",
+        "desktop-only"
+      ],
+      "desktop_location": "Over the result screens while analysing; sidebar analysis status",
+      "plugin_available": false,
+      "related_features": [
+        "analysis_dashboard",
+        "local_analysis_service",
+        "intake_progress_hud"
+      ]
+    }
+  ]
+}
