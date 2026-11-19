@@ -87,7 +87,7 @@ endif()
 # be filtered by executable name (`ctest -L KhensuCoreTests`) - test names
 # themselves are individual Catch2 case names, not the executable name, so
 # `ctest -R KhensuCoreTests` alone matches nothing (frontend-review-2026-07-17.md P3).
-catch_discover_tests(KhensuCoreTests PROPERTIES LABELS "KhensuCoreTests")
+catch_discover_tests(KhensuCoreTests PROPERTIES LABELS "KhensuCoreTests" SKIP_RETURN_CODE 4)
 
 # ── UI tests (KhensuTests) ────────────────────────────────────────────────────
 add_executable(KhensuTests
@@ -321,7 +321,7 @@ target_link_libraries(KhensuTests PRIVATE
 )
 
 khensu_apply_compiler_flags(KhensuTests)
-catch_discover_tests(KhensuTests PROPERTIES LABELS "KhensuTests")
+catch_discover_tests(KhensuTests PROPERTIES LABELS "KhensuTests" SKIP_RETURN_CODE 4)
 
 # ---------------------------------------------------------------------------
 # KhensuPluginTests - deterministic processor tests for the VST3 copilot
@@ -400,4 +400,4 @@ target_link_libraries(KhensuPluginTests PRIVATE
 khensu_apply_compiler_flags(KhensuPluginTests COMPILES_JUCE)
 get_target_property(_khensu_plugin_test_sources KhensuPluginTests SOURCES)
 khensu_conversion_warnings(${_khensu_plugin_test_sources})
-catch_discover_tests(KhensuPluginTests PROPERTIES LABELS "KhensuPluginTests")
+catch_discover_tests(KhensuPluginTests PROPERTIES LABELS "KhensuPluginTests" SKIP_RETURN_CODE 4)

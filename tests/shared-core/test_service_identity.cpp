@@ -121,7 +121,9 @@ TEST_CASE("A self-verifying bridge never sends the token to a listener that fail
     const auto result = bridge.getExportTargets();
     REQUIRE(result.is_err());
     CHECK(result.error().kind == BridgeError::Kind::ServiceUnavailable);
-    CHECK(impostor.healthProbes.load() >= 1); // it was asked to prove itself
+    // Without a token.txt (a CI runner) there is no challenge to send, so the
+    // gate fails closed without probing; with one, the listener is asked.
+    if (!tokenOnDisk().empty()) CHECK(impostor.healthProbes.load() >= 1); // it was asked to prove itself
     CHECK(impostor.tokenRequests.load() == 0); // and never got the token
     CHECK_FALSE(HttpServiceBridge::serviceIdentityVerified());
 }
@@ -164,13 +166,15 @@ TEST_CASE("Concurrent requests share one failed identity probe instead of queuei
         });
     for (auto& t : callers) t.join();
     CHECK(refused.load() == 4);
-    CHECK(impostor.healthProbes.load() == 1);
     CHECK(impostor.tokenRequests.load() == 0);
+    // No token.txt (a CI runner): nothing to challenge with, so no probe at all.
+    const int expectedProbes = tokenOnDisk().empty() ? 0 : 1;
+    CHECK(impostor.healthProbes.load() == expectedProbes);
 
     // Straight after a failed proof the gate answers from it, without a probe.
     HttpServiceBridge again(impostor.baseUrl(), 2000, 0);
     CHECK(again.getExportTargets().is_err());
-    CHECK(impostor.healthProbes.load() == 1);
+    CHECK(impostor.healthProbes.load() == expectedProbes);
 }
 
 TEST_CASE("Without self-verify the gate still fails fast and probes nothing (FIX-7)", "[ipc][identity][fix7]")

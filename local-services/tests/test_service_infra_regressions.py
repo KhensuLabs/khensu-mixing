@@ -244,7 +244,7 @@ def test_shutdown_route_uses_graceful_exit(client, monkeypatch):
     calls: list[str] = []
     monkeypatch.setattr(lifecycle, "request_exit", lambda: calls.append("x") or "server")
     monkeypatch.setattr(jobs, "interrupt_all_jobs", lambda: 0)
-    monkeypatch.setattr(client.app.state, "shutting_down", False)
+    monkeypatch.setattr(client.app.state, "shutting_down", False, raising=False)
     assert client.post("/shutdown").status_code == 200
     assert calls == ["x"]
 

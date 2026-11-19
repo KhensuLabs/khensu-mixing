@@ -161,7 +161,7 @@ juce::String AudioExporter::exportFile(const AudioExportOptions& opts)
         if (!stream) return "Cannot create output file: " + opts.outputPath;
         writer = wmfFmt.createWriterFor(stream, writerOptions(outSR, nCh, 16)); // AAC is encoded at 16-bit
 #elif JUCE_MAC
-        juce::CoreAudioAudioFormat caFmt;
+        juce::CoreAudioFormat caFmt;
         std::unique_ptr<juce::OutputStream> stream = tmpOut.getFile().createOutputStream();
         if (!stream) return "Cannot create output file: " + opts.outputPath;
         writer = caFmt.createWriterFor(stream, writerOptions(outSR, nCh, 16));

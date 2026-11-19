@@ -33,9 +33,14 @@ TEST_CASE("Corpus measurement for genre norms", "[.measure]")
     const auto outPath = juce::SystemStats::getEnvironmentVariable("KHENSU_MEASURE_OUT", {});
     if (listPath.isEmpty() || outPath.isEmpty()) SKIP("set KHENSU_MEASURE_LIST and KHENSU_MEASURE_OUT");
 
-    std::ifstream list(listPath.toWideCharPointer());
+#if JUCE_WINDOWS
+    const auto nativePath = [](const juce::String& p) { return p.toWideCharPointer(); }; // MSVC's wide-path overload
+#else
+    const auto nativePath = [](const juce::String& p) { return p.toStdString(); };
+#endif
+    std::ifstream list(nativePath(listPath));
     REQUIRE(list.good());
-    std::ofstream out(outPath.toWideCharPointer(), std::ios::app);
+    std::ofstream out(nativePath(outPath), std::ios::app);
     REQUIRE(out.good());
 
     GenreDatabase genres;
