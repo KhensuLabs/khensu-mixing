@@ -14,6 +14,7 @@
 #elif JUCE_MAC
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
+#include <sys/stat.h> // chmod in tightenCredentialPathPermissions
 #elif JUCE_LINUX
 #include <cstdio>
 #include <sys/stat.h>

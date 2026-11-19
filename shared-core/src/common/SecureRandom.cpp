@@ -12,6 +12,9 @@
 #else
 #include <cstdio>
 #include <unistd.h>
+#if defined(__APPLE__) || defined(__linux__)
+#include <sys/random.h> // getentropy: macOS declares it here, not in unistd.h
+#endif
 #endif
 
 namespace khensu {
