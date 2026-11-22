@@ -265,8 +265,11 @@ void CopilotApi::streamChat(const juce::String& message, const juce::var& histor
     // half of the shared request path applies.
     const auto body = juce::JSON::toString(juce::var(reqObj.get()));
     BridgeError error;
-    auto stream = openStream(nullptr, "/copilot/chat/stream", &body, withTimeout(180000), error);
+    auto options = withTimeout(180000);
+    options.shouldCancel = shouldCancel;
+    auto stream = openStream(nullptr, "/copilot/chat/stream", &body, options, error);
     if (stream == nullptr) {
+        if (shouldCancel && shouldCancel()) return; // cancelled while connecting: not an error
         if (onError) onError(error);
         return;
     }

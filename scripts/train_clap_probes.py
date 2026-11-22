@@ -59,6 +59,17 @@ MODELS = ROOT / "local-services" / "resources" / "models"
 MOOD_OUT = MODELS / "clap_mood_probe.json"
 AI_OUT = MODELS / "clap_ai_probe.json"
 AI_PER_CLASS = 1600
+# EXP-4: the shipped probe (SONICS vs Jamendo) called 53% of unseen human
+# lossless tracks AI and 32% of the archive corpus (bench-results/
+# ai_cross_dataset.json). The broad set adds every FakeMusicCaps generator on
+# the AI side and archive.org music on the human side, and band-limited
+# copies of human tracks (16 kHz mono, FakeMusicCaps' own format) so
+# bandwidth cannot stand in for "AI".
+FMC = ROOT / "corpus_data" / "fakemusiccaps"
+LOSSLESS = ROOT / "corpus_data" / "genre_corpus_lossless"
+ARCHIVE_TRAIN_N = 600
+BANDLIMITED_HUMAN_N = 800
+BANDLIMIT_SUFFIX = "#16k"
 EXCERPT_S = 40.0
 C_GRID = (0.01, 0.03, 0.1, 0.3, 1.0)
 
@@ -143,12 +154,36 @@ def ai_items(seed: int = 0) -> list[tuple[str, int, str]]:
         items += [(p, 1, gen) for p in files[:per_gen]]
     reals = sorted(str(p) for p in JAMENDO.glob("*.opus"))
     rng.shuffle(reals)
-    items += [(p, 0, "jamendo") for p in reals[:AI_PER_CLASS]]
+    jam = reals[:AI_PER_CLASS]
+    items += [(p, 0, "jamendo") for p in jam]
+    # EXP-4 broad set.
+    for gen_dir in sorted(d for d in FMC.iterdir() if d.is_dir()) if FMC.is_dir() else []:
+        items += [(str(p), 1, gen_dir.name) for p in sorted(gen_dir.glob("*.wav"))]
+    # Nothing from an album either held-out human set holds (unseen-human,
+    # and the lossless originals of the same corpus): a song's lossy copy in
+    # training would leak its lossless original's score.
+    def _album(path: str) -> tuple[str, str]:
+        q = Path(path)
+        return q.parent.name, q.name.split("__", 1)[0]
+    held_out = {_album(p) for p in unseen_human_items()} | {_album(p) for p in lossless_items()}
+    archive = [p for p in sorted({str(p) for g in ("*.mp3", "*.ogg") for p in ARCHIVE.rglob(g)})
+               if _album(p) not in held_out]
+    rng.shuffle(archive)
+    archive = [p for p in archive if not _ai_tagged(p)][:ARCHIVE_TRAIN_N]
+    items += [(p, 0, "archive") for p in archive]
+    humans = jam + archive
+    rng.shuffle(humans)
+    items += [(p + BANDLIMIT_SUFFIX, 0, "bandlimited") for p in humans[:BANDLIMITED_HUMAN_N]]
     return items
 
 
 def _codec_matched(src: str, tmp: Path) -> str | None:
-    """The middle EXCERPT_S of `src`, round-tripped through 128 kb/s MP3."""
+    """The middle EXCERPT_S of `src`, round-tripped through 128 kb/s MP3. A
+    key ending in BANDLIMIT_SUFFIX is first cut to 16 kHz mono (FakeMusicCaps'
+    format), then encoded the same way."""
+    band_limit = src.endswith(BANDLIMIT_SUFFIX)
+    if band_limit:
+        src = src[: -len(BANDLIMIT_SUFFIX)]
     try:
         dur = float(subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", src],
@@ -157,8 +192,10 @@ def _codec_matched(src: str, tmp: Path) -> str | None:
         return None
     start = max(0.0, (dur - EXCERPT_S) / 2)
     out = tmp / "x.mp3"
+    limit = ["-af", "aresample=16000,pan=mono|c0=0.5*c0+0.5*c1,aresample=44100"] if band_limit else []
     r = subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.2f}", "-t", f"{EXCERPT_S}", "-i", src,
-                        "-ac", "2", "-ar", "44100", "-b:a", "128k", str(out)], capture_output=True, timeout=120, check=False)
+                        *limit, "-ac", "2", "-ar", "44100", "-b:a", "128k", str(out)], capture_output=True,
+                       timeout=120, check=False)
     return str(out) if r.returncode == 0 and out.exists() else None
 
 
@@ -278,8 +315,9 @@ def fit_ai() -> dict:
 
     # Unseen generator: train on the real side + one generator, test on the other.
     unseen = {}
-    gens = sorted(set(groups) - {"jamendo"})
-    real_idx = np.where(groups == "jamendo")[0]
+    humans = {"jamendo", "archive", "bandlimited"}
+    gens = sorted(set(groups) - humans)
+    real_idx = np.where(np.isin(groups, list(humans)))[0]
     rng = np.random.default_rng(0)
     rng.shuffle(real_idx)
     half = len(real_idx) // 2
@@ -299,16 +337,20 @@ def fit_ai() -> dict:
         "cv_auc": round(cv_auc, 3), "unseen_generator_auc": unseen,
         "n": len(y), "n_ai": int(y.sum()), "generators": gens,
         "codec_matched": "both sides: 40 s middle excerpt, 128 kb/s MP3 round trip",
-        "limitation": "Trained on SONICS (Suno, Udio) against MTG-Jamendo. It does not generalise across "
-                      "datasets: with every clip cut to 10 s at 16 kHz mono, a probe trained this way scored "
-                      "AUC 0.30 on five other generators (FakeMusicCaps), and the shipped probe 0.67; it also "
-                      "needs full-bandwidth audio. Experimental evidence, never a verdict.",
+        "limitation": "Trained on seven generators (SONICS: Suno, Udio; FakeMusicCaps: MusicGen, MusicLDM, "
+                      "AudioLDM2, Stable Audio Open, Mustango) against MTG-Jamendo and archive.org music, with "
+                      "band-limited human copies so bandwidth is not a cue (EXP-4). Held out: each generator "
+                      "in turn (unseen_generator_auc) and two human sources (unseen_source_false_positive_rate, "
+                      "lossless_false_positive_rate). A generator unlike all seven can still pass as human. "
+                      "Experimental evidence, never a verdict.",
         "trained": _dt.datetime.now(_dt.timezone.utc).date().isoformat(), "intervention_validated": False,
     }
     AI_OUT.write_text(json.dumps(probe), encoding="utf-8")
     _pin(AI_OUT)
     if (CACHE / "unseen_human_emb.npz").exists():
         score_unseen_human()
+    if (CACHE / "lossless_human_emb.npz").exists():
+        score_lossless()
     return {"cv_auc": cv_auc, "unseen": unseen}
 
 
@@ -365,7 +407,7 @@ def score_unseen_human() -> dict:
     rate = float((human >= 0.5).mean()) if len(human) else None
     probe["unseen_source_false_positive_rate"] = round(rate, 3) if rate is not None else None
     probe["unseen_source_note"] = (
-        f"{len(human)} human-made archive.org genre-corpus tracks (a source the probe never saw), same excerpt "
+        f"{len(human)} human-made archive.org genre-corpus tracks from albums the probe never saw, same excerpt "
         f"and MP3 round trip: {100 * rate:.1f}% scored at or over 0.5, median {float(np.median(human)):.3f}. "
         f"{len(tagged)} more tracks there carry AI-service tags (suno.com etc.) and are not counted as human; "
         f"{sum(p >= 0.5 for p in tagged)} of them scored at or over 0.5.")
@@ -373,6 +415,46 @@ def score_unseen_human() -> dict:
     _pin(AI_OUT)
     print("unseen-human:", probe["unseen_source_note"], flush=True)
     return {"rate": rate, "n_human": len(human), "n_tagged": len(tagged)}
+
+
+def lossless_items() -> list[str]:
+    manifest = json.loads((LOSSLESS / "manifest.json").read_text(encoding="utf-8"))
+    return [str(LOSSLESS / g / t["file"]) for g, ts in manifest.items() for t in ts
+            if t.get("file") and (LOSSLESS / g / t["file"]).is_file()]
+
+
+def embed_lossless() -> None:
+    """EXP-4: the lossless originals - human music no probe trains on - through
+    the same excerpt and round trip, for the held-out false-alarm rate."""
+    out = CACHE / "lossless_human_emb.npz"
+    keys, embs = _load(out)
+    todo = [p for p in lossless_items() if p not in set(keys)]
+    print(f"lossless: {len(keys)} embedded, {len(todo)} to go", flush=True)
+    with tempfile.TemporaryDirectory(prefix="khensu_clap_lossless_") as td:
+        for n, path in enumerate(todo, 1):
+            matched = _codec_matched(path, Path(td))
+            e = _embed(matched) if matched else None
+            if e is not None:
+                keys.append(path)
+                embs.append(e)
+            if n % 50 == 0 or n == len(todo):
+                _save(out, keys, embs)
+
+
+def score_lossless() -> dict:
+    from khensu_services.analysis.learned.clap_probes import ai_from_embedding
+
+    probe = json.loads(AI_OUT.read_text(encoding="utf-8"))
+    _keys, embs = _load(CACHE / "lossless_human_emb.npz")
+    p = np.array([ai_from_embedding(e, probe)["probability"] for e in embs])
+    rate = float((p >= 0.5).mean()) if len(p) else None
+    probe["lossless_false_positive_rate"] = round(rate, 3) if rate is not None else None
+    probe["lossless_note"] = (f"{len(p)} lossless human originals (genre corpus, never trained on): "
+                              f"{100 * rate:.1f}% scored at or over 0.5, median {float(np.median(p)):.3f}.")
+    AI_OUT.write_text(json.dumps(probe), encoding="utf-8")
+    _pin(AI_OUT)
+    print("lossless:", probe["lossless_note"], flush=True)
+    return {"rate": rate, "n": len(p)}
 
 
 def _pin(path: Path) -> None:
@@ -385,7 +467,8 @@ def _pin(path: Path) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["embed-mood", "embed-ai", "fit", "fit-mood", "fit-ai", "unseen-human"])
+    ap.add_argument("mode", choices=["embed-mood", "embed-ai", "fit", "fit-mood", "fit-ai", "unseen-human",
+                                     "lossless"])
     a = ap.parse_args()
     if a.mode == "embed-mood":
         embed_mood()
@@ -393,6 +476,9 @@ def main() -> None:
         embed_ai()
     elif a.mode == "unseen-human":
         embed_unseen_human()
+    elif a.mode == "lossless":
+        embed_lossless()
+        score_lossless()
     if a.mode in ("fit", "fit-mood"):
         fit_mood()
     if a.mode in ("fit", "fit-ai"):

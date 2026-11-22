@@ -146,3 +146,46 @@ def start_exit_watchdog(server: Any, deadline_sec: float = HARD_EXIT_DEADLINE_SE
     t = threading.Thread(target=_watch, name="khensu-exit-watchdog", daemon=True)
     t.start()
     return t
+
+
+#: The desktop app's process id (MAC-1). macOS and Linux have no job object
+#: that kills the service with the app (Windows: ServiceProcessJob), so a
+#: crashed app left the service on its port. The app sets this before it
+#: spawns the service; the service leaves when that process is gone.
+PARENT_PID_ENV = "KHENSU_PARENT_PID"
+
+
+def start_parent_watch(poll_sec: float = 1.0, exit_fn: Any = None,
+                       getppid: Any = None, environ: Any = None) -> threading.Thread | None:
+    """Request a graceful exit once the app that started the service is gone
+    (it exited, crashed or was killed: the service is re-parented). POSIX
+    only - on Windows the job object does this, and ``os.kill(pid, 0)`` there
+    would terminate the process. None when not started by the app."""
+    import os
+    import sys
+
+    env = environ if environ is not None else os.environ
+    raw = str(env.get(PARENT_PID_ENV, "")).strip()
+    if sys.platform == "win32" or not raw.isdigit():
+        return None
+    parent = int(raw)
+    ppid = getppid or os.getppid
+    leave = exit_fn or request_exit
+
+    def _alive(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True  # exists, owned by someone else
+
+    def _watch() -> None:
+        while ppid() == parent and _alive(parent):
+            time.sleep(poll_sec)
+        leave()
+
+    t = threading.Thread(target=_watch, name="khensu-parent-watch", daemon=True)
+    t.start()
+    return t

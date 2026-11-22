@@ -26,13 +26,35 @@ def _lock_packages() -> dict[str, list[dict]]:
     return out
 
 
+#: The pitch profile installs into local-services/.venv311 only (Python 3.11,
+#: Windows / macOS). The export also carries lines for other Pythons - the
+#: Intel-Mac 3.13 fork takes NumPy 2 (MAC-1) - which never reach that venv.
+_PITCH_ENVIRONMENTS = [
+    {"python_full_version": "3.11.9", "python_version": "3.11", "sys_platform": plat,
+     "platform_machine": machine, "platform_system": system, "os_name": os_name,
+     "implementation_name": "cpython", "platform_python_implementation": "CPython"}
+    for plat, machine, system, os_name in (("win32", "AMD64", "Windows", "nt"),
+                                           ("darwin", "arm64", "Darwin", "posix"),
+                                           ("darwin", "x86_64", "Darwin", "posix"))
+]
+
+
 def _pitch_pins() -> dict[str, list[str]]:
+    """Pinned versions in requirements-pitch-hashed.txt whose environment
+    marker holds for a Python 3.11 pitch venv."""
+    from packaging.markers import Marker
     text = (_ROOT / "requirements-pitch-hashed.txt").read_text(encoding="utf-8")
     pins: dict[str, list[str]] = {}
     for line in text.splitlines():
         if "==" in line and not line.startswith((" ", "#", "-")):
-            name, rest = line.split("==", 1)
-            pins.setdefault(name.strip().lower(), []).append(rest.split()[0])
+            spec = line.rstrip(" \\")
+            req, _, marker = spec.partition(";")
+            if marker.strip() and not any(Marker(marker.strip()).evaluate(env) for env in _PITCH_ENVIRONMENTS):
+                continue
+            name, rest = req.split("==", 1)
+            version = rest.split()[0]
+            if version not in pins.setdefault(name.strip().lower(), []):
+                pins[name.strip().lower()].append(version)
     return pins
 
 

@@ -13,8 +13,8 @@ namespace khensu {
 /// AppController's full dependency graph - PythonServiceManager, SQLite
 /// session state, etc. - which KhensuTests deliberately doesn't link) so
 /// it's unit-testable without a live AppController (feedbackMgr/
-/// sessionState_/database) - TODO.md "desktop matched-level A/B regression
-/// tests covering accept/reject". Always clamps to +/-4 dB regardless of how
+/// sessionState_/database), so the matched-level A/B accept/reject path has
+/// regression tests. Always clamps to +/-4 dB regardless of how
 /// far the implied offset sits from currentOffsetDb.
 inline float nudgeLufsOffsetTowardAbPreference(float currentOffsetDb, float pickedLufs, float genreTargetLufs,
                                                float stepDb = 0.3f) noexcept

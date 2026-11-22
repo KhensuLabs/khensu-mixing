@@ -79,7 +79,8 @@ def decrypt_credential(stored: str) -> str:
     sent to a cloud API as a bearer key)."""
     if stored.startswith(_REFERENCE_PREFIX):
         slot = _reference_slot(stored)
-        return _load_native_credential(slot) or _load_file_credential(slot)
+        return (session_credential(slot) or _load_native_credential(slot)
+                or _load_file_credential(slot))
     if not stored.startswith(_DPAPI_PREFIX):
         return stored
     try:
@@ -118,18 +119,34 @@ def _load_file_credential(slot_id: str) -> str:
     return payload
 
 
+# MAC-1: keys the desktop app handed over (POST /settings/credentials),
+# held in memory only. On macOS this is the only way the service gets a
+# Keychain key: the item trusts only the app, and reading it here through
+# /usr/bin/security made macOS prompt at every read.
+_session_lock = threading.Lock()
+_session_credentials: dict[str, str] = {}
+
+
+def set_session_credentials(credentials: dict[str, str]) -> int:
+    """Replace the app-provided keys (slot id -> secret; an empty secret
+    removes the slot). Returns how many are held."""
+    with _session_lock:
+        _session_credentials.clear()
+        for slot, secret in credentials.items():
+            if isinstance(secret, str) and secret:
+                _session_credentials[_normalize_slot_id(str(slot))] = secret
+        return len(_session_credentials)
+
+
+def session_credential(slot_id: str) -> str:
+    with _session_lock:
+        return _session_credentials.get(_normalize_slot_id(slot_id), "")
+
+
 def _load_native_credential(slot_id: str) -> str:
     safe_slot = _normalize_slot_id(slot_id)
     try:
-        if sys.platform == "darwin":
-            proc = subprocess.run(
-                ["security", "find-generic-password", "-s", _CREDENTIAL_SERVICE, "-a", safe_slot, "-w"],
-                capture_output=True,
-                check=False,
-            )
-            if proc.returncode == 0:
-                return proc.stdout.decode("utf-8", errors="replace").strip()
-        elif sys.platform.startswith("linux"):
+        if sys.platform.startswith("linux"):
             proc = subprocess.run(
                 ["secret-tool", "lookup", "service", _CREDENTIAL_SERVICE, "account", safe_slot],
                 capture_output=True,

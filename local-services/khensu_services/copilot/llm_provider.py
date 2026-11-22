@@ -886,6 +886,22 @@ def clear_local_detection_for_testing() -> None:
         _detect_cache = None
 
 
+def _unwrap_text_tool_call(parsed: dict | None, tool_name: str) -> dict | None:
+    """EXP-3: Qwen-family models under Ollama write the tool call into the
+    message text, Hermes style - {"name": "<tool>", "arguments": {...}} -
+    instead of tool_calls; the arguments are the answer, not the wrapper."""
+    if isinstance(parsed, dict) and parsed.get("name") == tool_name:
+        inner = parsed.get("arguments", parsed.get("parameters"))
+        if isinstance(inner, str):
+            try:
+                inner = json.loads(inner)
+            except ValueError:
+                return parsed
+        if isinstance(inner, dict):
+            return inner
+    return parsed
+
+
 class LocalServerProvider(OpenAICompatibleProvider):
     """An OpenAI-compatible server on localhost. No API key, no budget, a
     long read deadline (CPU generation), and a structured-output path that
@@ -943,7 +959,7 @@ class LocalServerProvider(OpenAICompatibleProvider):
                 parsed = json.loads(args) if isinstance(args, str) else args
                 if isinstance(parsed, dict):
                     return parsed
-            parsed = extract_json_object(message.get("content") or "")
+            parsed = _unwrap_text_tool_call(extract_json_object(message.get("content") or ""), tool_name)
             if parsed is not None:
                 return parsed
         except ProviderUnavailable:
@@ -959,7 +975,8 @@ class LocalServerProvider(OpenAICompatibleProvider):
                             + oai_messages[1:],
                 "response_format": {"type": "json_object"},
             }, max_tokens)
-            parsed = extract_json_object(data["choices"][0]["message"].get("content") or "")
+            parsed = _unwrap_text_tool_call(
+                extract_json_object(data["choices"][0]["message"].get("content") or ""), tool_name)
         except Exception as exc:
             raise StructuredCallError(str(exc)) from exc
         if parsed is None:

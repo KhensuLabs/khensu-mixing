@@ -43,6 +43,9 @@ class SpectralRecommender {
     /// lands inside the window instead of on its rim.
     static constexpr float kLowShelfHz = 150.0f;
     static constexpr float kHighShelfHz = 4000.0f;
+    /// FIX-A: the tilt fix's shelf corner - mid-spectrum, so the shelf turns
+    /// the slope across all ten octaves instead of only the top three.
+    static constexpr float kTiltShelfHz = 1000.0f;
     static constexpr float kAimTowardTarget = 0.5f;
 
     /// Gain for a tonal fix from the track's own octave spectrum (TonalFixModel),
@@ -211,6 +214,27 @@ class SpectralRecommender {
             r.how_to_verify = "Re-measure spectral tilt - target within +/-" + f1(kTiltToleranceDbPerOctave) +
                               " dB/octave of " + f1(genre.spectral_tilt_target_db_per_octave) + ".";
             r.is_taste_decision = true;
+            // FIX-A: a rendered fix - the 1 kHz high shelf that lands the
+            // tilt halfway from the window's edge to the target, solved from
+            // the track's own FFT bins. Without the bins it stays advice.
+            {
+                const float edge = genre.spectral_tilt_target_db_per_octave +
+                                   (tooBright ? kTiltToleranceDbPerOctave : -kTiltToleranceDbPerOctave);
+                const float aim = edge + kAimTowardTarget * (genre.spectral_tilt_target_db_per_octave - edge);
+                const float gain = tonal_fix::highShelfGainForTiltFft(s.fft_mid_magnitudes, result.sample_rate,
+                                                                      s.tilt_db_per_octave, aim, kTiltShelfHz,
+                                                                      tooBright ? -12.0 : 0.0,
+                                                                      tooBright ? 0.0 : 12.0);
+                if (std::isfinite(gain) && std::abs(gain) >= 0.5f) {
+                    r.suggested_action = std::string(tooBright ? "Cut" : "Boost") + " a broad High Shelf by " +
+                                         f1(std::abs(gain)) + " dB at 1 kHz to bring the slope to about " +
+                                         f1(aim) + " dB/octave.";
+                    r.suggested_parameters["eq_type"] = 1.0f;
+                    r.suggested_parameters["eq_freq_hz"] = kTiltShelfHz;
+                    r.suggested_parameters["eq_gain_db"] = gain;
+                    r.suggested_parameters["eq_q"] = 0.707f;
+                }
+            }
             out.push_back(std::move(r));
         }
 
@@ -271,7 +295,10 @@ class SpectralRecommender {
 
         // --- Cross-Stem Low-End Collision Recommendation ---
         if (result.drums.has_value() && result.drums->kick_bass_clash) {
-            auto r = make("kick_bass_collision", 65.0f, ProcessingStage::MixBus, 4);
+            // FULL-3: kick and bass fundamentals within 10 Hz on 34% of
+            // released masters - often a kick tuned to the key on purpose.
+            // A minor note to check, not an alarm.
+            auto r = make("kick_bass_collision", 30.0f, ProcessingStage::MixBus, 4);
             r.what = "Low-end frequency collision detected between Kick and Bass. Proximity: " +
                      f1(result.drums->kick_bass_proximity_hz) + " Hz.";
             r.why_helps = "When the kick and bass fundamental frequencies overlap too closely (within 10 Hz), "

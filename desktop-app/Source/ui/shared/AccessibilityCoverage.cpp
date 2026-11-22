@@ -39,9 +39,11 @@ const juce::Label* labelFor(const juce::Component& c)
         if (label == nullptr || label->isEditable() || label->getText().trim().isEmpty()) continue;
         const auto lb = label->getBounds();
         int distance = 1 << 30;
-        const bool sameRow = lb.getY() < cb.getBottom() && lb.getBottom() > cb.getY();
+        // (Parenthesised: cppcheck read "a < b && c > d" as a template.)
+        const bool sameRow = (lb.getY() < cb.getBottom()) && (lb.getBottom() > cb.getY());
         if (sameRow && lb.getRight() <= cb.getX() + 2) distance = cb.getX() - lb.getRight();
-        const bool above = lb.getBottom() <= cb.getY() + 2 && lb.getX() < cb.getRight() && lb.getRight() > cb.getX();
+        const bool above =
+            (lb.getBottom() <= cb.getY() + 2) && (lb.getX() < cb.getRight()) && (lb.getRight() > cb.getX());
         if (above) distance = juce::jmin(distance, cb.getY() - lb.getBottom());
         if (distance < 40 && distance < bestDistance) {
             bestDistance = distance;

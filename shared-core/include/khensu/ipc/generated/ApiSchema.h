@@ -229,6 +229,7 @@ inline constexpr Route post_separate{"POST", "/separate"};
 inline constexpr Route post_separate_start{"POST", "/separate/start"};
 inline constexpr Route get_separate_status_by_job_id{"GET", "/separate/status/{job_id}"};
 inline constexpr Route post_separate_by_job_id_cancel{"POST", "/separate/{job_id}/cancel"};
+inline constexpr Route post_settings_credentials{"POST", "/settings/credentials"};
 inline constexpr Route post_shutdown{"POST", "/shutdown"};
 inline constexpr Route post_taste_model_rank{"POST", "/taste/model/rank"};
 inline constexpr Route get_taste_model_status{"GET", "/taste/model/status"};
@@ -4096,6 +4097,12 @@ inline constexpr const char* updated_at = "updated_at";
 namespace SessionCommentList {
 inline constexpr const char* comments = "comments";
 } // namespace SessionCommentList
+namespace SessionCredentialsRequest {
+inline constexpr const char* credentials = "credentials";
+} // namespace SessionCredentialsRequest
+namespace SessionCredentialsResponse {
+inline constexpr const char* held = "held";
+} // namespace SessionCredentialsResponse
 namespace SetModelsDirRequest {
 inline constexpr const char* models_dir = "models_dir";
 } // namespace SetModelsDirRequest

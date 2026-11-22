@@ -243,23 +243,59 @@ def clap_text_embedding(text: str) -> np.ndarray:
 
 # --- Hand-built embedding ------------------------------------------------------
 
+#: Frames per chunk of the hand-built features (~6.3 min at 22.05 kHz /
+#: 512): every song keeps one pass; longer files are chunked (STR-1).
+_HC_CHUNK_FRAMES = 16384
+_HC_CONTEXT_FRAMES = 32
+
+
+def _frame_features(y: np.ndarray, sr: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """(log-mel [mels, frames], chroma [12, frames], onset [frames],
+    spectral contrast [7, frames]) of one signal, float32."""
+    import librosa
+    stft = np.abs(librosa.stft(y, n_fft=_HC_NFFT, hop_length=_HC_HOP))
+    power = stft ** 2
+    mel = librosa.feature.melspectrogram(S=power, sr=sr, n_mels=_HC_MELS, fmin=30.0,
+                                         fmax=min(11000.0, sr / 2.0))
+    log_mel = 10.0 * np.log10(mel + 1e-10)
+    chroma = librosa.feature.chroma_stft(S=power, sr=sr)
+    del power
+    onset = librosa.onset.onset_strength(S=log_mel, sr=sr)
+    contrast = librosa.feature.spectral_contrast(S=stft, sr=sr)
+    return log_mel, chroma, onset, contrast
+
+
 class _FrameFeatures:
     """Frame-level features of one signal; windows are pooled from these so
     section search computes the expensive transforms once."""
 
     def __init__(self, y: np.ndarray, sr: int):
-        import librosa
         y = np.asarray(y, dtype=np.float32)
         if y.size < _HC_NFFT:
             y = np.pad(y, (0, _HC_NFFT - y.size))
-        stft = np.abs(librosa.stft(y, n_fft=_HC_NFFT, hop_length=_HC_HOP))
-        power = stft ** 2
-        mel = librosa.feature.melspectrogram(S=power, sr=sr, n_mels=_HC_MELS, fmin=30.0,
-                                             fmax=min(11000.0, sr / 2.0))
-        self.log_mel = 10.0 * np.log10(mel + 1e-10)                       # [mels, frames]
-        self.chroma = librosa.feature.chroma_stft(S=power, sr=sr)         # [12, frames]
-        self.onset = librosa.onset.onset_strength(S=self.log_mel, sr=sr)  # [frames]
-        self.contrast = librosa.feature.spectral_contrast(S=stft, sr=sr)  # [7, frames]
+        n_frames = 1 + y.size // _HC_HOP
+        if n_frames <= _HC_CHUNK_FRAMES:
+            self.log_mel, self.chroma, self.onset, self.contrast = _frame_features(y, sr)
+        else:
+            # STR-1: a whole-track STFT of an hour-long mix is ~2 GB before
+            # the power and magnitude copies (a 45-minute track failed to
+            # allocate 914 MiB). Long files run in chunks of frames, each with
+            # _HC_CONTEXT_FRAMES of context either side, which is dropped.
+            parts = []
+            hop, ctx = _HC_HOP, _HC_CONTEXT_FRAMES
+            for f0 in range(0, n_frames, _HC_CHUNK_FRAMES):
+                f1 = min(n_frames, f0 + _HC_CHUNK_FRAMES)
+                a = max(0, f0 - ctx)
+                b = min(n_frames, f1 + ctx)
+                # Up to a window past the last frame centre: the end frames
+                # see the same samples as in one pass.
+                seg = y[a * hop:min(y.size, (b - 1) * hop + _HC_NFFT)]
+                if seg.size < _HC_NFFT:
+                    seg = np.pad(seg, (0, _HC_NFFT - seg.size))
+                feats = _frame_features(seg, sr)
+                parts.append(tuple(f[..., f0 - a:f0 - a + (f1 - f0)] for f in feats))
+            self.log_mel, self.chroma, self.onset, self.contrast = (
+                np.concatenate([p[i] for p in parts], axis=-1) for i in range(4))
         self.n_frames = self.log_mel.shape[1]
         self.frame_s = _HC_HOP / float(sr)
 

@@ -21,6 +21,8 @@
 * ``band_power_frames`` / ``averaged_power_spectrum`` / ``pool_frames`` — the
   one banded-STFT helper (Hann frames, ``sum |X|^2`` per band via
   ``np.bincount``) and contiguous frame pooling for heatmaps (S10).
+* ``zero_crossing_rate``    — librosa's frame-wise rate without its numba
+  kernel (which crashed on Python 3.13).
 """
 from __future__ import annotations
 
@@ -209,6 +211,31 @@ def onset_strength(y: npt.ArrayLike, sr: int, hop_length: int = 512, n_fft: int 
     kwargs = {} if aggregate is None else {"aggregate": aggregate}
     return librosa.onset.onset_strength(S=librosa.power_to_db(mel), sr=sr, hop_length=hop_length,
                                         n_fft=n_fft, **kwargs)
+
+
+def zero_crossing_rate(y: npt.ArrayLike, frame_length: int = 2048, hop_length: int = 512,
+                       threshold: float = 1e-10) -> np.ndarray:
+    """``librosa.feature.zero_crossing_rate(y, frame_length, hop_length)[..., 0, :]``
+    in plain numpy: the share of sign changes inside each centred,
+    edge-padded frame (|x| <= ``threshold`` counts as 0, and 0 as positive).
+
+    librosa computes it with a numba guvectorize kernel that segfaulted on
+    Python 3.13 (Nightly, 2026-11-19..21) - every worker that reached it
+    crashed. Same frames, same count, so the numbers are unchanged."""
+    x = np.asarray(y)
+    if x.ndim > 1:
+        return np.stack([zero_crossing_rate(row, frame_length, hop_length, threshold)
+                         for row in x.reshape(-1, x.shape[-1])]).reshape(*x.shape[:-1], -1)
+    half = int(frame_length // 2)
+    x = np.pad(x, (half, half), mode="edge")
+    if x.shape[0] < frame_length:
+        raise ValueError(f"Input is too short (n={x.shape[0]}) for frame_length={frame_length}")
+    neg = np.signbit(np.where(np.abs(x) <= threshold, 0.0, x))
+    # prefix[j] = crossings among samples 1..j-1 (sample i crosses when its
+    # sign differs from sample i-1); a frame's first sample never counts.
+    prefix = np.concatenate(([0, 0], np.cumsum(neg[1:] != neg[:-1])))
+    starts = np.arange(1 + (x.shape[0] - frame_length) // hop_length) * hop_length
+    return (prefix[starts + frame_length] - prefix[starts + 1]) / float(frame_length)
 
 
 def _bincount_rows(values: np.ndarray, band_of_bin: np.ndarray, valid: np.ndarray,

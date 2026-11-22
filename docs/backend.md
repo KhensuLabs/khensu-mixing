@@ -94,7 +94,7 @@ the `detail` text:
 | 403 | An online feature disabled in Settings, or an output path outside the allowed write roots |
 | 404 | A referenced input doesn't exist — missing audio/reference/stem file (`require_file`), unknown job id (`get_job_or_404`), or an unknown route |
 | 409 | Conflict with current state — render blocked by a validator/guardrail, an output aliasing its source, an abstaining agent, a cancel underneath the request |
-| 413 | Audio over the decode budget (`require_decode_budget` / `check_decode_budget`) or an oversized body |
+| 413 | Audio over the decode budget (512 MiB of float32 samples: ~25 min of 44.1 kHz stereo, ~5.8 min at 192 kHz or 48 kHz 7.1; `KHENSU_MAX_DECODED_AUDIO_BYTES`) or an oversized body |
 | 422 | Invalid input (Pydantic's own validation code, reused for hand-rolled checks), or an existing file that can't be decoded as audio |
 | 429 | Admission cap — too many jobs of this kind in flight (`admit_or_429`) |
 | 500 | Unexpected failure (`internal_error`); the detail stays generic and the traceback goes to the service log |
@@ -221,6 +221,18 @@ at −70); `pan_balance` bands report the shared `width` plus `side_share`
   nothing — `watermark_precache.py` patches the library constant directly
   (the audit found the watermark detectors reaching the Hub with downloads
   off).
+
+- `POST /settings/credentials` - the desktop's saved API keys for this run,
+  held in memory (`online.set_session_credentials`); a credential reference
+  in `settings.json` resolves to them first, then the OS store. On macOS the
+  service never runs `/usr/bin/security` (it prompted at every read).
+
+## Event streams
+
+Server-sent event routes (`/copilot/chat/stream`, the render's
+`/copilot/apply_chain/events/{id}`) go through `common/jobs.with_sse_prelude`:
+they open with a 1 KB SSE comment, because macOS's URL loading holds a
+response until it has 512 bytes of body to sniff. Clients ignore comments.
 
 ## Diagnostics endpoints (operator-only)
 

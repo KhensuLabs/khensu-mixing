@@ -90,10 +90,21 @@ TEST_CASE("Corpus measurement for genre norms", "[.measure]")
             if (haveGenres && !genreId.empty()) {
                 if (const auto genre = genres.findById(genreId)) {
                     juce::Array<juce::var> codes;
+                    // EVID-1: each finding's severity too (the highest when a
+                    // code fires twice), so the report can tell a minor note
+                    // from an alarm.
+                    juce::DynamicObject::Ptr severity = new juce::DynamicObject();
                     for (const auto& rec : RecommendationEngine{}.generate(a, *genre, CreativeTarget{}))
-                        if (rec.type != RecommendationType::Strength)
-                            codes.addIfNotAlreadyThere(juce::String(issueCodeOf(rec, ref.id)));
+                        if (rec.type != RecommendationType::Strength) {
+                            const juce::String code(issueCodeOf(rec, ref.id));
+                            codes.addIfNotAlreadyThere(code);
+                            const double prev = severity->hasProperty(code)
+                                                    ? static_cast<double>(severity->getProperty(code))
+                                                    : -1.0;
+                            severity->setProperty(code, juce::jmax(prev, static_cast<double>(rec.severity)));
+                        }
                     o->setProperty("findings", codes);
+                    o->setProperty("severity", juce::var(severity.get()));
                 }
             }
             ++measured;

@@ -206,6 +206,7 @@ _PARAM_CLAMPS: dict[str, dict[str, tuple[float, float]]] = {
         "even_harmonics": (0.0, 1.0),
         "mix": (0.0, 1.0),
     },
+    "SpectralDenoise": {"reduction_db": (0.0, 24.0), "sensitivity": (0.5, 4.0)},
     "Clipper": {
         "ceiling_db": (-12.0, 0.0),
         "hardness": (0.0, 1.0),

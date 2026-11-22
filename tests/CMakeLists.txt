@@ -201,6 +201,7 @@ add_executable(KhensuTests
     ui/ServiceBackedScreensTest.cpp  # VER-6 (rest)
     ui/RealSongFindingsProbe.cpp  # manual: what fired on a real song ([.realsong], hidden)
     ui/FixChainMeasureTest.cpp  # MEAS-4: the fix chain per finding ([.fixchain], hidden)
+    ui/FullPipelineMeasureTest.cpp  # FULL-1: every finding through the service ([.measurefull], hidden)
     ui/EssentialsSelectionTest.cpp  # UX-1 / VER-8
     ui/CopilotGroupsTest.cpp  # UX-13 / CUT-8
     ui/CoachMarkCardTest.cpp  # UX-15

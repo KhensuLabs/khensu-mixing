@@ -1,4 +1,5 @@
 #include "AppController.h"
+#include "BundledResources.h"
 #include "session/KeyedListeners.h"
 #include "ui/shared/AbxTrialOverlay.h"
 #include "ui/shared/ChainReasoningOverlay.h"
@@ -333,14 +334,8 @@ void AppController::openStores()
 // Best-effort: pickers and the panel degrade to empty.
 void AppController::loadBundledReferenceData()
 {
-    const auto exeDir = juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory();
-    const auto resource = [&exeDir](const char* relative) {
-        auto candidate = exeDir.getChildFile(relative);
-        if (!candidate.existsAsFile()) candidate = juce::File::getCurrentWorkingDirectory().getChildFile(relative);
-        return candidate;
-    };
-    analysis_.loadReferenceData(resource("resources/genre_norms/genre_targets.json"),
-                                resource("resources/system_brain/feature_encyclopedia.json"));
+    analysis_.loadReferenceData(bundled_resources::find("resources/genre_norms/genre_targets.json"),
+                                bundled_resources::find("resources/system_brain/feature_encyclopedia.json"));
 }
 
 // The eleven screens, their accessibility pass, the onboarding hand-off and

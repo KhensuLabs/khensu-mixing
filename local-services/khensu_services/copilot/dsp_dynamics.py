@@ -655,3 +655,67 @@ def _apply_plosive_remover(audio: np.ndarray, sr: int,
         out[c] = x[c] * (1.0 - mix) + wet * mix
 
     return out[0] if was_1d else out
+
+
+# ---------------------------------------------------------------------------
+# SpectralDenoise (FIX-B) - steady broadband hiss on a bounced file. The noise
+# profile is each FFT bin's low percentile over the track (in a mix, a bin's
+# quietest frames are its noise), and each frame keeps
+# sqrt(max(1 - sensitivity * N / P, floor)) of its magnitude - a power-domain
+# Wiener-style gain with a floor of -reduction_db, smoothed over neighbouring
+# bins and released slowly over time so it does not "chirp". Frames are
+# processed in batches (bounded memory on whole tracks, PERF-7).
+# ---------------------------------------------------------------------------
+_DENOISE_N_FFT = 2048
+_DENOISE_HOP = 512
+_DENOISE_PROFILE_PERCENTILE = 10.0
+_DENOISE_RELEASE = 0.7  # per-hop smoothing when the gain falls
+
+
+def _apply_spectral_denoise(audio: np.ndarray, sr: int, reduction_db: float = 12.0,
+                            sensitivity: float = 3.0) -> np.ndarray:
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    was_1d = audio.ndim == 1
+    x = audio[np.newaxis, :] if was_1d else audio
+    n_fft, hop = _DENOISE_N_FFT, _DENOISE_HOP
+    floor_pow = 10.0 ** (-abs(float(reduction_db)) / 10.0)
+    window = np.hanning(n_fft + 1)[:-1]  # periodic: constant overlap-add at hop n/4
+    out = np.empty_like(x, dtype=np.float64)
+    for c in range(x.shape[0]):
+        sig = np.asarray(x[c], dtype=np.float64)
+        n = sig.shape[0]
+        if n < n_fft:
+            out[c] = sig
+            continue
+        padded = np.pad(sig, (n_fft, n_fft + hop))
+        frames = sliding_window_view(padded, n_fft)[::hop]
+        # Noise profile from every 4th frame: the percentile needs the spread,
+        # not every frame, and this keeps the profile pass at a quarter.
+        sample = np.abs(np.fft.rfft(frames[::4] * window, axis=1)) ** 2
+        # A noise bin's power over frames is exponential (chi-squared, two
+        # degrees of freedom), so its p-th percentile is -ln(1 - p) of its
+        # mean: rescale the low percentile to the mean noise power.
+        noise = np.percentile(sample, _DENOISE_PROFILE_PERCENTILE, axis=0) / -np.log1p(
+            -_DENOISE_PROFILE_PERCENTILE / 100.0)
+        del sample
+        acc = np.zeros(padded.shape[0])
+        norm = np.zeros(padded.shape[0])
+        prev = np.ones(n_fft // 2 + 1)
+        kernel = np.array([0.25, 0.5, 0.25])
+        for f0 in range(0, frames.shape[0], 256):
+            spec = np.fft.rfft(frames[f0:f0 + 256] * window, axis=1)
+            power = spec.real ** 2 + spec.imag ** 2
+            gain = np.maximum(1.0 - sensitivity * noise / np.maximum(power, 1e-30), floor_pow)
+            for i in range(gain.shape[0]):
+                g = np.convolve(gain[i], kernel, mode="same")
+                g = np.where(g < prev, _DENOISE_RELEASE * prev + (1.0 - _DENOISE_RELEASE) * g, g)
+                gain[i] = g
+                prev = g
+            y = np.fft.irfft(spec * np.sqrt(gain), n=n_fft, axis=1) * window
+            for i in range(y.shape[0]):
+                s0 = (f0 + i) * hop
+                acc[s0:s0 + n_fft] += y[i]
+                norm[s0:s0 + n_fft] += window ** 2
+        out[c] = (acc / np.maximum(norm, 1e-9))[n_fft:n_fft + n]
+    return out[0] if was_1d else out

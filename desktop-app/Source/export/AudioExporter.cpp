@@ -52,6 +52,33 @@ juce::File findLameExe() noexcept
 
 juce::LAMEEncoderAudioFormat makeLameFormat() { return juce::LAMEEncoderAudioFormat(findLameExe()); }
 
+#if JUCE_MAC
+/// MAC-1: JUCE's CoreAudioFormat cannot write (createWriterFor returns
+/// null), so AAC export failed on every Mac. The PCM goes to a temporary WAV
+/// and macOS's own encoder, afconvert (part of every install), writes the
+/// .m4a. 256 kb/s - the iTunes Plus rate.
+constexpr int kAacBitrate = 256000;
+
+juce::String encodeAacWithAfconvert(const juce::File& wav, const juce::File& out)
+{
+    const juce::File afconvert("/usr/bin/afconvert");
+    if (!afconvert.existsAsFile()) return "AAC encoding needs /usr/bin/afconvert, which is missing.";
+    juce::ChildProcess proc;
+    const juce::StringArray args{afconvert.getFullPathName(), "-f", "m4af", "-d", "aac",
+                                 "-b", juce::String(kAacBitrate), wav.getFullPathName(), out.getFullPathName()};
+    if (!proc.start(args, juce::ChildProcess::wantStdOut | juce::ChildProcess::wantStdErr))
+        return "Could not start the AAC encoder (afconvert).";
+    const juce::String output = proc.readAllProcessOutput();
+    if (!proc.waitForProcessToFinish(10 * 60 * 1000)) {
+        proc.kill();
+        return "The AAC encoder (afconvert) did not finish.";
+    }
+    if (proc.getExitCode() != 0 || !out.existsAsFile() || out.getSize() == 0)
+        return "AAC encoding failed: " + output.trim();
+    return {};
+}
+#endif
+
 // Map Mp3Bitrate enum to the quality option index in LAMEEncoderAudioFormat.
 // JUCE 7 LAME quality options: 0=32,1=40,2=48,3=56,4=64,5=80,6=96,7=112,
 // 8=128,9=160,10=192,11=224,12=256,13=320
@@ -130,6 +157,10 @@ juce::String AudioExporter::exportFile(const AudioExportOptions& opts)
     const bool needsResample = std::abs(srcRate - static_cast<double>(outSR)) > 1.0;
 
     std::unique_ptr<juce::AudioFormatWriter> writer;
+#if JUCE_MAC
+    // AAC on macOS: PCM here, encoded by afconvert after the loop.
+    std::unique_ptr<juce::TemporaryFile> aacPcm;
+#endif
 
     if (opts.format == AudioExportOptions::Format::WAV) {
         juce::WavAudioFormat wavFmt;
@@ -161,10 +192,11 @@ juce::String AudioExporter::exportFile(const AudioExportOptions& opts)
         if (!stream) return "Cannot create output file: " + opts.outputPath;
         writer = wmfFmt.createWriterFor(stream, writerOptions(outSR, nCh, 16)); // AAC is encoded at 16-bit
 #elif JUCE_MAC
-        juce::CoreAudioFormat caFmt;
-        std::unique_ptr<juce::OutputStream> stream = tmpOut.getFile().createOutputStream();
-        if (!stream) return "Cannot create output file: " + opts.outputPath;
-        writer = caFmt.createWriterFor(stream, writerOptions(outSR, nCh, 16));
+        aacPcm = std::make_unique<juce::TemporaryFile>(".wav");
+        juce::WavAudioFormat wavFmt;
+        std::unique_ptr<juce::OutputStream> stream = aacPcm->getFile().createOutputStream();
+        if (!stream) return "Cannot create a temporary file for AAC encoding.";
+        writer = wavFmt.createWriterFor(stream, writerOptions(outSR, nCh, 16)); // AAC is encoded from 16-bit
 #else
         return "AAC encoding is not supported on this platform.";
 #endif
@@ -220,6 +252,12 @@ juce::String AudioExporter::exportFile(const AudioExportOptions& opts)
     if (resampler) resampler->releaseResources();
 
     writer.reset(); // flushes and closes the temp stream before the swap
+#if JUCE_MAC
+    if (aacPcm != nullptr) {
+        const auto err = encodeAacWithAfconvert(aacPcm->getFile(), tmpOut.getFile());
+        if (err.isNotEmpty()) return err;
+    }
+#endif
     if (!tmpOut.overwriteTargetFileWithTemporary())
         return "Cannot replace output file: " + opts.outputPath;
     return {}; // success

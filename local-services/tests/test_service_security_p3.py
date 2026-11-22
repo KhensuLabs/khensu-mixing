@@ -514,6 +514,7 @@ def test_bootstrap_downloads_when_online(tmp_path, monkeypatch):
     from khensu_services.common import online
     monkeypatch.setattr(online, "settings_path", lambda: tmp_path / "missing.json")
     online._invalidate_cache()
+    monkeypatch.setattr(launch_service, "VENV_DIR", tmp_path / "venv")
     calls = []
     try:
         assert launch_service.bootstrap_venv(run=lambda *a, **k: calls.append(a[0])) is True
@@ -530,6 +531,7 @@ def test_bootstrap_midi_extra_is_best_effort(tmp_path, monkeypatch, capsys):
     from khensu_services.common import online
     monkeypatch.setattr(online, "settings_path", lambda: tmp_path / "missing.json")
     online._invalidate_cache()
+    monkeypatch.setattr(launch_service, "VENV_DIR", tmp_path / "venv")
     calls = []
 
     def run(cmd, **kw):

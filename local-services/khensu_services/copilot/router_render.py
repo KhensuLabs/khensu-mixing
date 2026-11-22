@@ -24,6 +24,7 @@ from khensu_services.common.audio_limits import (
 from khensu_services.common.errors import conflict, internal_error, invalid_input, not_found, too_large
 from khensu_services.common.jobs import (
     JobStore, cancel_reply, get_job_or_404, job_begin, job_cancel_requested, job_events, job_settle,
+    with_sse_prelude,
     request_fingerprint, start_job,
 )
 from khensu_services.common.executors import (
@@ -648,7 +649,7 @@ async def apply_chain_events(job_id: str) -> StreamingResponse:
     ending at a terminal state) instead of the client polling the status
     route every 750 ms. Same payload as /apply_chain/status."""
     get_job_or_404(_apply_jobs, job_id)
-    return StreamingResponse(job_events(_apply_jobs, job_id, RenderJobStatusResponse),
+    return StreamingResponse(with_sse_prelude(job_events(_apply_jobs, job_id, RenderJobStatusResponse)),
                              media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 

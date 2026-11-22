@@ -1,6 +1,6 @@
 [project]
 name = "khensu-services"
-version = "1.0.0"
+version = "1.0.1"
 description = "Khensu Mixing Suite — Local Analysis Service"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.11"
@@ -50,8 +50,10 @@ pitch = [
     # install-optional-stack.ps1 installs this profile with --no-deps.
     "onnxruntime>=1.17.0",
     # The profile was validated on NumPy 1.x (it carried TF 2.x, which needed
-    # it); kept until the pitch worker is checked on NumPy 2.
-    "numpy<2",
+    # it); kept until the pitch worker is checked on NumPy 2. The profile runs
+    # in .venv311 (Python 3.11) only; scoped so the Intel-Mac 3.13 fork can
+    # take NumPy 2 (MAC-1).
+    "numpy<2; python_full_version < '3.13'",
 ]
 # ASR dependency decision (2026-07-09, lyric-aware mixing hints): faster-whisper
 # over openai-whisper or whisper.cpp. Rationale — CTranslate2-based inference is
@@ -184,6 +186,18 @@ dependency-metadata = [
         "typing-extensions",
         "onnxruntime",
     ] },
+]
+# Intel Macs (MAC-1): numba 0.63+ and llvmlite 0.46+ publish no macOS x86_64
+# wheels, so first-run setup there fell back to building llvmlite from source
+# and failed. numba 0.62 supports NumPy up to 2.3. Apple Silicon and Windows
+# keep the newest versions (scripts/check_platform_wheels.py checks each).
+constraint-dependencies = [
+    "numba<0.63; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "llvmlite<0.46; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "numpy<2.4; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    # NumPy 1.26 (what the Intel fork settles on for torch 2.2.2, the last
+    # Intel torch) has no Python 3.13 wheels; on 3.13 take NumPy 2.
+    "numpy>=2.1; sys_platform == 'darwin' and platform_machine == 'x86_64' and python_full_version >= '3.13'",
 ]
 conflicts = [
     [{ extra = "pitch" }, { extra = "ai-detect" }],

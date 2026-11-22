@@ -1084,7 +1084,7 @@ void ChatConsolePanel::performAudition()
     // Same abstention context as performApplyChain(): auditioning renders the
     // identical chain, so it must be gated the same way - otherwise a
     // genre-relative chain that "Apply" would abstain on could still be
-    // rendered and auditioned via this button (safety audit P1, TODO.md).
+    // rendered and auditioned via this button (safety audit P1).
     render.genreRelative = true;
     render.genreActionAllowed = controller_.analysis().genreRelativeActionAllowed();
     render.abstainedReason = controller_.analysis().genreRelativeAbstainedReason();

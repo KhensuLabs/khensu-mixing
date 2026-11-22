@@ -72,10 +72,30 @@ having started it (see "Service lifecycle" below).
 
 - The desktop app **auto-launches** the Python service on startup via
   `local-services/launch_service.py` (spawned by `PythonServiceManager.cpp`).
-  On first run that script bootstraps a `.venv` and `pip install -e .`
-  automatically. You normally never start the service by hand.
+  On first run that script bootstraps a venv from the hashed lock export
+  (`requirements-runtime-hashed.txt`) - `local-services/.venv` in a checkout,
+  `~/Library/KhensuMixing/service-venv` (`%LOCALAPPDATA%\KhensuMixing\service-venv`)
+  in an installed app, so setup never writes into a signed bundle - and
+  rebuilds it when the Python or the lock changes. You normally never start
+  the service by hand.
+- **Which Python.** The app reads each candidate's version and uses the newest
+  of 3.13, 3.12 and 3.11 (final releases); the launcher refuses anything else.
+  Intel Macs stop at 3.13 because numba ships no Intel build for 3.14; the
+  lock pins them to numba 0.62 / llvmlite 0.45, and
+  `scripts/check_platform_wheels.py` (CI) checks every runtime package has a
+  wheel on Intel and Apple Silicon Macs and on Windows.
+- **The service dies with the app.** Windows puts it in a kill-on-close job
+  object (`ServiceProcessJob`); macOS and Linux pass the app's PID
+  (`KHENSU_PARENT_PID`) and the service leaves when that process is gone
+  (`common/lifecycle.start_parent_watch`).
+- **API keys.** The app keeps saved keys in the OS store (DPAPI file on
+  Windows, the Keychain on macOS - items trusted by the app only) and hands
+  them to the service over the authenticated channel when it turns healthy
+  and after every settings change (`POST /settings/credentials`); the service
+  holds them in memory and never reads the Keychain itself.
 - The service listens on **`127.0.0.1:47239`** only — never binds a public
-  interface.
+  interface. On macOS the app is launched with an argument array, never a
+  quoted command string (JUCE keeps the quote marks on POSIX).
 - Every request is authenticated with a **per-machine bearer token** written to
   a platform config dir (Windows `%APPDATA%\KhensuMixing\token.txt`; see
   `khensu_services/auth.py`).

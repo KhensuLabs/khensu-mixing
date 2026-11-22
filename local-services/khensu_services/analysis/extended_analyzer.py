@@ -67,6 +67,25 @@ def _averaged_spectrum(mono: npt.NDArray, sr: int, n_fft: int = 4096) -> tuple[n
 # ---------------------------------------------------------------------------
 # Harshness detection (2.5–5.0 kHz transient energy)
 # ---------------------------------------------------------------------------
+#: FULL-3 calibration of the harshness score. The band ratio (2.5-5 kHz RMS
+#: over 500 Hz-8 kHz RMS, in dB) of released music: median -8.4 dB, 90th
+#: percentile -5.1 dB on the genre corpus's 209 lossless originals; a broad
+#: +8 dB bell at 3.5 kHz raises it by 4 dB. The old score (ratio x 2.5,
+#: clipped) read 0.95 at the MEDIAN and fired on 87% of released tracks.
+#: Now the 90th percentile maps to 0.35 - the recommender's threshold - and
+#: each HARSH_DB_PER_UNIT dB above it adds 1.0: 10% of released tracks fire,
+#: and 58% of the +8 dB bells are caught.
+HARSH_EDGE_DB = -5.1
+HARSH_EDGE_SCORE = 0.35
+HARSH_DB_PER_UNIT = 10.0
+
+
+def harshness_from_ratio(rms_harsh: float, rms_mid: float) -> float:
+    """The 0-1 harshness score from the two band RMS levels (FULL-3)."""
+    ratio_db = 20.0 * np.log10(max(rms_harsh, 1e-12) / max(rms_mid, 1e-12))
+    return float(np.clip(HARSH_EDGE_SCORE + (ratio_db - HARSH_EDGE_DB) / HARSH_DB_PER_UNIT, 0.0, 1.0))
+
+
 def analyze_harshness(y: npt.NDArray, sr: int) -> dict[str, Any]:
     """
     Detect 2.5–5 kHz harshness by measuring the ratio of upper-mid energy
@@ -77,7 +96,8 @@ def analyze_harshness(y: npt.NDArray, sr: int) -> dict[str, Any]:
     occurs in the middle of the file is correctly detected.
 
     Returns:
-        harshness_score: float 0–1 (1 = very harsh)
+        harshness_score: float 0–1 (0.35 = the released-music 90th percentile,
+            1 = 6.5 dB beyond it; see HARSH_EDGE_DB)
         peak_hz: float | None — dominant harsh frequency if score > 0.2
         peak_db: float | None — dB level of dominant peak
     """
@@ -87,9 +107,7 @@ def analyze_harshness(y: npt.NDArray, sr: int) -> dict[str, Any]:
 
     rms_harsh = float(np.sqrt(np.mean(harsh_band ** 2)) + 1e-12)
     rms_mid   = float(np.sqrt(np.mean(mid_band   ** 2)) + 1e-12)
-
-    ratio = rms_harsh / rms_mid
-    harshness_score = float(np.clip(ratio * 2.5, 0.0, 1.0))
+    harshness_score = harshness_from_ratio(rms_harsh, rms_mid) if rms_mid > 1e-9 else 0.0
 
     peak_hz: float | None = None
     peak_db: float | None = None
@@ -136,7 +154,7 @@ def windowed_harshness_curve(y: npt.NDArray, sr: int,
         if nz[s1] == nz[s0] or rm < 1e-9:   # silent window: 0, not "max harsh"
             return 0.0
         rh = float(np.sqrt(np.mean(harsh[s0:s1] ** 2)))
-        return float(np.clip(rh / rm * 2.5, 0.0, 1.0))
+        return harshness_from_ratio(rh, rm)
 
     if n < block:
         return [_score(0, n)]
@@ -343,7 +361,8 @@ def analyze_mid_side_imbalance(y: npt.NDArray, sr: int) -> dict[str, Any]:
       - Sub-bass energy below 100 Hz (sub-bass width — should be near mono)
 
     Returns:
-        side_bright_ratio: side/mid energy ratio above 4 kHz (>1.5 = side too bright)
+        side_bright_ratio: side/mid energy ratio above 4 kHz (>1.0 = side brighter than mid; the
+            ms_brightness_imbalance edge, FULL-3)
         side_heavy_ratio:  side/mid energy ratio below 100 Hz (>0.3 = sub too wide)
         brightness_imbalance_db: dB difference (side − mid) in high band
         heaviness_imbalance_db:  dB difference (side − mid) in low band
@@ -419,93 +438,106 @@ def analyze_mid_side_imbalance(y: npt.NDArray, sr: int) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Resonance hotspot detection
 # ---------------------------------------------------------------------------
+#: FULL-3: resonances are judged at mixing scale. The old detector found
+#: 1.3 Hz-wide peaks in a 32k FFT - sustained notes, mostly - and flagged 87%
+#: of released tracks while missing a +12 dB, Q 8 bell (1/6 octave wide) on
+#: 60% of them. Now: 1/12-octave band powers, each band's prominence over
+#: the median of the half octave either side, averaged over 1/4 octave (a
+#: note is one semitone wide, a resonance two or more), between 300 Hz and
+#: 10 kHz (below, the low-end findings cover boom). On the genre corpus's 209
+#: lossless originals a 5 dB edge fires on 12% of released tracks and finds
+#: 78% of injected +12 dB, Q 8 bells at 2.5 kHz.
+RES_BAND_EDGES = 40.0 * 2.0 ** (np.arange(0, 12 * np.log2(16000.0 / 40.0) + 1) / 12.0)
+RES_BAND_CENTRES = np.sqrt(RES_BAND_EDGES[:-1] * RES_BAND_EDGES[1:])
+RES_MIN_HZ = 300.0
+RES_MAX_HZ = 10000.0
+RES_EDGE_DB = 5.0
+RES_NEIGHBOURS = 6      # bands either side (half an octave)
+RES_SMOOTH_BANDS = 3    # 1/4 octave
+RES_PERSIST_DB = 3.0
+RES_MIN_PERSISTENCE = 0.5
+_RES_N_FFT = 8192
+_RES_HOP = 4096
+
+
+def _band_prominence(db: npt.NDArray, valid: npt.NDArray) -> npt.NDArray:
+    """Each band's level over the median of its neighbours within half an
+    octave (last axis = bands); NaN where too few neighbours are measured."""
+    out = np.full(db.shape, np.nan)
+    n = db.shape[-1]
+    for k in range(n):
+        lo, hi = max(0, k - RES_NEIGHBOURS), min(n, k + RES_NEIGHBOURS + 1)
+        nb = [j for j in range(lo, hi) if j != k and valid[j]]
+        if valid[k] and len(nb) >= 4:
+            out[..., k] = db[..., k] - np.median(db[..., nb], axis=-1)
+    return out
+
+
 def analyze_resonances(y: npt.NDArray, sr: int,
-                        max_hotspots: int = 5) -> dict[str, Any]:
+                       max_hotspots: int = 5) -> dict[str, Any]:
     """
-    Detect resonance hotspots (narrow spectral peaks with prominence >= 8 dB).
-    Returns a dict with key "hotspots": list of at most `max_hotspots` peaks,
-    sorted by prominence desc.
+    Resonance hotspots: bands between RES_MIN_HZ and RES_MAX_HZ whose
+    quarter-octave prominence over their surroundings reaches RES_EDGE_DB in
+    the whole-track average and stands out (>= RES_PERSIST_DB) in at least
+    half the frames - a static peak, not a passing note. At most
+    `max_hotspots`, most prominent first.
 
-    Each entry: {"hz": float, "db": float, "prominence": float}
+    Each entry: {"hz": band centre, "db": the band's peak level (dBFS, a
+    full-scale sine = 0), "prominence": dB over its surroundings,
+    "persistence": share of frames}.
     """
-    mono = y.mean(axis=0) if y.ndim == 2 else y
-
-    # Average FFT over the full track — 32k window gives ~1.3 Hz resolution at 44.1 kHz.
-    n_fft = 32768
-    hop_size = n_fft // 2
+    mono = np.asarray(y.mean(axis=0) if y.ndim == 2 else y, dtype=np.float64)
+    n_fft, hop = _RES_N_FFT, _RES_HOP
+    if mono.size < n_fft:
+        mono = np.pad(mono, (0, n_fft - mono.size))
     window = np.hanning(n_fft)
-
-    # Keep the per-frame spectra so we can measure how *persistent* each peak is.
-    # A room-mode / resonance rings through most of the track regardless of the
-    # notes played; a held musical note only shows up in the frames where it
-    # sounds. Requiring persistence stops sustained harmonics being flagged.
-    frames_db: list[npt.NDArray] = []
-    if len(mono) < n_fft:
-        padded = np.pad(mono, (0, n_fft - len(mono)))
-        spectrum_mag = np.abs(np.fft.rfft(padded * window))
-        frames_db.append(20.0 * np.log10(spectrum_mag + 1e-12))
-    else:
-        n_blocks = 0
-        spectrum_mag = np.zeros(n_fft // 2 + 1)
-        for i in range(0, len(mono) - n_fft + 1, hop_size):
-            frame_mag = np.abs(np.fft.rfft(mono[i : i + n_fft] * window))
-            spectrum_mag += frame_mag
-            frames_db.append(20.0 * np.log10(frame_mag + 1e-12))
-            n_blocks += 1
-        if n_blocks > 0:
-            spectrum_mag /= n_blocks
-
-    # dBFS (full-scale sine = 0 dB); per-frame dB below is only used
-    # relative to its own local floor, so it needs no normalisation.
-    spectrum_db = 20.0 * np.log10(spectrum_mag / _amplitude_norm(window) + 1e-12)
     freqs = np.fft.rfftfreq(n_fft, d=1.0 / sr)
+    band = np.digitize(freqs, RES_BAND_EDGES) - 1
+    in_band = (band >= 0) & (band < RES_BAND_CENTRES.size)
+    counts = np.bincount(band[in_band], minlength=RES_BAND_CENTRES.size).astype(float)
+    valid = (counts > 0) & (RES_BAND_EDGES[1:] <= sr / 2.0)
 
-    mask = (freqs >= 20) & (freqs <= 18000)
-    sub_spec  = spectrum_db[mask]
-    sub_freqs = freqs[mask]
-    mask_idx  = np.nonzero(mask)[0]
+    rows = []
+    mag_sum = np.zeros(freqs.size)
+    for i in range(0, mono.size - n_fft + 1, hop):
+        mag = np.abs(np.fft.rfft(mono[i:i + n_fft] * window))
+        mag_sum += mag
+        rows.append(np.bincount(band[in_band], weights=(mag ** 2)[in_band],
+                                minlength=RES_BAND_CENTRES.size) / np.maximum(counts, 1.0))
+    frames_db = 10.0 * np.log10(np.asarray(rows) + 1e-20)
+    avg_db = 10.0 * np.log10(np.mean(np.asarray(rows), axis=0) + 1e-20)
+    spectrum_db = 20.0 * np.log10(mag_sum / len(rows) / _amplitude_norm(window) + 1e-12)
 
-    if len(sub_spec) == 0:
-        return {"hotspots": []}
+    prom = _band_prominence(avg_db, valid)
+    smooth = np.convolve(np.nan_to_num(prom, nan=0.0), np.ones(RES_SMOOTH_BANDS) / RES_SMOOTH_BANDS, mode="same")
+    persistence = np.nanmean(_band_prominence(frames_db, valid) >= RES_PERSIST_DB, axis=0)
 
-    from scipy import signal as sig  # lazy (PERF-4)
-
-    peaks, props = sig.find_peaks(sub_spec, prominence=8.0)
-    if len(peaks) == 0:
-        return {"hotspots": []}
-
-    # Persistence: fraction of frames where this bin sits >= 6 dB above the
-    # local spectral floor (median of a ±0.5-octave neighbourhood).
-    def _persistence(global_bin: int) -> float:
-        if len(frames_db) <= 1:
-            return 1.0
-        lo = max(0, int(global_bin * 0.7))
-        hi = min(spectrum_db.shape[0], int(global_bin * 1.4) + 1)
-        hits = 0
-        for f in frames_db:
-            local_floor = float(np.median(f[lo:hi])) if hi > lo else float(np.median(f))
-            if f[global_bin] - local_floor >= 6.0:
-                hits += 1
-        return hits / len(frames_db)
-
-    prominences = props["prominences"]
-    candidates = []
-    for i in range(len(peaks)):
-        persist = _persistence(int(mask_idx[peaks[i]]))
-        if persist < 0.5:   # transient/musical peak — not a standing resonance
+    hotspots = []
+    seen: set[int] = set()
+    raw = np.nan_to_num(prom, nan=-np.inf)
+    for k in range(1, RES_BAND_CENTRES.size - 1):
+        if smooth[k] < RES_EDGE_DB or smooth[k] < smooth[k - 1] or smooth[k] < smooth[k + 1]:
             continue
-        candidates.append((
-            float(prominences[i]) * persist,   # rank by prominence weighted by how constant it is
-            {
-                "hz":          float(sub_freqs[peaks[i]]),
-                "db":          float(sub_spec[peaks[i]]),
-                "prominence":  float(prominences[i]),
-                "persistence": float(persist),
-            },
-        ))
-
-    candidates.sort(key=lambda c: c[0], reverse=True)
-    return {"hotspots": [c[1] for c in candidates[:max_hotspots]]}
+        # The quarter-octave average spreads a peak over its neighbours: the
+        # hotspot is the strongest band under it (its frequency, its
+        # persistence), once.
+        j = k - 1 + int(np.argmax(raw[k - 1:k + 2]))
+        hz = float(RES_BAND_CENTRES[j])
+        if j in seen or not valid[j] or not (RES_MIN_HZ <= hz <= RES_MAX_HZ):
+            continue
+        if persistence[j] < RES_MIN_PERSISTENCE:
+            continue
+        seen.add(j)
+        k = j
+        members = np.nonzero(band == k)[0]
+        hotspots.append({
+            "hz": round(hz, 1),
+            "db": float(spectrum_db[members].max()) if members.size else float(avg_db[k]),
+            "prominence": float(max(smooth[k - 1:k + 2])),
+            "persistence": float(persistence[k]),
+        })
+    hotspots.sort(key=lambda h: h["prominence"], reverse=True)
+    return {"hotspots": hotspots[:max_hotspots]}
 
 
 def analyze_symmetry(y: np.ndarray, sr: int) -> dict:

@@ -50,6 +50,7 @@ from khensu_services.copilot.dsp_dynamics import (  # noqa: F401
     _apply_dynamic_eq,
     _apply_clipper,
     _apply_limiter,
+    _apply_spectral_denoise,
     _apply_plosive_remover,
 )
 from khensu_services.copilot.dsp_color import (  # noqa: F401
@@ -84,7 +85,7 @@ EFFECT_ROUTING.update({
         # Custom stages
         "DeEsser", "SidechainCompressor", "GlueCompressor", "TapeSaturation",
         "LeakGate", "TransientShaper", "PhaseRotator", "MultibandCompressor",
-        "DynamicEQ", "DynamicDeEsser", "Humanize", "Exciter", "Clipper",
+        "DynamicEQ", "DynamicDeEsser", "Humanize", "Exciter", "Clipper", "SpectralDenoise",
         "Flanger", "Tremolo", "Vibrato", "ConvolutionReverb", "PlosiveRemover",
         "FormantShifter",
         # Butterworth filters (custom stages since CPL-05)
@@ -270,6 +271,10 @@ def _run_serial_chain(audio: np.ndarray, sr: int, effect_specs: list[dict],
         elif name == "Clipper":
             processed = _run_custom_stage(name, lambda buf: _apply_clipper(
                 buf, sr, **_params("Clipper")))
+            applied.append(name)
+        elif name == "SpectralDenoise":
+            processed = _run_custom_stage(name, lambda buf: _apply_spectral_denoise(
+                buf, sr, **_params("SpectralDenoise")))
             applied.append(name)
         elif name == "Limiter":
             processed = _run_custom_stage(name, lambda buf: _apply_limiter(

@@ -13,6 +13,7 @@ and metric, the median, the 10th / 90th percentiles and the track count:
     python scripts/measure_genre_norms.py apply     # measured targets into genre_targets.json
     python scripts/measure_genre_norms.py evidence  # findings on released tracks (+ injected defects)
     python scripts/measure_genre_norms.py report    # -> resources/calibration/finding_evidence.json
+    python scripts/measure_genre_norms.py full      # every finding through the service (FULL-1; slow)
 
 ``apply`` writes the tonal and stereo targets (centroid, low-end share, tilt,
 crest, width range) for every genre with at least ``MIN_TRACKS`` measured
@@ -226,6 +227,12 @@ def report() -> dict:
     ev_clean = [r for r in ev if "clean" in r["variants"]]
 
     counts: dict[str, int] = {}
+    alarms: dict[str, int] = {}
+    with_severity = bool(dyn_clean) and all("severity" in r["variants"]["clean"] for r in dyn_clean)
+    for r in dyn_clean if with_severity else []:
+        for c, sev in r["variants"]["clean"]["severity"].items():
+            if sev >= ALARM_SEVERITY:
+                alarms[c] = alarms.get(c, 0) + 1
     if dyn_clean:
         base = [set(r["variants"]["clean"].get("findings", [])) for r in dyn_clean]
         source = ("whole tracks (up to 5 min) of corpus_data/genre_corpus_archive_org plus lossless originals "
@@ -242,10 +249,18 @@ def report() -> dict:
         "source": source,
         "tracks": tracks,
         "lossless_tracks": sum(1 for r in dyn_clean if r.get("source") == "lossless"),
+        "alarm_severity": ALARM_SEVERITY,
         "findings": {c: {"false_alarm_rate": round(counts.get(c, 0) / max(1, tracks), 4), "fired_on": counts.get(c, 0)}
                      for c in sorted(set(counts) | _engine_codes())},
         "defects": {},
     }
+    for c, entry in out["findings"].items():
+        if with_severity:
+            # EVID-1: the share where it fires at moderate or worse - a minor
+            # note (a quiet-but-normalisable master) is not an alarm.
+            entry["alarm_rate"] = round(alarms.get(c, 0) / max(1, tracks), 4)
+        if c in SPEC_FINDINGS:
+            entry["kind"] = "spec"
 
     def add_detection(name: str, codes: tuple, pairs: list[tuple[set, set]], extra: dict) -> None:
         already = [p for p in pairs if p[0] & set(codes)]
@@ -292,10 +307,229 @@ def report() -> dict:
             entry = out["findings"].setdefault(c, {"false_alarm_rate": 0.0, "fired_on": 0})
             entry["fix"] = {"tried": t["tried"], "advice_only": t["tried"] == 0 and t["advice_only"] > 0,
                             **({"clears_rate": round(t["cleared"] / t["tried"], 4)} if t["tried"] else {})}
+    _add_full(out)
     EVIDENCE_OUT.parent.mkdir(parents=True, exist_ok=True)
     EVIDENCE_OUT.write_text(json.dumps(out, indent=1) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {EVIDENCE_OUT.relative_to(ROOT)}: {tracks} tracks")
     return out
+
+
+# --- Every finding through the service (FULL-1) ----------------------------
+#: A finding at this severity or worse is an alarm (the UI's moderate band,
+#: SuggestionListPanel); under it, a minor note.
+ALARM_SEVERITY = 40.0
+#: Delivery-spec checks: their corpus rate is the share of released tracks
+#: that miss the spec (82% of released masters, lossless originals included,
+#: peak above -1 dBTP), not a false alarm (EVID-2).
+SPEC_FINDINGS = {"true_peak_over"}
+FULL_RAW = ROOT / "bench-results" / "full_raw.jsonl"
+FULL_EXE = Path(os.environ.get("KHENSU_FULL_EXE") or ROOT / "build" / "tests" / "Release" / "KhensuTests.exe")
+#: The deep pass on a two-minute excerpt (the middle, as ``measure``): a
+#: whole track roughly doubles the time for no new finding.
+FULL_EXCERPT_SEC = 120.0
+#: Injected defects for the service-backed findings, at a size an engineer
+#: would call a fault. (name -> the findings that name it)
+FULL_DEFECTS = {
+    "res_2500": ("resonance_hotspot",),          # a narrow +12 dB bell (Q 8) at 2.5 kHz
+    "harsh_3500": ("harshness_detected",),       # a broad +8 dB bell (Q 1) at 3.5 kHz
+    "comb_0.5ms": ("mono_compat_warning", "phase_issue"),  # right channel 0.5 ms late
+    "sub_wide": ("sub_bass_too_wide",),          # the sub (< 120 Hz) at full width
+    "side_bright": ("ms_brightness_imbalance",),  # the side's top (> 6 kHz) +10 dB
+}
+#: Defects on every n-th track (each variant is a full deep pass).
+FULL_DEFECT_EVERY = 3
+
+
+def _full_raw_files() -> list[Path]:
+    return sorted(FULL_RAW.parent.glob(FULL_RAW.stem + "*.jsonl"))
+
+
+def _peaking(x, sr: int, freq: float, gain_db: float, q: float):
+    """RBJ peaking EQ."""
+    import numpy as np
+    from scipy.signal import lfilter
+    A = 10.0 ** (gain_db / 40.0)
+    w0 = 2.0 * np.pi * freq / sr
+    alpha = np.sin(w0) / (2.0 * q)
+    cw = np.cos(w0)
+    b = [1 + alpha * A, -2 * cw, 1 - alpha * A]
+    a = [1 + alpha / A, -2 * cw, 1 - alpha / A]
+    return lfilter(b, a, x, axis=0).astype("float32")
+
+
+def _full_variant(x, sr: int, name: str):
+    import numpy as np
+    from scipy.signal import butter, hilbert, sosfiltfilt
+    if name == "res_2500":
+        return _peaking(x, sr, 2500.0, 12.0, 8.0)
+    if name == "harsh_3500":
+        return _peaking(x, sr, 3500.0, 8.0, 1.0)
+    if x.shape[1] < 2:
+        x = np.repeat(x, 2, axis=1)
+    if name == "comb_0.5ms":
+        d = max(1, round(0.0005 * sr))
+        y = x.copy()
+        y[d:, 1] = x[:-d, 1]
+        y[:d, 1] = 0.0
+        return y
+    mid = (x[:, 0] + x[:, 1]) * 0.5
+    side = (x[:, 0] - x[:, 1]) * 0.5
+    if name == "sub_wide":
+        sos = butter(4, 120.0, "low", fs=sr, output="sos")
+        low_mid = sosfiltfilt(sos, mid)
+        # The sub's side at the mid's level, 90 degrees apart: uncorrelated.
+        side = side - sosfiltfilt(sos, side) + np.imag(hilbert(low_mid))
+    elif name == "side_bright":
+        sos = butter(2, min(6000.0, 0.4 * sr), "high", fs=sr, output="sos")  # an 8 kHz file exists
+        side = side + (10.0 ** (10.0 / 20.0) - 1.0) * sosfiltfilt(sos, side)
+    else:
+        raise ValueError(name)
+    y = np.stack([mid + side, mid - side], axis=1)
+    peak = float(np.max(np.abs(y))) or 1.0
+    return (y / max(1.0, peak)).astype("float32")
+
+
+def _base_code(code: str, known: set[str]) -> str:
+    """resonance_hotspot_2500hz / mono_compat_warning_low_end -> the listed code."""
+    best = ""
+    for k in known:
+        if (code == k or code.startswith(k + "_")) and len(k) > len(best):
+            best = k
+    return best or code
+
+
+def _service_up(timeout: float = 2.0) -> bool:
+    import urllib.request
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:47239/health", timeout=timeout) as r:
+            return r.status == 200
+    except OSError:
+        return False
+
+
+def _ensure_service():
+    """The service on its port, started here when nothing answers (returns
+    the process to stop afterwards, or None)."""
+    import time
+    if _service_up():
+        return None
+    svc = ROOT / "local-services"
+    py = svc / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    proc = subprocess.Popen([str(py), "-m", "uvicorn", "khensu_services.server:app", "--host", "127.0.0.1",
+                             "--port", "47239"], cwd=str(svc), stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
+    for _ in range(180):
+        if _service_up():
+            return proc
+        time.sleep(1.0)
+    proc.terminate()
+    raise SystemExit("the service did not start on 127.0.0.1:47239")
+
+
+def full() -> None:
+    """FULL-1: every lossless original (fetch_lossless_subset.py), graded
+    through the app's AnalysisController against the running service
+    (KhensuTests [.measurefull]) - every finding, the deep-pass ones
+    included - and every FULL_DEFECT_EVERY-th track also with each
+    FULL_DEFECTS defect. Resumable; KHENSU_FULL_LIMIT=n stops after n tracks."""
+    import soundfile as sf
+    items: list[tuple[str, Path, bool]] = []
+    for g, tracks in json.loads((LOSSLESS / "manifest.json").read_text(encoding="utf-8")).items():
+        for t in tracks:
+            if t.get("file") and (LOSSLESS / g / t["file"]).is_file():
+                items.append((g, LOSSLESS / g / t["file"], len(items) % FULL_DEFECT_EVERY == 0))
+    done = {json.loads(x)["key"] for f in _full_raw_files() for x in f.read_text(encoding="utf-8").splitlines()}
+    todo = [it for it in items if f"{it[0]}/{it[1].name}" not in done]
+    # KHENSU_SHARD=i/n: n processes side by side (the service has the DSP
+    # workers), each on every n-th track and appending to its own file.
+    shard, shards = (int(x) for x in os.environ.get("KHENSU_SHARD", "0/1").split("/"))
+    # Deal the tracks with defects (six passes each) and those without in
+    # turn: every n-th of the plain list would hand them all to one shard.
+    heavy = [it for it in todo if it[2]]
+    light = [it for it in todo if not it[2]]
+    todo = heavy[shard::shards] + light[shard::shards]
+    raw = FULL_RAW.with_suffix(f".{shard}.jsonl") if shards > 1 else FULL_RAW
+    if os.environ.get("KHENSU_FULL_LIMIT"):
+        todo = todo[:int(os.environ["KHENSU_FULL_LIMIT"])]
+    print(f"{len(done)} done, {len(todo)} to go", flush=True)
+    FULL_RAW.parent.mkdir(parents=True, exist_ok=True)
+    proc = _ensure_service()
+    try:
+        for n, (g, path, with_defects) in enumerate(todo, 1):
+            key = f"{g}/{path.name}"
+            with tempfile.TemporaryDirectory(prefix="khensu_full_") as tmpname:
+                tmp = Path(tmpname)
+                src = tmp / "clean.wav"
+                if not _decode_to_wav(path, src, FULL_EXCERPT_SEC):
+                    entry = {"key": key, "genre": g, "variants": {"clean": {"error": "decode"}}}
+                else:
+                    lines = {str(src): "clean"}
+                    if with_defects:
+                        x, sr = sf.read(str(src), dtype="float32", always_2d=True)
+                        for name in FULL_DEFECTS:
+                            v = tmp / f"{name}.wav"
+                            sf.write(str(v), _full_variant(x, sr, name), sr, subtype="FLOAT")
+                            lines[str(v)] = name
+                        del x
+                    rows = _run_measure_list(FULL_EXE, "[.measurefull]", {p_: g for p_ in lines}, tmp)
+                    entry = {"key": key, "genre": g,
+                             "variants": {lines[p_]: rows.get(p_, {"error": "no_row"}) for p_ in lines}}
+            with raw.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry) + "\n")
+            print(f"{n}/{len(todo)} {key}".encode("ascii", "replace").decode(), flush=True)
+    finally:
+        if proc is not None:
+            proc.terminate()
+
+
+def _add_full(out: dict) -> None:
+    """Fold the FULL-1 run into the evidence: for each finding the native
+    corpus run cannot produce (it needs the deep pass), its rate on the
+    released tracks graded through the service, and its detection of the
+    FULL_DEFECTS defects. Each such entry names its own track count."""
+    rows = [json.loads(x) for f in _full_raw_files() for x in f.read_text(encoding="utf-8").splitlines()]
+    if not rows:
+        return
+    clean = [r for r in rows if "clean" in r["variants"] and not r["variants"]["clean"].get("error")]
+    if not clean:
+        return
+    known = set(out["findings"])
+
+    def codes(v: dict) -> set[str]:
+        return {_base_code(c, known) for c in v.get("findings", [])}
+
+    def alarm_codes(v: dict) -> set[str]:
+        return {_base_code(c, known) for c, sev in v.get("severity", {}).items() if sev >= ALARM_SEVERITY}
+
+    native = {c for c, e in out["findings"].items() if e.get("fired_on", 0) > 0}
+    n = len(clean)
+    fired: dict[str, int] = {}
+    alarmed: dict[str, int] = {}
+    for r in clean:
+        for c in codes(r["variants"]["clean"]):
+            fired[c] = fired.get(c, 0) + 1
+        for c in alarm_codes(r["variants"]["clean"]):
+            alarmed[c] = alarmed.get(c, 0) + 1
+    for c in sorted(known | set(fired)):
+        if c in native:
+            continue  # the native run, on seven times the tracks, already says it
+        e = out["findings"].setdefault(c, {})
+        e.update({"false_alarm_rate": round(fired.get(c, 0) / n, 4), "fired_on": fired.get(c, 0),
+                  "alarm_rate": round(alarmed.get(c, 0) / n, 4), "tracks": n, "source": "full"})
+    out["full_tracks"] = n
+    for name, names in FULL_DEFECTS.items():
+        pairs = [(codes(r["variants"]["clean"]), codes(r["variants"][name])) for r in clean
+                 if name in r["variants"] and not r["variants"][name].get("error")]
+        if not pairs:
+            continue
+        already = [p for p in pairs if p[0] & set(names)]
+        newly = [p for p in pairs if not (p[0] & set(names)) and p[1] & set(names)]
+        rate = round(len(newly) / max(1, len(pairs) - len(already)), 4)
+        out["defects"][name] = {"findings": list(names), "tracks": len(pairs),
+                                "already_flagged": len(already), "detected_rate": rate}
+        for c in names:
+            out["findings"].setdefault(c, {"false_alarm_rate": 0.0, "fired_on": 0}).setdefault(
+                "detects", []).append({"defect": name, "rate": rate, "tracks": len(pairs)})
 
 
 # --- Dynamics and artifact findings (MEAS-4 tuning) -------------------------
@@ -616,4 +850,4 @@ def apply() -> None:
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "measure"
     {"measure": measure, "stats": stats, "apply": apply, "evidence": evidence, "report": report,
-     "dynamics": dynamics, "fixcheck": fixcheck, "apply_dynamics": apply_dynamics}[cmd]()
+     "dynamics": dynamics, "fixcheck": fixcheck, "apply_dynamics": apply_dynamics, "full": full}[cmd]()

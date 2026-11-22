@@ -1,5 +1,9 @@
 #include <khensu/ipc/HttpConnectionLimit.h>
 #include "PythonServiceManager.h"
+#if !JUCE_WINDOWS
+#include <stdlib.h>
+#include <unistd.h>
+#endif
 #include <khensu/common/LogRetention.h>
 #include <khensu/common/AppPaths.h>
 #include <khensu/common/HmacSha256.h>
@@ -151,6 +155,47 @@ void PythonServiceManager::run()
     if (launchIfNeeded()) pumpLogsUntilExit();
 }
 
+int PythonServiceManager::supportedPythonMinor(const juce::String& probeOutput) noexcept
+{
+    juce::StringArray parts;
+    parts.addTokens(probeOutput.trim(), " ", "");
+    parts.removeEmptyStrings();
+    if (parts.size() < 3) return 0;
+    const int major = parts[0].getIntValue(), minor = parts[1].getIntValue();
+    if (major != 3 || minor < 11 || minor > 13 || parts[2] != "final") return 0;
+    return minor;
+}
+
+namespace {
+/// Runs `exe` to read its version (argument array: no shell, no quoting).
+int probeSupportedPython(const juce::String& exe)
+{
+    juce::ChildProcess probe;
+    const juce::StringArray args{
+        exe, "-c", "import sys; print(*sys.version_info[:2], sys.version_info.releaselevel)"};
+    if (!probe.start(args, juce::ChildProcess::wantStdOut)) return 0;
+    const juce::String out = probe.readAllProcessOutput();
+    if (!probe.waitForProcessToFinish(10000)) {
+        probe.kill();
+        return 0;
+    }
+    return PythonServiceManager::supportedPythonMinor(out);
+}
+
+/// The first-run venv of an installed app (launch_service.py user_venv_dir):
+/// the launcher never writes into the bundle (MAC-1).
+juce::File userServiceVenv()
+{
+#if JUCE_MAC
+    return juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile("Library/KhensuMixing/service-venv");
+#elif JUCE_WINDOWS
+    return juce::File::getSpecialLocation(juce::File::windowsLocalAppData).getChildFile("KhensuMixing/service-venv");
+#else
+    return juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile(".local/share/KhensuMixing/service-venv");
+#endif
+}
+} // namespace
+
 juce::String PythonServiceManager::findPythonExe() const
 {
     if (hasPythonExeOverride_) return pythonExeOverride_;
@@ -186,6 +231,16 @@ juce::String PythonServiceManager::findPythonExe() const
                 return venvPy.getFullPathName();
             }
         }
+        // An installed app's first-run venv, if a supported Python built it.
+#if JUCE_WINDOWS
+        const auto userVenvPy = userServiceVenv().getChildFile("Scripts/python.exe");
+#else
+        const auto userVenvPy = userServiceVenv().getChildFile("bin/python3");
+#endif
+        if (userVenvPy.existsAsFile() && probeSupportedPython(userVenvPy.getFullPathName()) > 0) {
+            juce::Logger::writeToLog("PythonServiceManager: using the service venv at: " + userVenvPy.getFullPathName());
+            return userVenvPy.getFullPathName();
+        }
     }
 
     // --- Priority 1: absolute paths verified by file existence only.
@@ -195,19 +250,41 @@ juce::String PythonServiceManager::findPythonExe() const
     // CE-PLT-5: python.org framework builds, then Homebrew (Apple Silicon,
     // then Intel). A Finder-launched app has no shell PATH, so this list -
     // not Priority 2 - is what normally finds Python on a Mac.
+    //
+    // MAC-1: the first existing path used to win - a Homebrew python3 that
+    // is 3.14, or a 3.14 alpha, which cannot install the service on an Intel
+    // Mac (no numba). Each candidate's version is read; the newest of 3.13,
+    // 3.12, 3.11 (final releases) wins.
     {
-        const juce::StringArray absPaths{
-            "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
-            "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
-            "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3",
-            "/opt/homebrew/bin/python3",
-            "/usr/local/bin/python3",
-        };
+        juce::StringArray absPaths;
+        for (const char* v : {"3.13", "3.12", "3.11"}) {
+            absPaths.add(juce::String("/Library/Frameworks/Python.framework/Versions/") + v + "/bin/python3");
+            absPaths.add(juce::String("/opt/homebrew/bin/python") + v);
+            absPaths.add(juce::String("/usr/local/bin/python") + v);
+            absPaths.add(juce::String("/opt/homebrew/opt/python@") + v + "/bin/python" + v);
+            absPaths.add(juce::String("/usr/local/opt/python@") + v + "/bin/python" + v);
+        }
+        absPaths.add("/opt/homebrew/bin/python3");
+        absPaths.add("/usr/local/bin/python3");
+        absPaths.add("/usr/bin/python3"); // Command Line Tools' Python
+        juce::String best;
+        int bestMinor = 0;
         for (const auto& p : absPaths) {
-            if (juce::File(p).existsAsFile()) {
-                juce::Logger::writeToLog("PythonServiceManager: using Python at: " + p);
-                return p;
+            if (!juce::File(p).existsAsFile()) continue;
+            const int minor = probeSupportedPython(p);
+            if (minor == 0) {
+                juce::Logger::writeToLog("PythonServiceManager: skipping " + p + " (not Python 3.11-3.13)");
+                continue;
             }
+            if (minor > bestMinor) {
+                best = p;
+                bestMinor = minor;
+            }
+            if (bestMinor == 13) break;
+        }
+        if (best.isNotEmpty()) {
+            juce::Logger::writeToLog("PythonServiceManager: using Python 3." + juce::String(bestMinor) + " at: " + best);
+            return best;
         }
     }
 #endif
@@ -238,19 +315,13 @@ juce::String PythonServiceManager::findPythonExe() const
 #if JUCE_WINDOWS
         "py", "python3", "python"
 #else
-        "python3", "python"
+        "python3.13", "python3.12", "python3.11", "python3", "python"
 #endif
     };
     for (const auto& name : pathNames) {
-        juce::ChildProcess probe;
-        juce::StringArray args{name, "--version"};
-        if (probe.start(args, juce::ChildProcess::wantStdOut | juce::ChildProcess::wantStdErr)) {
-            juce::String out = probe.readAllProcessOutput();
-            probe.waitForProcessToFinish(3000);
-            if (out.containsIgnoreCase("Python 3")) {
-                juce::Logger::writeToLog("PythonServiceManager: using Python (PATH) at: " + name);
-                return name;
-            }
+        if (probeSupportedPython(name) > 0) {
+            juce::Logger::writeToLog("PythonServiceManager: using Python (PATH) at: " + name);
+            return name;
         }
     }
     return {};
@@ -295,8 +366,13 @@ void PythonServiceManager::killStaleListener()
                              "ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\"";
     if (killer.start(cmd, 0)) killer.waitForProcessToFinish(5000);
 #else
+    // MAC-1: an argument array. A single string is split by JUCE on POSIX
+    // with the quote characters kept, so sh received '"lsof' and the stale
+    // service was never stopped. `xargs -r` is GNU-only too.
     juce::ChildProcess killer;
-    const juce::String cmd = "/bin/sh -c \"lsof -ti tcp:" + juce::String(kPort) + " | xargs -r kill -9\"";
+    const juce::StringArray cmd{"/bin/sh", "-c",
+                                "pids=$(lsof -nP -t -iTCP:" + juce::String(kPort) +
+                                    " -sTCP:LISTEN); [ -n \"$pids\" ] && kill -9 $pids; exit 0"};
     if (killer.start(cmd, 0)) killer.waitForProcessToFinish(5000);
 #endif
     staleDetected_.store(false);
@@ -356,12 +432,21 @@ bool PythonServiceManager::launchIfNeeded()
     }
 
     auto newProcess = std::make_unique<juce::ChildProcess>();
-    // Build quoted command line - juce::ChildProcess on Windows joins StringArray
-    // args with spaces without quoting, which breaks paths containing spaces.
-    juce::String cmd = "\"" + pythonExe + "\" \"" + launcher.getFullPathName() + "\"";
-
     // wantStdOut only - not wantStdErr, so we don't block the child when its
     // stderr pipe buffer fills (uvicorn startup warnings, import messages, etc.).
+#if JUCE_WINDOWS
+    // juce::ChildProcess on Windows joins StringArray args with spaces
+    // without quoting, which breaks paths containing spaces: quote here.
+    const juce::String cmd = "\"" + pythonExe + "\" \"" + launcher.getFullPathName() + "\"";
+#else
+    // MAC-1: an argument array. JUCE splits a single string on POSIX and
+    // keeps the quote characters, so Python was handed '"/Applications/...
+    // launch_service.py"', exited at once, and the app gave up after 8 tries.
+    const juce::StringArray cmd{pythonExe, launcher.getFullPathName()};
+    // No job object here: the service leaves on its own once this process is
+    // gone (common/lifecycle.start_parent_watch).
+    setenv("KHENSU_PARENT_PID", juce::String(static_cast<int>(getpid())).toRawUTF8(), 1);
+#endif
     if (!newProcess->start(cmd, juce::ChildProcess::wantStdOut)) {
         recordLaunchFailure("failed to start child process");
         return false;

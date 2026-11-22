@@ -32,6 +32,11 @@ struct BridgeRequestOptions {
     bool retryOnUnauthorized = true; ///< on 401, re-read token.txt and retry once
     ErrorDetail errorDetail = ErrorDetail::Ignore;
     std::string unreachableMessage; ///< empty: "Could not reach <path>" / "Could not poll <path>"
+    /// Polled while the connection opens: true abandons the request. macOS's
+    /// NSURLSession holds a streamed response's headers until body bytes
+    /// arrive, so without this a cancel waited for a stalled stream's first
+    /// byte (10 s in the CORE-14 test; until the timeout in the app).
+    std::function<bool()> shouldCancel;
 };
 
 /// The request path every service client shares (ENG-4): the service's

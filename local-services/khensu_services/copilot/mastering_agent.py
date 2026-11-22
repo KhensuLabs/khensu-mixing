@@ -36,7 +36,7 @@ _CENTROID_TOL_HZ = 400.0
 # thresholds — folding these into the objective (rather than leaving them as
 # pure pass/fail gates) so the agent prefers a candidate that improves vocal
 # presence or lowers artifact evidence over one that's merely neutral on both,
-# even when lufs/crest/centroid are tied (safety audit follow-up, TODO.md).
+# even when lufs/crest/centroid are tied (safety audit follow-up).
 _VOCAL_PRESENCE_TOL = 0.05
 _ARTIFACT_DELTA_TOL = 0.15
 

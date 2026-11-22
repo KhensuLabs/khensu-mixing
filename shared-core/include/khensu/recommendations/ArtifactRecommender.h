@@ -19,6 +19,11 @@ class ArtifactRecommender {
     static constexpr int kMinClippedFrames = 100;
     static constexpr float kNoiseFloorLimitDb = -50.0f;
     static constexpr float kNoiseFloorMusicDb = -40.0f;
+    /// FIX-B: the denoise fix's maximum reduction - enough to take a floor
+    /// at the -40 dBFS edge under -50, gentle enough not to smear music.
+    static constexpr float kDenoiseReductionDb = 12.0f;
+    /// The DC fix's high-pass corner (the renderer's HighpassFilter minimum).
+    static constexpr float kDcHighpassHz = 20.0f;
     std::vector<Recommendation> recommend(const AnalysisResult& result, const GenreEntry& /*genre*/,
                                           const CreativeTarget& /*target*/) const
     {
@@ -74,6 +79,11 @@ class ArtifactRecommender {
                               "master bus, where it smears transients.";
             r.how_to_verify = "Measure RMS in a truly silent passage - noise floor should be "
                               "below -50 dBFS.";
+            // FIX-B: a rendered fix on the bounced file - the service's
+            // SpectralDenoise learns the hiss from the quietest frames and
+            // takes up to kDenoiseReductionDb out of it; the advice above
+            // (treat the noisy stem) still stands.
+            r.suggested_parameters["denoise_reduction_db"] = kDenoiseReductionDb;
             out.push_back(std::move(r));
         }
 
@@ -101,6 +111,9 @@ class ArtifactRecommender {
             r.how_to_verify = "Re-measure: the mean sample value should read under 0.002, and the "
                               "waveform should sit centred on the zero line.";
             r.safe_to_auto_apply = false;
+            // A rendered fix on the bounced file: a 20 Hz high-pass (the
+            // renderer's lowest corner) takes the offset out.
+            r.suggested_parameters["highpass_hz"] = kDcHighpassHz;
             out.push_back(std::move(r));
         }
 

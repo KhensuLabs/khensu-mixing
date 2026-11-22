@@ -9,7 +9,7 @@ endif()
 
 juce_add_gui_app(KhensuDesktop
     PRODUCT_NAME "Khensu Mixing"
-    VERSION      "1.0.0"
+    VERSION      "1.0.1"
     BUNDLE_ID    "com.khensu.mixing.desktop"
     COMPANY_NAME "Khensu"
     # The app icon from its 4K master (Explorer, taskbar, window; the macOS .icns);
@@ -300,24 +300,34 @@ if(KHENSU_PCH)
         <JuceHeader.h> <algorithm> <functional> <map> <memory> <optional> <string> <vector>)
 endif()
 
+# Bundled data files go beside the executable - except in a macOS .app,
+# where a loose file in Contents/MacOS fails code signing ("code object is
+# not signed at all"); there they go in Contents/Resources, where
+# BundledResources.h looks for them.
+if(APPLE)
+    set(KHENSU_APP_DATA_DIR "$<TARGET_BUNDLE_CONTENT_DIR:KhensuDesktop>/Resources")
+else()
+    set(KHENSU_APP_DATA_DIR "$<TARGET_FILE_DIR:KhensuDesktop>")
+endif()
+
 add_custom_command(TARGET KhensuDesktop POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/resources/genre_norms"
-        "$<TARGET_FILE_DIR:KhensuDesktop>/resources/genre_norms"
+        "${KHENSU_APP_DATA_DIR}/resources/genre_norms"
     VERBATIM)
 
 # NEW-2: each finding's measured false-alarm rate and sensitivity.
 add_custom_command(TARGET KhensuDesktop POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:KhensuDesktop>/resources/calibration"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${KHENSU_APP_DATA_DIR}/resources/calibration"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/resources/calibration/finding_evidence.json"
-        "$<TARGET_FILE_DIR:KhensuDesktop>/resources/calibration/finding_evidence.json"
+        "${KHENSU_APP_DATA_DIR}/resources/calibration/finding_evidence.json"
     VERBATIM)
 
 add_custom_command(TARGET KhensuDesktop POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/resources/system_brain"
-        "$<TARGET_FILE_DIR:KhensuDesktop>/resources/system_brain"
+        "${KHENSU_APP_DATA_DIR}/resources/system_brain"
     VERBATIM)
 
 # Aurora Glass design fonts (Space Grotesk + JetBrains Mono, SIL OFL 1.1) -
@@ -325,5 +335,5 @@ add_custom_command(TARGET KhensuDesktop POST_BUILD
 add_custom_command(TARGET KhensuDesktop POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/resources/fonts"
-        "$<TARGET_FILE_DIR:KhensuDesktop>/resources/fonts"
+        "${KHENSU_APP_DATA_DIR}/resources/fonts"
     VERBATIM)

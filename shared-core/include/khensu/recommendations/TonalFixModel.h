@@ -188,4 +188,65 @@ inline float highShelfGainForCentroidFft(const std::vector<float>& binDb, double
         solveGain([&](double g) { return measuredHz * centroid(g) / base; }, aimHz, minDb, maxDb));
 }
 
+/// The spectral tilt of averaged FFT bins (dB power per bin) after a high
+/// shelf of `gainDb` at `cornerHz` - SpectralAnalyzer's definition: the
+/// least-squares slope of octave-band POWER (dB) against log2 of the band
+/// centre, over the ten nominal octaves capped at min(Nyquist, 20 kHz), a
+/// partly covered top octave rescaled by its covered fraction. NaN when fewer
+/// than two octaves hold energy.
+inline double tiltWithShelfFft(const std::vector<double>& binPower, double binHz, double sampleRate,
+                               double cornerHz, double gainDb)
+{
+    const double cap = std::min(sampleRate * 0.5, 20000.0);
+    double sumX = 0.0, sumY = 0.0, sumXY = 0.0, sumXX = 0.0;
+    int n = 0;
+    for (double fc : kBandCentersHz) {
+        const double lo = fc / std::sqrt(2.0);
+        const double hi = std::min(fc * std::sqrt(2.0), cap);
+        if (hi <= lo) continue;
+        const double covered = std::log2(hi / lo);
+        if (covered < 0.5) continue;
+        double energy = 0.0;
+        for (size_t k = 0; k < binPower.size(); ++k) {
+            const double f = static_cast<double>(k) * binHz;
+            if (f < lo) continue;
+            if (f >= hi) break;
+            if (binPower[k] > 0.0)
+                energy += binPower[k] * (gainDb == 0.0 ? 1.0 : shelfPowerGain(f, cornerHz, gainDb, true, sampleRate));
+        }
+        if (energy <= 1e-30) continue;
+        const double x = std::log2(fc);
+        const double y = 10.0 * std::log10(energy / covered);
+        sumX += x;
+        sumY += y;
+        sumXY += x * y;
+        sumXX += x * x;
+        ++n;
+    }
+    if (n < 2) return std::nan("");
+    const double denom = n * sumXX - sumX * sumX;
+    if (std::abs(denom) <= 1e-9) return std::nan("");
+    return (n * sumXY - sumX * sumY) / denom;
+}
+
+/// FIX-A: high-shelf gain (dB) that moves the spectral tilt from
+/// `measuredTilt` to `aimTilt` (dB/octave), from the averaged FFT bins
+/// (SpectralData::fft_mid_magnitudes) - the bins the measured tilt is fitted
+/// on. The change is predicted and added to the measured value. NaN when the
+/// bins or the sample rate are missing.
+inline float highShelfGainForTiltFft(const std::vector<float>& binDb, double sampleRate, double measuredTilt,
+                                     double aimTilt, double cornerHz, double minDb, double maxDb)
+{
+    if (binDb.size() < 64 || sampleRate <= 0.0) return std::nanf("");
+    const double binHz = sampleRate * 0.5 / static_cast<double>(binDb.size());
+    std::vector<double> power(binDb.size());
+    for (size_t k = 0; k < binDb.size(); ++k)
+        power[k] = binDb[k] <= -89.9f ? 0.0 : std::pow(10.0, static_cast<double>(binDb[k]) / 10.0);
+    const double base = tiltWithShelfFft(power, binHz, sampleRate, cornerHz, 0.0);
+    if (!std::isfinite(base)) return std::nanf("");
+    return static_cast<float>(solveGain(
+        [&](double g) { return measuredTilt + tiltWithShelfFft(power, binHz, sampleRate, cornerHz, g) - base; },
+        aimTilt, minDb, maxDb));
+}
+
 } // namespace khensu::tonal_fix

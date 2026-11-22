@@ -3,10 +3,12 @@
  "source": "whole tracks (up to 5 min) of corpus_data/genre_corpus_archive_org plus lossless originals (fetch_lossless_subset.py), each graded against its own genre (dynamics)",
  "tracks": 1462,
  "lossless_tracks": 209,
+ "alarm_severity": 40.0,
  "findings": {
   "centroid_too_bright": {
    "false_alarm_rate": 0.2086,
    "fired_on": 305,
+   "alarm_rate": 0.039,
    "detects": [
     {
      "defect": "high_shelf_+10",
@@ -15,14 +17,15 @@
     }
    ],
    "fix": {
-    "tried": 104,
+    "tried": 100,
     "advice_only": false,
-    "clears_rate": 0.7212
+    "clears_rate": 0.75
    }
   },
   "centroid_too_dark": {
    "false_alarm_rate": 0.2141,
    "fired_on": 313,
+   "alarm_rate": 0.065,
    "detects": [
     {
      "defect": "high_shelf_-12",
@@ -31,14 +34,15 @@
     }
    ],
    "fix": {
-    "tried": 103,
+    "tried": 101,
     "advice_only": false,
-    "clears_rate": 0.7476
+    "clears_rate": 0.7525
    }
   },
   "clipping_detected": {
    "false_alarm_rate": 0.0301,
    "fired_on": 44,
+   "alarm_rate": 0.0301,
    "detects": [
     {
      "defect": "clip_+6",
@@ -53,58 +57,100 @@
   },
   "crest_above_genre_target": {
    "false_alarm_rate": 0.2196,
-   "fired_on": 321
+   "fired_on": 321,
+   "alarm_rate": 0.1033
   },
   "dc_offset": {
    "false_alarm_rate": 0.0657,
    "fired_on": 96,
+   "alarm_rate": 0.013,
    "detects": [
     {
      "defect": "dc_0.005",
-     "rate": 0.9037,
+     "rate": 0.8975,
      "tracks": 343
+    }
+   ],
+   "fix": {
+    "tried": 122,
+    "advice_only": false,
+    "clears_rate": 1.0
+   }
+  },
+  "earworm_likelihood_low": {
+   "false_alarm_rate": 0.3923,
+   "fired_on": 82,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
+  },
+  "flat_loudness_arc": {
+   "false_alarm_rate": 0.3397,
+   "fired_on": 71,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
+  },
+  "harshness_detected": {
+   "false_alarm_rate": 0.1005,
+   "fired_on": 21,
+   "alarm_rate": 0.0574,
+   "tracks": 209,
+   "source": "full",
+   "detects": [
+    {
+     "defect": "harsh_3500",
+     "rate": 0.5231,
+     "tracks": 70
     }
    ]
   },
-  "earworm_likelihood_low": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
-  },
-  "flat_loudness_arc": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
-  },
-  "harshness_detected": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
-  },
   "heaviness_distortion_mismatch": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.4354,
+   "fired_on": 91,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
   },
   "heaviness_extremity_mismatch": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.6459,
+   "fired_on": 135,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
   },
   "heaviness_weight_low": {
    "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "fired_on": 0,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
   },
   "hook_density_low": {
    "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "fired_on": 0,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
   },
   "hook_strength_low": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.0335,
+   "fired_on": 7,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
   },
   "kick_bass_collision": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.3397,
+   "fired_on": 71,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
   },
   "low_end_heavy": {
    "false_alarm_rate": 0.1532,
    "fired_on": 224,
+   "alarm_rate": 0.0246,
    "detects": [
     {
      "defect": "low_shelf_+10",
@@ -121,6 +167,7 @@
   "low_end_light": {
    "false_alarm_rate": 0.1806,
    "fired_on": 264,
+   "alarm_rate": 0.052,
    "detects": [
     {
      "defect": "low_shelf_-12",
@@ -136,47 +183,84 @@
   },
   "lra_too_compressed": {
    "false_alarm_rate": 0.1525,
-   "fired_on": 223
+   "fired_on": 223,
+   "alarm_rate": 0.0034
   },
   "lra_too_dynamic": {
    "false_alarm_rate": 0.1033,
-   "fired_on": 151
+   "fired_on": 151,
+   "alarm_rate": 0.0274
   },
   "lufs_too_loud": {
    "false_alarm_rate": 0.1525,
-   "fired_on": 223
+   "fired_on": 223,
+   "alarm_rate": 0.013
   },
   "lufs_too_quiet": {
    "false_alarm_rate": 0.3837,
-   "fired_on": 561
+   "fired_on": 561,
+   "alarm_rate": 0.0718
   },
   "masking_collision": {
    "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "fired_on": 0,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
   },
   "memorability_low": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.378,
+   "fired_on": 79,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
   },
   "midrange_vocal_masking": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.0766,
+   "fired_on": 16,
+   "alarm_rate": 0.0766,
+   "tracks": 209,
+   "source": "full"
   },
   "mono_compat_warning": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.1627,
+   "fired_on": 34,
+   "alarm_rate": 0.1244,
+   "tracks": 209,
+   "source": "full",
+   "detects": [
+    {
+     "defect": "comb_0.5ms",
+     "rate": 0.6667,
+     "tracks": 70
+    }
+   ]
   },
   "ms_brightness_imbalance": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.0287,
+   "fired_on": 6,
+   "alarm_rate": 0.0048,
+   "tracks": 209,
+   "source": "full",
+   "detects": [
+    {
+     "defect": "side_bright",
+     "rate": 0.4493,
+     "tracks": 70
+    }
+   ]
   },
   "no_hooks_detected": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.3493,
+   "fired_on": 73,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
   },
   "noise_floor_high": {
    "false_alarm_rate": 0.1108,
    "fired_on": 162,
+   "alarm_rate": 0.0,
    "detects": [
     {
      "defect": "hiss_-45",
@@ -185,53 +269,98 @@
     }
    ],
    "fix": {
-    "tried": 0,
-    "advice_only": true
+    "tried": 41,
+    "advice_only": false,
+    "clears_rate": 0.9512
    }
   },
   "over_compressed": {
    "false_alarm_rate": 0.1122,
-   "fired_on": 164
+   "fired_on": 164,
+   "alarm_rate": 0.0308
   },
   "phase_issue": {
    "false_alarm_rate": 0.0068,
-   "fired_on": 10
+   "fired_on": 10,
+   "alarm_rate": 0.0007,
+   "detects": [
+    {
+     "defect": "comb_0.5ms",
+     "rate": 0.6667,
+     "tracks": 70
+    }
+   ]
   },
   "resonance_hotspot": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.1914,
+   "fired_on": 40,
+   "alarm_rate": 0.0909,
+   "tracks": 209,
+   "source": "full",
+   "detects": [
+    {
+     "defect": "res_2500",
+     "rate": 0.8305,
+     "tracks": 70
+    }
+   ]
   },
   "section_arc_too_flat": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.3397,
+   "fired_on": 71,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
   },
   "section_arc_too_wide": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.0526,
+   "fired_on": 11,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
   },
   "section_peak_too_quiet": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.2105,
+   "fired_on": 44,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
   },
   "stereo_too_narrow": {
    "false_alarm_rate": 0.1211,
-   "fired_on": 177
+   "fired_on": 177,
+   "alarm_rate": 0.0308
   },
   "stereo_too_wide": {
    "false_alarm_rate": 0.1395,
-   "fired_on": 204
+   "fired_on": 204,
+   "alarm_rate": 0.0267
   },
   "structural_flow_poor": {
    "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "fired_on": 0,
+   "alarm_rate": 0.0,
+   "tracks": 209,
+   "source": "full"
   },
   "sub_bass_too_wide": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.0957,
+   "fired_on": 20,
+   "alarm_rate": 0.0957,
+   "tracks": 209,
+   "source": "full",
+   "detects": [
+    {
+     "defect": "sub_wide",
+     "rate": 1.0,
+     "tracks": 70
+    }
+   ]
   },
   "tilt_too_bright": {
    "false_alarm_rate": 0.0616,
    "fired_on": 90,
+   "alarm_rate": 0.0171,
    "detects": [
     {
      "defect": "high_shelf_+10",
@@ -240,13 +369,15 @@
     }
    ],
    "fix": {
-    "tried": 0,
-    "advice_only": true
+    "tried": 8,
+    "advice_only": false,
+    "clears_rate": 0.625
    }
   },
   "tilt_too_dark": {
    "false_alarm_rate": 0.0417,
    "fired_on": 61,
+   "alarm_rate": 0.015,
    "detects": [
     {
      "defect": "high_shelf_-12",
@@ -255,17 +386,23 @@
     }
    ],
    "fix": {
-    "tried": 0,
-    "advice_only": true
+    "tried": 3,
+    "advice_only": false,
+    "clears_rate": 1.0
    }
   },
   "translation_risk_high": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0
+   "false_alarm_rate": 0.1722,
+   "fired_on": 36,
+   "alarm_rate": 0.0144,
+   "tracks": 209,
+   "source": "full"
   },
   "true_peak_over": {
    "false_alarm_rate": 0.8242,
    "fired_on": 1205,
+   "alarm_rate": 0.6813,
+   "kind": "spec",
    "detects": [
     {
      "defect": "peak_norm_0",
@@ -281,7 +418,8 @@
   },
   "under_compressed": {
    "false_alarm_rate": 0.0157,
-   "fired_on": 23
+   "fired_on": 23,
+   "alarm_rate": 0.0048
   }
  },
  "defects": {
@@ -357,7 +495,49 @@
    ],
    "tracks": 343,
    "already_flagged": 21,
-   "detected_rate": 0.9037
+   "detected_rate": 0.8975
+  },
+  "res_2500": {
+   "findings": [
+    "resonance_hotspot"
+   ],
+   "tracks": 70,
+   "already_flagged": 11,
+   "detected_rate": 0.8305
+  },
+  "harsh_3500": {
+   "findings": [
+    "harshness_detected"
+   ],
+   "tracks": 70,
+   "already_flagged": 5,
+   "detected_rate": 0.5231
+  },
+  "comb_0.5ms": {
+   "findings": [
+    "mono_compat_warning",
+    "phase_issue"
+   ],
+   "tracks": 70,
+   "already_flagged": 13,
+   "detected_rate": 0.6667
+  },
+  "sub_wide": {
+   "findings": [
+    "sub_bass_too_wide"
+   ],
+   "tracks": 70,
+   "already_flagged": 9,
+   "detected_rate": 1.0
+  },
+  "side_bright": {
+   "findings": [
+    "ms_brightness_imbalance"
+   ],
+   "tracks": 70,
+   "already_flagged": 1,
+   "detected_rate": 0.4493
   }
- }
+ },
+ "full_tracks": 209
 }

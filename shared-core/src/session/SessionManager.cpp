@@ -413,9 +413,11 @@ Result<void> SessionManager::deleteSession(const std::string& id)
         {
             SQLite::Statement q(*m_db, "SELECT data_json FROM sessions WHERE id = ?");
             q.bind(1, id);
-            if (q.executeStep())
-                for (const auto& f : sessionFromJson(q.getColumn(0).getString()).files)
+            if (q.executeStep()) {
+                const auto stored = sessionFromJson(q.getColumn(0).getString());
+                for (const auto& f : stored.files)
                     sourcePaths.push_back(f.path);
+            }
         }
 
         // One transaction: the session row (cascading analysis_results /

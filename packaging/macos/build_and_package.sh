@@ -9,7 +9,7 @@
 #   3. bundle: Khensu Mixing.app (with local-services in Contents/Resources),
 #      Khensu Copilot.vst3 and Khensu Copilot.component (AU, when built)
 #   4. optionally stage a relocatable Python runtime into the app
-#   5. codesign (hardened runtime)   - only when KHENSU_CODESIGN_IDENTITY is set
+#   5. codesign (hardened runtime)   - always: a Developer ID when KHENSU_CODESIGN_IDENTITY is set, else ad hoc
 #   6. notarize + staple             - only when notary credentials are set
 #   7. dist/: the installer khensu-setup-<v>-macos.pkg (the app to
 #      Applications, the VST3 to Library/Audio/Plug-Ins/VST3, the AU to
@@ -150,8 +150,16 @@ log "Secret scan of what ships"
 # --------------------------------------------------------------------------- #
 # 4. Codesign (hardened runtime)
 # --------------------------------------------------------------------------- #
+# MAC-1: every build is signed. Without a Developer ID it is signed ad hoc
+# ("-", this Mac only): Apple Silicon will not run unsigned code, and copying
+# the service and data files in after the build breaks the linker's seal.
+KHENSU_CODESIGN_IDENTITY="${KHENSU_CODESIGN_IDENTITY:--}"
 sign() {
-    codesign --force --timestamp --options runtime --sign "$KHENSU_CODESIGN_IDENTITY" "$@"
+    if [[ "$KHENSU_CODESIGN_IDENTITY" == "-" ]]; then
+        codesign --force --options runtime --sign - "$@"   # ad hoc: no timestamp
+    else
+        codesign --force --timestamp --options runtime --sign "$KHENSU_CODESIGN_IDENTITY" "$@"
+    fi
 }
 if [[ -n "${KHENSU_CODESIGN_IDENTITY:-}" ]]; then
     log "Codesign with: $KHENSU_CODESIGN_IDENTITY"
@@ -235,7 +243,7 @@ ln -s /Library/Audio/Plug-Ins/VST3 "$STAGE/VST3 Plug-Ins folder"
 hdiutil create -volname "Khensu Mixing $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 rm -rf "$STAGE"
 (cd "$DIST_DIR/plugins" && ditto -c -k --keepParent . "$PLUGINS_ZIP")
-[[ -n "${KHENSU_CODESIGN_IDENTITY:-}" ]] && codesign --force --timestamp --sign "$KHENSU_CODESIGN_IDENTITY" "$DMG"
+[[ "${KHENSU_CODESIGN_IDENTITY:--}" != "-" ]] && codesign --force --timestamp --sign "$KHENSU_CODESIGN_IDENTITY" "$DMG"
 
 # --------------------------------------------------------------------------- #
 # 6. Notarize + staple
@@ -246,7 +254,7 @@ if [[ -n "${KHENSU_NOTARY_PROFILE:-}" ]]; then
 elif [[ -n "${KHENSU_APPLE_ID:-}" && -n "${KHENSU_TEAM_ID:-}" && -n "${KHENSU_APP_PASSWORD:-}" ]]; then
     notary_args=(--apple-id "$KHENSU_APPLE_ID" --team-id "$KHENSU_TEAM_ID" --password "$KHENSU_APP_PASSWORD")
 fi
-if [[ ${#notary_args[@]} -gt 0 && -n "${KHENSU_CODESIGN_IDENTITY:-}" ]]; then
+if [[ ${#notary_args[@]} -gt 0 && "${KHENSU_CODESIGN_IDENTITY:--}" != "-" ]]; then  # ad hoc cannot be notarized
     log "Notarize"
     xcrun notarytool submit "$PKG" "${notary_args[@]}" --wait
     xcrun notarytool submit "$DMG" "${notary_args[@]}" --wait

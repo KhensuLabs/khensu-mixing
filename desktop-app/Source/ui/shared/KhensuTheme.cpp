@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/shared/KhensuTheme.cpp
 #include "KhensuTheme.h"
+#include "../../BundledResources.h"
 #include <map>
 #include <utility>
 
@@ -16,10 +17,7 @@ namespace {
 // rendered as per-byte mojibake); FontOptions fixes that.
 juce::File findFontsDir()
 {
-    auto exeDir = juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory();
-    auto candidate = exeDir.getChildFile("resources/fonts");
-    if (candidate.isDirectory()) return candidate;
-    return juce::File::getCurrentWorkingDirectory().getChildFile("resources/fonts");
+    return bundled_resources::find("resources/fonts");
 }
 
 // Returns nullptr (never throws/asserts) if the file is absent or fails to

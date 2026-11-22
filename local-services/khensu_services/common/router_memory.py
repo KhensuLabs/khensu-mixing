@@ -77,10 +77,35 @@ def process_rss_bytes() -> int | None:
             if psapi.GetProcessMemoryInfo(k32.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
                 return int(counters.WorkingSetSize)
             return None
+        if sys.platform == "darwin":
+            return _macos_rss_bytes()
         with open("/proc/self/statm", encoding="ascii") as f:
             return int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE")
     except (OSError, ValueError, AttributeError):
         return None
+
+
+def _macos_rss_bytes() -> int | None:
+    """MAC-1: macOS has no /proc - the resident size from the Mach kernel's
+    task_info(MACH_TASK_BASIC_INFO), the figure Activity Monitor shows as
+    "Real Memory"."""
+    class _TimeValue(ctypes.Structure):
+        _fields_ = [("seconds", ctypes.c_int), ("microseconds", ctypes.c_int)]
+
+    class _MachTaskBasicInfo(ctypes.Structure):
+        _fields_ = [("virtual_size", ctypes.c_uint64), ("resident_size", ctypes.c_uint64),
+                    ("resident_size_max", ctypes.c_uint64), ("user_time", _TimeValue),
+                    ("system_time", _TimeValue), ("policy", ctypes.c_int), ("suspend_count", ctypes.c_int)]
+
+    libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+    task = ctypes.c_uint.in_dll(libc, "mach_task_self_")
+    info = _MachTaskBasicInfo()
+    count = ctypes.c_uint(ctypes.sizeof(info) // ctypes.sizeof(ctypes.c_uint))
+    MACH_TASK_BASIC_INFO = 20
+    if libc.task_info(task, MACH_TASK_BASIC_INFO, ctypes.byref(info), ctypes.byref(count)) == 0:
+        return int(info.resident_size)
+    import resource
+    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)  # peak, bytes on macOS
 
 
 def memory_report() -> dict:

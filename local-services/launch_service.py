@@ -6,7 +6,11 @@ pip install required. Subsequent launches detect the existing venv and start
 instantly.
 
 Bootstrap sequence:
-  1. Detect whether a .venv exists next to this file.
+  1. Detect whether the venv exists: .venv next to this file in a checkout;
+     in an installed app (a macOS .app bundle, or a folder this user cannot
+     write) the per-user ~/Library/KhensuMixing/service-venv
+     (%LOCALAPPDATA%/KhensuMixing/service-venv, ~/.local/share/...), so
+     setup never writes into the signed bundle (MAC-1).
   2. If not, create it via `python -m venv .venv`, install the hash-verified
      base runtime, then install the local package without dependency resolution
      (this only happens once; typically takes 1–3 minutes on first run).
@@ -20,6 +24,55 @@ from pathlib import Path
 from typing import MutableMapping
 
 HERE = Path(__file__).parent.resolve()
+
+#: The Pythons the locked runtime has wheels for on every shipped platform
+#: (scripts/check_platform_wheels.py). Intel Macs stop at 3.13: numba
+#: publishes no Intel build for 3.14 (MAC-1).
+SUPPORTED_PYTHONS = ((3, 11), (3, 12), (3, 13))
+
+
+def python_supported(version_info=None) -> bool:
+    v = version_info or sys.version_info
+    return (v[0], v[1]) in SUPPORTED_PYTHONS and getattr(v, "releaselevel", "final") == "final"
+
+
+def installed_bundle(here: Path = HERE) -> bool:
+    """True when this file ships inside an installed app: a macOS .app bundle
+    (writing there breaks its code signature) or a folder this user cannot
+    write (Program Files, /Applications)."""
+    if ".app/Contents/" in here.as_posix():
+        return True
+    return not os.access(here, os.W_OK)
+
+
+def user_venv_dir() -> Path:
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "KhensuMixing"
+    elif sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "KhensuMixing"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "KhensuMixing"
+    return base / "service-venv"
+
+
+def venv_python(venv: Path) -> Path:
+    if sys.platform == "win32":
+        return venv / "Scripts" / "python.exe"
+    py = venv / "bin" / "python3"
+    return py if py.exists() else venv / "bin" / "python"
+
+
+VENV_DIR = user_venv_dir() if installed_bundle() else HERE / ".venv"
+#: What the venv was built from: a venv made by another Python or from an
+#: older lock export is rebuilt.
+STAMP_NAME = "khensu-venv-stamp.txt"
+
+
+def venv_stamp() -> str:
+    import hashlib
+    req = HERE / "requirements-runtime-hashed.txt"
+    digest = hashlib.sha256(req.read_bytes()).hexdigest()[:16] if req.exists() else "none"
+    return f"python {sys.version_info[0]}.{sys.version_info[1]} {sys.platform} {digest}"
 
 
 def _set_offline(env: MutableMapping[str, str]) -> None:
@@ -88,24 +141,47 @@ def bootstrap_venv(run=subprocess.run) -> bool:
     if not bootstrap_online_allowed():
         print(OFFLINE_BOOTSTRAP_MESSAGE, file=sys.stderr, flush=True)
         return False
-    print("[khensu-service] First run: creating virtual environment...", flush=True)
-    run([sys.executable, "-m", "venv", str(HERE / ".venv")], check=True)
+    if not python_supported():
+        print(f"[khensu-service] Python {sys.version.split()[0]} is not supported: install Python 3.11, "
+              f"3.12 or 3.13 (python.org).", file=sys.stderr, flush=True)
+        return False
+    print(f"[khensu-service] First run: creating virtual environment in {VENV_DIR}...", flush=True)
+    VENV_DIR.parent.mkdir(parents=True, exist_ok=True)
+    run([sys.executable, "-m", "venv", "--clear", str(VENV_DIR)], check=True)
     print("[khensu-service] Installing dependencies (one-time setup)...", flush=True)
-    pip = str(VENV_PYTHON.parent / ("pip.exe" if sys.platform == "win32" else "pip"))
+    py = str(venv_python(VENV_DIR))
     run(
-        [pip, "install", "--quiet", "--require-hashes", "-r", str(HERE / "requirements-runtime-hashed.txt")],
+        [py, "-m", "pip", "install", "--quiet", "--require-hashes", "-r",
+         str(HERE / "requirements-runtime-hashed.txt")],
         check=True,
     )
-    run([pip, "install", "--quiet", "--no-deps", "-e", str(HERE)], check=True)
+    if not installed_bundle():
+        # A checkout: the package itself, editable. An installed app runs the
+        # service from its own folder (sys.path), and never writes into it.
+        run([py, "-m", "pip", "install", "--quiet", "--no-deps", "-e", str(HERE)], check=True)
+    pip = py
     # MMC Locate's port backend (the [midi] extra), best-effort: python-rtmidi
     # has no wheel for every Python, and the service runs without it (MMC off).
-    midi = run([pip, "install", "--quiet", "--require-hashes", "-r",
+    midi = run([pip, "-m", "pip", "install", "--quiet", "--require-hashes", "-r",
                 str(HERE / "requirements-midi-hashed.txt")], check=False)
     if getattr(midi, "returncode", 0) != 0:
         print("[khensu-service] MIDI (MMC Locate) support could not be installed; continuing without it.",
               flush=True)
+    VENV_DIR.mkdir(parents=True, exist_ok=True)
+    (VENV_DIR / STAMP_NAME).write_text(venv_stamp(), encoding="utf-8")
     print("[khensu-service] Setup complete.", flush=True)
     return True
+
+
+def venv_current() -> bool:
+    """The venv exists and was built by this Python from this lock export."""
+    py = venv_python(VENV_DIR)
+    stamp = VENV_DIR / STAMP_NAME
+    if not py.exists():
+        return False
+    if not stamp.exists():
+        return not installed_bundle()  # a developer's own .venv carries no stamp
+    return stamp.read_text(encoding="utf-8").strip() == venv_stamp()
 
 
 # ── Installed-runtime / venv detection ────────────────────────────────────────
@@ -113,12 +189,7 @@ def bootstrap_venv(run=subprocess.run) -> bool:
 # priority over developer venvs and PATH so a shipped app never resolves its
 # dependencies from an uncontrolled machine environment.
 RUNTIME_PYTHON = HERE / "runtime" / ("python.exe" if sys.platform == "win32" else "bin/python3")
-if sys.platform == "win32":
-    VENV_PYTHON = HERE / ".venv" / "Scripts" / "python.exe"
-else:
-    VENV_PYTHON = HERE / ".venv" / "bin" / "python3"
-    if not VENV_PYTHON.exists():
-        VENV_PYTHON = HERE / ".venv" / "bin" / "python"
+VENV_PYTHON = venv_python(VENV_DIR)
 
 def run_service(host: str = "127.0.0.1", port: int = 47239) -> None:
     """Run Uvicorn with a server handle the app can stop gracefully (SVC-02).
@@ -143,6 +214,7 @@ def run_service(host: str = "127.0.0.1", port: int = 47239) -> None:
     server = uvicorn.Server(config)
     lifecycle.set_server(server)
     lifecycle.start_exit_watchdog(server)
+    lifecycle.start_parent_watch()  # macOS / Linux: leave with the app (MAC-1)
     server.run()
     _exit_after_serve(server)
 
@@ -189,9 +261,10 @@ if __name__ == "__main__":
         os.execv(str(RUNTIME_PYTHON), [str(RUNTIME_PYTHON)] + sys.argv)
         sys.exit(1)
 
-    if not _running_from_runtime and not _running_from_venv and not VENV_PYTHON.exists():
+    if not _running_from_runtime and not _running_from_venv and not venv_current():
         if not bootstrap_venv():
             sys.exit(3)
+        VENV_PYTHON = venv_python(VENV_DIR)
 
     # ── Re-exec from venv Python if needed ────────────────────────────────────
     if not _running_from_runtime and not _running_from_venv and VENV_PYTHON.exists():

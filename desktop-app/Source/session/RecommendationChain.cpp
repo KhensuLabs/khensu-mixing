@@ -58,6 +58,15 @@ std::vector<ipc::HttpServiceBridge::EffectSpec> buildRecommendationChain(const R
         eq.parameters["q"] = has("eq_q") ? get("eq_q") : 0.707f;
         chain.push_back(std::move(eq));
     }
+    // A resonance notch (ResonanceRecommender): a cut at the peak.
+    if (has("eq_center_hz") && has("eq_cut_db") && !has("eq_gain_db")) {
+        ipc::HttpServiceBridge::EffectSpec notch;
+        notch.effect = "PeakFilter";
+        notch.parameters["cutoff_frequency_hz"] = get("eq_center_hz");
+        notch.parameters["gain_db"] = -std::abs(get("eq_cut_db"));
+        notch.parameters["q"] = has("eq_q") ? get("eq_q") : 6.0f;
+        chain.push_back(std::move(notch));
+    }
     if (has("comp_ratio") || has("comp_threshold_db")) {
         ipc::HttpServiceBridge::EffectSpec comp;
         comp.effect = "Compressor";
@@ -70,6 +79,8 @@ std::vector<ipc::HttpServiceBridge::EffectSpec> buildRecommendationChain(const R
     if (has("deess_threshold_db") || has("deess_freq_hz"))
         add("DeEsser", {{"threshold_db", has("deess_threshold_db") ? get("deess_threshold_db") : -22.0f},
                         {"frequency_hz", has("deess_freq_hz") ? get("deess_freq_hz") : 7000.0f}});
+    // FIX-B: steady hiss - the service's spectral denoiser.
+    if (has("denoise_reduction_db")) add("SpectralDenoise", {{"reduction_db", get("denoise_reduction_db")}});
     if (has("transient_attack_db")) add("TransientShaper", {{"attack_gain_db", get("transient_attack_db")}});
     if (has("saturation_drive_db")) add("TapeSaturation", {{"drive_db", get("saturation_drive_db")}});
     if (has("stereo_width")) add("StereoWidener", {{"width", get("stereo_width")}});

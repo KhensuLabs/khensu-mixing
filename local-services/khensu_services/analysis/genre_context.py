@@ -22,7 +22,7 @@ from khensu_services.analysis.genre_provenance import (
     GENRE_TARGET_PROVENANCE,
     genre_relative_abstention_reason,
 )
-from khensu_services.analysis.dsp_metrics import onset_strength
+from khensu_services.analysis.dsp_metrics import onset_strength, zero_crossing_rate
 
 
 def _crest_or_zero(y: np.ndarray) -> float:
@@ -49,7 +49,7 @@ def _evidence(y: np.ndarray, sr: int, bpm: float) -> dict[str, Any]:
     onset_density = float(np.sum(onset > onset_median) / duration)
     tempogram = librosa.feature.tempogram(y=y, sr=sr)
     rhythm_peak = float(np.max(np.mean(tempogram, axis=1)) / (np.mean(np.abs(tempogram)) + 1e-9))
-    zcr = librosa.feature.zero_crossing_rate(y)[0]
+    zcr = zero_crossing_rate(y)
     mfcc = _lean.mfcc(y, sr, n_mfcc=13)
     # librosa's default 6 bands from 200 Hz put the top band's lower edge at
     # 6.4 kHz - above Nyquist below ~12.8 kHz sample rates, where it raised

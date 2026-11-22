@@ -282,3 +282,20 @@ def test_voice_transcribes_then_parses(song, tmp_path, monkeypatch):
     body = res.json()
     assert body["transcript"] == "Make the chorus a bit brighter."
     assert body["commands"][0]["intent"] == "brightness" and body["executable"]
+
+
+def test_turn_the_bass_down_cuts_and_narrow_low_end_monos_it():
+    """EXP-3: "turn the bass down a lot" read as a bass boost (+3.2 dB low
+    shelf) and "narrow the low end" as more bass - the local-model check
+    disagreed with the rule parser and the parser was wrong."""
+    from khensu_services.copilot import nl_commands as nl
+    (down,), _ = nl.parse_text("turn the bass down a lot")
+    assert (down.intent, down.direction, down.stem) == ("level", -1, "bass")
+    (low,), _ = nl.parse_text("bring the low end down a bit")
+    assert (low.intent, low.direction) == ("bass", -1)
+    (narrow,), _ = nl.parse_text("narrow the low end")
+    assert (narrow.intent, narrow.direction) == ("width", -1)
+    effects, _ = nl.build_effects(narrow)
+    assert effects[0]["effect"] == "BassMonoMaker"
+    (whole,), _ = nl.parse_text("make the mix more mono")
+    assert nl.build_effects(whole)[0][0]["effect"] == "StereoWidener"

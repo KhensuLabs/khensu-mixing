@@ -131,7 +131,10 @@ def _parse_time(token: str) -> float | None:
 def _detect_intent(c: str, has_hz: bool) -> tuple[str, int] | None:
     """(intent, direction) for one lower-cased clause, or None."""
     neg = bool(re.search(r"\b(less|reduce|tame|remove|cut|lower|fewer|too|not so|dial back|pull back|"
-                         r"turn down|decrease|soften|dip|scoop|attenuate|get rid of|fix the)\b", c))
+                         r"turn down|decrease|soften|dip|scoop|attenuate|get rid of|fix the)\b", c)
+               # "turn the bass down", "bring the low end down a bit" (EXP-3:
+               # read as a boost before - the words between broke the match)
+               or re.search(r"\b(?:turn|bring|pull|take)\b(?:\s+\S+){1,4}?\s+down\b", c))
     if has_hz:
         if re.search(r"\b(cut|reduce|dip|lower|scoop|attenuate|remove|less|pull|notch|tame)\b", c):
             return "eq", -1
@@ -155,7 +158,14 @@ def _detect_intent(c: str, has_hz: bool) -> tuple[str, int] | None:
     if re.search(r"\bthin(?:ner)?\b", c):
         return "warmth", 1 if neg else -1
     level_word = re.search(r"\b(louder|quieter|softer|turn (?:it )?(?:up|down)|bring (?:it |them )?(?:up|down)|"
-                           r"level|volume|sit back|tuck)\b", c)
+                           r"level|volume|sit back|tuck)\b", c) or re.search(
+                               r"\b(?:turn|bring)\b(?:\s+\S+){1,4}?\s+(?:up|down)\b", c)
+    # Width words decide before the low-end words: "narrow the low end" is
+    # a mono low end, not less bass (EXP-3 - it boosted the low end).
+    if re.search(r"\bnarrow|\bmono\b", c):
+        return "width", -1
+    if re.search(r"\bwid(?:e|en|er|th)\b", c) and re.search(r"\blow[- ]end\b|\bsub\b|\bbass\b|\bbottom end\b", c):
+        return "width", -1 if neg else 1
     bass_instrument = re.search(r"\b(the bass|bass ?line|bass guitar|808s?)\b", c)
     if re.search(r"\blow[- ]end\b|\bsub\b|\bbass\b|\bbottom end\b|\bboom\b", c) and not (
             bass_instrument and level_word):
@@ -390,6 +400,12 @@ def build_effects(cmd: Command) -> tuple[list[dict], str]:
                                                       "frequency_hz": 7000.0}}],
                 f"De-esser at 7 kHz, threshold {thr:.0f} dB, 4:1")
     if i == "width":
+        # "narrow the low end" / "mono the sub" on the mix: mono below a
+        # crossover, not the whole image (EXP-3).
+        if d < 0 and cmd.target_kind == "mix" and re.search(
+                r"\blow[- ]end\b|\bsub\b|\bbass\b|\bbottom end\b|\blows\b", cmd.clause.lower()):
+            return ([{"effect": "BassMonoMaker", "parameters": {"crossover_hz": 120.0}}],
+                    "Mono below 120 Hz")
         if cmd.amount_pct is not None:
             step = min(0.6, cmd.amount_pct / 100.0)
         else:
@@ -700,7 +716,10 @@ def llm_fallback_commands(text: str) -> tuple[list[Command], str]:
         _log.info("NL command LLM fallback failed: %s", exc)
         return [], ""
     out: list[Command] = []
-    for item in (data or {}).get("commands", [])[:8]:
+    items = (data or {}).get("commands")
+    if items is None and isinstance(data, dict) and "intent" in data:
+        items = [data]  # a small local model answered with one command, not the list (EXP-3)
+    for item in (items or [])[:8]:
         if not isinstance(item, dict) or item.get("intent") not in INTENTS:
             continue
         try:

@@ -85,8 +85,7 @@ class SettingsScreen final : public juce::Component, private juce::Timer, privat
     juce::Label llmKeyNote_;
 
     // Cloud-chat privacy controls (audit DATA-03): context minimization +
-    // per-provider consent status/revocation. Disclosure copy is flagged for
-    // product/legal review in TODO.md.
+    // per-provider consent status/revocation.
     juce::ToggleButton shareContextToggle_{TRANS("Share session context (analysis, genre, BPM, chain) with the cloud copilot")};
     juce::Label consentStatusLabel_;
     juce::TextButton revokeConsentButton_{TRANS("Revoke consent")};
@@ -117,8 +116,8 @@ class SettingsScreen final : public juce::Component, private juce::Timer, privat
     juce::Label midiEventLabel_;
 
 #if JUCE_WINDOWS
-    // GPU rendering fallback (TODO: GPU-accelerated 2D visualizations). JUCE 8
-    // defaults every Windows peer to Direct2D automatically; this is the escape
+    // GPU rendering fallback. JUCE 8 renders every Windows peer with
+    // Direct2D (GPU-accelerated 2D) by default; this is the escape
     // hatch for a GPU/driver combination that hits z-order punch-through or
     // rendering glitches - Windows-only since Direct2D is a Windows technology.
     juce::Label renderingSectionLabel_{{}, TRANS("Rendering")};

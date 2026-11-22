@@ -530,7 +530,7 @@ void MasteringAgentPanel::onJobFinished(const ipc::HttpServiceBridge::MasteringJ
         // Vocal-band/artifact terms folded into the objective score,
         // not just the pass/fail guardrail gate - surfaced here so
         // the user can see why one candidate outranked another even
-        // when lufs/crest/centroid were close (TODO.md).
+        // when lufs/crest/centroid were close.
         if (it.vocalPresenceDelta.has_value())
             parts.add(TRANS("Vocal presence") + ": " + juce::String(*it.vocalPresenceDelta >= 0 ? "+" : "") +
                       juce::String(*it.vocalPresenceDelta, 3));

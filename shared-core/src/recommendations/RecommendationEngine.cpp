@@ -29,8 +29,8 @@ namespace khensu {
 
 namespace {
 
-// --- Measurement-trust down-weighting (TODO "recommender consumes measurement
-// confidence"; trust map is pipeline #5's /analyze/measurement_quality) ---
+// --- Measurement-trust down-weighting: the recommender consumes measurement
+// confidence (the trust map is /analyze/measurement_quality) ---
 //
 // Maps recommendation id prefixes (makeRecommendation builds ids as
 // "<code>_<fileId>") to the trust-map metric the detection is built on. Only
@@ -116,6 +116,18 @@ std::vector<Recommendation> RecommendationEngine::generate(const AnalysisResult&
         }
     };
 
+    // Experimental song-level models: kept, but never above a minor note.
+    auto appendUnvalidated = [&append](std::vector<Recommendation> recs, in::Mask needs) {
+        for (auto& r : recs)
+            if (r.severity > kUnvalidatedSeverityCap) {
+                r.severity = kUnvalidatedSeverityCap;
+                r.confidence_reason += (r.confidence_reason.empty() ? "" : " ") +
+                                       std::string("Experimental: not yet checked against listeners, so shown "
+                                                   "as a minor note.");
+            }
+        append(std::move(recs), needs);
+    };
+
     append(LoudnessRecommender{}.recommend(result, genre, target));
     {
         // Two spectral findings read more than the spectrum: the kick/bass
@@ -130,17 +142,17 @@ std::vector<Recommendation> RecommendationEngine::generate(const AnalysisResult&
     append(DynamicsRecommender{}.recommend(result, genre, target));
     append(StereoRecommender{}.recommend(result, genre, target));
     append(ArtifactRecommender{}.recommend(result, genre, target));
-    append(HookRecommender{}.recommend(result, genre, target), in::kDeep);
-    append(MemorabilityRecommender{}.recommend(result, genre, target), in::kDeep);
-    append(StructuralFlowRecommender{}.recommend(result, genre, target), in::kDeep);
-    append(HeavinessRecommender{}.recommend(result, genre, target), in::kDeep);
+    appendUnvalidated(HookRecommender{}.recommend(result, genre, target), in::kDeep);
+    appendUnvalidated(MemorabilityRecommender{}.recommend(result, genre, target), in::kDeep);
+    appendUnvalidated(StructuralFlowRecommender{}.recommend(result, genre, target), in::kDeep);
+    appendUnvalidated(HeavinessRecommender{}.recommend(result, genre, target), in::kDeep);
     append(HarshnessRecommender{}.recommend(result, genre, target), in::kHarshness);
     append(MonoCompatRecommender{}.recommend(result, genre, target), in::kMonoCompat);
     append(TranslationRiskRecommender{}.recommend(result, genre, target), in::kTranslationRisk);
     append(ResonanceRecommender{}.recommend(result, genre, target), in::kResonance);
     append(MidSideImbalanceRecommender{}.recommend(result, genre, target), in::kMidSide);
-    append(LoudnessArcRecommender{}.recommend(result, genre, target), in::kSections);
-    append(SectionFlowRecommender{}.recommend(result, genre, target), in::kSections);
+    appendUnvalidated(LoudnessArcRecommender{}.recommend(result, genre, target), in::kSections);
+    appendUnvalidated(SectionFlowRecommender{}.recommend(result, genre, target), in::kSections);
     append(MaskingRecommender{}.recommend(result, genre, target), in::kMasking);
     // Green "what's right" notes (spec §4) - severity 0, so the sort below
     // naturally places them after every real issue.

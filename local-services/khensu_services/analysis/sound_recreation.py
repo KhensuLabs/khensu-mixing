@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 from khensu_services.analysis import _lean_spectral as _lean
+from khensu_services.analysis.dsp_metrics import zero_crossing_rate
 import numpy.typing as npt
 
 
@@ -109,7 +110,7 @@ def _timbre_features(y: npt.NDArray, sr: int) -> dict[str, float]:
     rolloff = float(np.mean(librosa.feature.spectral_rolloff(S=S, sr=sr, roll_percent=0.85)))
     flatness = float(np.mean(librosa.feature.spectral_flatness(S=S)))
     bandwidth = float(np.mean(librosa.feature.spectral_bandwidth(S=S, sr=sr)))
-    zcr = float(np.mean(librosa.feature.zero_crossing_rate(y)))
+    zcr = float(np.mean(zero_crossing_rate(y)))
     from khensu_services.analysis._shared_analysis import hpss  # kernel-clamped (short clips)
     H, P = hpss(S)
     harm_ratio = float(np.sum(H ** 2) / (np.sum(P ** 2) + 1e-9))

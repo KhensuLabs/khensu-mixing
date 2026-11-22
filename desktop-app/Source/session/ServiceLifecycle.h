@@ -164,6 +164,13 @@ class ServiceLifecycle final : public IServiceLifecycle {
     PythonStatus status_ = PythonStatus::Stopped;
 
     // Outbox dispatch single-flight guard (shared so a pass can finish after teardown).
+    /// MAC-1: the service holds the app's saved keys for this run (it no
+    /// longer reads the macOS Keychain). Sent when it turns healthy and
+    /// again whenever settings.json changes; reset when it stops, so a
+    /// restarted service gets them too.
+    void pushCredentialsIfNeeded();
+    std::shared_ptr<std::atomic<juce::int64>> credentialsSentMs_ = std::make_shared<std::atomic<juce::int64>>(0);
+    std::shared_ptr<std::atomic<bool>> credentialsInFlight_ = std::make_shared<std::atomic<bool>>(false);
     std::shared_ptr<std::atomic<bool>> outboxInFlightFlag_ = std::make_shared<std::atomic<bool>>(false);
     std::atomic<bool>& outboxDispatchInFlight_ = *outboxInFlightFlag_;
 

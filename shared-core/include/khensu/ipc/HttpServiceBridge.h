@@ -77,6 +77,12 @@ class HttpServiceBridge final : public ILocalServiceBridge,
     /// before it falls back to a hard child-process kill.
     khensu::Result<void, BridgeError> requestGracefulShutdown();
 
+    /// MAC-1: hands the service the app's saved API keys (slot id ->
+    /// secret, e.g. "llm.anthropic_api_key"), held in its memory for this
+    /// run (POST /settings/credentials). On macOS the Keychain items trust
+    /// only the app, so the service no longer reads them itself.
+    khensu::Result<int, BridgeError> sendSessionCredentials(const std::map<std::string, std::string>& credentials);
+
     void seekTransport(float position_sec) override;
 
     /// Stops and joins the process-wide background workers (the latest-wins

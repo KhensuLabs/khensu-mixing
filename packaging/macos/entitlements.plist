@@ -5,7 +5,7 @@
   The app spawns the bundled Python analysis service as a child process and
   hosts third-party VST3 / AU plug-ins in-process, which are signed by other
   teams - hence disable-library-validation. Nothing else is relaxed.
-  UNVERIFIED on a Mac (see build_and_package.sh).
+  Every build is signed: ad hoc ("-") without a Developer ID.
 -->
 <plist version="1.0">
 <dict>
@@ -13,7 +13,10 @@
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <false/>
+    <!-- MAC-1: push-to-talk voice commands record from the microphone; the
+         hardened runtime blocks the input without this (the Info.plist usage
+         text comes from MICROPHONE_PERMISSION_TEXT in desktop-app/CMakeLists). -->
     <key>com.apple.security.device.audio-input</key>
-    <false/>
+    <true/>
 </dict>
 </plist>

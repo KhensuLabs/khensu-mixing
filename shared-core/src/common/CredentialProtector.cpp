@@ -116,6 +116,13 @@ void deleteCredentialFile(const std::string& configDir, const std::string& slotI
 }
 
 #if JUCE_MAC
+// The Keychain item's access list holds only this app (the default for an
+// item an app creates), and only this app reads it, in process. The analysis
+// service never reads the Keychain: the app hands it the keys over the
+// authenticated local channel (POST /settings/credentials), so no second
+// program - and no /usr/bin/security - needs access, and nothing prompts
+// (MAC-1). An ad-hoc build is a new signature each time, so the first read
+// after a rebuild asks once; a Developer ID build never does.
 bool storeInNativeStore(const std::string& slotId, const std::string& plaintext)
 {
     SecKeychainItemRef item = nullptr;

@@ -1132,8 +1132,8 @@ void DashboardScreen::layoutZone3()
         // tallest card once that height is known - previously each card kept
         // its own requested height, so e.g. Memorability (260px) next to the
         // taller Structural panel (300px) left a bare 40px gap under
-        // Memorability before the next row started. See TODO.md's
-        // "empty box" Dashboard fixes.
+        // Memorability before the next row started (the "empty box"
+        // Dashboard fix).
         std::vector<std::pair<juce::Component*, juce::Rectangle<int>>> rowCards;
 
         auto flushRow = [&]() {
@@ -1142,8 +1142,7 @@ void DashboardScreen::layoutZone3()
             // rowCards. Rather than draw it at half width with a blank cell
             // beside it, stretch it to the full row width - this is the
             // "empty box" gap reported above/below Reference Compare,
-            // Chord Progression, and Heaviness. See TODO.md "empty box"
-            // Dashboard fixes.
+            // Chord Progression, and Heaviness.
             bool soloRow = rowCards.size() == 1;
             for (auto& [p, r] : rowCards)
                 p->setBounds(r.getX(), r.getY(), soloRow ? w : r.getWidth(), rowMaxH);

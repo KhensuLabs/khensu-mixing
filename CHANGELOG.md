@@ -3,6 +3,41 @@
 Notable changes, newest first. The service API version (`SERVICE_VERSION`)
 moves separately.
 
+## 1.0.1 - 2026-11-22
+
+Findings checked against released music, three new fixes, and the macOS
+groundwork. Windows installer; macOS still builds from source (the verified
+Mac release is v1.1).
+
+- Evidence for every finding: each one's basis now shows how often it fires
+  on released tracks (moderate or worse, not just any note), how often it
+  catches an injected defect, and how often its fix clears it - measured
+  through the app's full pipeline on the genre corpus.
+- Harshness no longer fires on almost every master (87% of released tracks,
+  now about 10%); resonance looks for real resonances at quarter-octave
+  scale instead of notes (fires on about 19%, catches 83% of injected ones)
+  and its fix renders a notch; the side-channel brightness finding fires
+  again (it never could).
+- New fixes: spectral tilt renders a 1 kHz shelf solved from the spectrum,
+  noise floor renders a spectral denoiser (clears 95% of injected hiss),
+  DC offset renders a 20 Hz high-pass.
+- Song-level notes (hooks, memorability, structure, heaviness, loudness
+  arc) and kick/bass collision are capped as minor until checked against
+  listeners.
+- Long files: 192 kHz and 7.1 songs up to about 5.8 minutes (25 minutes for
+  standard stereo) are accepted - they were refused over 2.9 minutes.
+- Voice commands, the local LLM and the AI-generation probe checked and
+  tuned (95% of spoken commands parse; the probe was retrained on seven
+  generators and calls 3.8% of lossless human releases AI, was 6.2%).
+- macOS: the service starts (argument quoting), Intel Macs get working
+  numba / llvmlite / numpy pins on Python 3.11-3.13, bundle data moved to
+  Contents/Resources with local signing, microphone access, the service
+  exits with the app, first-run setup in ~/Library/KhensuMixing, AAC export
+  through the system encoder, chat streams no longer stall, API keys no
+  longer prompt for the Keychain.
+- Stability: an 8-hour soak (786 analyse / fix / delete cycles) holds
+  memory, handles and GUI objects flat.
+
 ## 1.0.0 - 2026-11-18
 
 The first public release: free and open source under the GNU

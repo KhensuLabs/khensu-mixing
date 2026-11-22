@@ -4,6 +4,7 @@
 #include <khensu/recommendations/MonoCompatRecommender.h>
 #include <khensu/recommendations/TranslationRiskRecommender.h>
 #include <khensu/recommendations/ResonanceRecommender.h>
+#include <khensu/recommendations/MidSideImbalanceRecommender.h>
 #include <khensu/recommendations/ProcessingStage.h>
 #include <khensu/recommendations/DynamicsRecommender.h>
 #include <khensu/recommendations/StrengthRecommender.h>
@@ -155,7 +156,7 @@ TEST_CASE("ResonanceRecommender fires on strong peak", "[recommenders][extended]
     r.file_id = "f_res";
     r.resonance = AnalysisResult::ResonanceData{};
     // ResonancePeak has {hz, db, prominence} - set prominence=14.0 (third field)
-    r.resonance->hotspots.push_back({350.0f, 0.0f, 14.0f}); // 350 Hz, 14 dB prominence - above 10.0 threshold
+    r.resonance->hotspots.push_back({350.0f, 0.0f, 8.0f}); // 350 Hz, 8 dB prominence - above the 5 dB edge
 
     auto recs = ResonanceRecommender{}.recommend(r, {}, {});
     REQUIRE_FALSE(recs.empty());
@@ -168,7 +169,7 @@ TEST_CASE("ResonanceRecommender silent when no strong peaks", "[recommenders][ex
     AnalysisResult r;
     r.file_id = "f_clean_res";
     r.resonance = AnalysisResult::ResonanceData{};
-    r.resonance->hotspots.push_back({350.0f, 0.0f, 5.0f}); // only 5 dB prominence - below threshold
+    r.resonance->hotspots.push_back({350.0f, 0.0f, 4.0f}); // only 4 dB prominence - below the 5 dB edge
 
     auto recs = ResonanceRecommender{}.recommend(r, {}, {});
     CHECK(recs.empty());
@@ -189,7 +190,7 @@ TEST_CASE("ResonanceRecommender groups a harmonic series into one pitched findin
     r.file_id = "f_song";
     r.resonance = AnalysisResult::ResonanceData{};
     r.resonance->hotspots = {{219.0f, 0.0f, 33.0f}, {440.0f, 0.0f, 17.0f}, {880.0f, 0.0f, 16.0f},
-                             {154.0f, 0.0f, 15.0f}, {698.0f, 0.0f, 14.0f}};
+                             {154.0f, 0.0f, 6.0f}, {698.0f, 0.0f, 14.0f}};
 
     const auto recs = ResonanceRecommender{}.recommend(r, {}, {});
     REQUIRE(recs.size() == 3); // A3 series, 154 Hz, 698 Hz
@@ -212,7 +213,9 @@ TEST_CASE("ResonanceRecommender groups a harmonic series into one pitched findin
     });
     REQUIRE(p154 != recs.end());
     CHECK(p154->confidence == 0.72f);
-    CHECK(p154->severity == 30.0f);
+    CHECK(p154->severity == 36.0f); // 20 at the 5 dB edge + 16 per dB
+    CHECK(p154->suggested_parameters.at("eq_cut_db") == 9.0f);
+    CHECK(a3->suggested_parameters.count("eq_cut_db") == 0); // a note: no static notch
 }
 
 TEST_CASE("ResonanceRecommender note names", "[recommenders][extended][resonance]")
@@ -297,4 +300,18 @@ TEST_CASE("All extended recommenders return complete recommendations", "[recomme
         CHECK(rec.is_complete());
     for (const auto& rec : ResonanceRecommender{}.recommend(r, {}, {}))
         CHECK(rec.is_complete());
+}
+
+TEST_CASE("M/S brightness fires once the side is brighter than the mid (FULL-3)", "[recommenders][extended][midside]")
+{
+    AnalysisResult r;
+    r.file_id = "f_ms";
+    r.mid_side_imbalance = AnalysisResult::MidSideImbalanceData{};
+    CHECK(MidSideImbalanceRecommender{}.recommend(r, {}, {}).empty()); // the default 1.0: no finding
+    r.mid_side_imbalance->side_bright_ratio = 1.25f;
+    r.mid_side_imbalance->imbalance_severity = 0.1f; // the old composite gate no longer applies
+    const auto recs = MidSideImbalanceRecommender{}.recommend(r, {}, {});
+    REQUIRE(recs.size() == 1);
+    CHECK(recs[0].id.rfind("ms_brightness_imbalance", 0) == 0);
+    CHECK(recs[0].severity == 40.0f);
 }

@@ -325,7 +325,7 @@ app.include_router(_immersive_router, dependencies=_PROTECTED)
 
 from typing import Any as _Any  # noqa: E402
 
-from khensu_services.common.api_models import ResponseModel  # noqa: E402
+from khensu_services.common.api_models import RequestModel, ResponseModel  # noqa: E402
 
 
 class HealthResponse(ResponseModel):
@@ -492,6 +492,26 @@ async def shutdown_service(background_tasks: BackgroundTasks, _: None = Depends(
 
     background_tasks.add_task(exit_after_response)
     return {"status": "shutting_down", "interrupted_jobs": interrupted}
+
+
+class SessionCredentialsRequest(RequestModel):
+    """The desktop's saved API keys, slot id -> secret (``llm.anthropic_api_key``
+    ...). Sent after the service proves its identity and whenever a key is
+    saved; held in memory, never written (MAC-1)."""
+    credentials: dict[str, str] = {}
+
+
+class SessionCredentialsResponse(ResponseModel):
+    held: int
+
+
+@app.post("/settings/credentials", response_model=SessionCredentialsResponse,
+          response_model_exclude_unset=True)
+async def session_credentials(req: SessionCredentialsRequest, _: None = Depends(verify_token)) -> dict:
+    """The app's saved keys for this run: on macOS the Keychain items trust
+    only the app, so the service no longer reads them itself (MAC-1)."""
+    from khensu_services.common.online import set_session_credentials
+    return {"held": set_session_credentials(req.credentials)}
 
 
 @app.get("/diagnostics/security_events", response_model=SecurityEventsResponse,

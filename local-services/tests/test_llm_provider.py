@@ -22,6 +22,11 @@ def clean_env(tmp_path, monkeypatch):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(online, "settings_path", lambda: tmp_path / "settings.json")
     online._invalidate_cache()
+    # No local LLM server: a developer machine running Ollama / LM Studio on
+    # its default port made auto choose it over the cloud key under test.
+    import khensu_services.copilot.llm_provider as lp
+    monkeypatch.setattr(lp, "detect_local_servers", lambda refresh=False: [])
+    monkeypatch.setattr(lp.LlamaCppProvider, "is_available", lambda self: False)
 
 
 def test_no_provider_available_without_any_api_key():

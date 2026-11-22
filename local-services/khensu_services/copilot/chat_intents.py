@@ -221,8 +221,7 @@ def _humanize_intent(vocal_strategy, vocal_macros, analysis_result):
 # keyword-hit count (word-boundary matched) rather than a first-match elif
 # chain, so a message hitting multiple phrases for one intent (or an intent
 # with more specific phrasing) wins over whichever branch happened to be
-# checked first — the "basic keyword matching, competitive for a handful of
-# phrasings" gap flagged in TODO.md.
+# checked first (plain keyword matching broke ties by branch order).
 _INTENTS: list[tuple[str, list[str], object]] = [
     ("vocal", ["vocal", "vox", "lead vocal"], _vocal_chain_intent),
     ("deess", ["harsh", "sibilant", "sibilance", "essy", "piercing", "shrill", "de-ess", "deess"], _deess_intent),

@@ -251,6 +251,28 @@ def test_local_structured_falls_back_to_json_mode(monkeypatch):
     assert "response_format" in calls[-1]
 
 
+def test_local_structured_unwraps_a_tool_call_written_as_text(monkeypatch):
+    """EXP-3: qwen2.5 under Ollama answers a forced tool call with the call
+    itself as message text, {"name": ..., "arguments": {...}}."""
+    provider = lp.LocalServerProvider(lp._LOCAL_SERVERS[1], "qwen2.5-coder:7b")
+
+    def fake_post(self, payload, max_tokens):
+        return {"choices": [{"message": {"content":
+                '{"name": "mix_commands", "arguments": {"intent": "level", "direction": 1}}'}}]}
+    monkeypatch.setattr(lp.OpenAICompatibleProvider, "_post", fake_post)
+    out = provider.generate_structured(system="s", messages=[{"role": "user", "content": "q"}],
+                                       max_tokens=50, tool_name="mix_commands", tool_description="d",
+                                       input_schema={"type": "object"})
+    assert out == {"intent": "level", "direction": 1}
+
+
+def test_unwrap_leaves_other_objects_alone():
+    assert lp._unwrap_text_tool_call({"name": "other", "arguments": {"a": 1}}, "t") == {
+        "name": "other", "arguments": {"a": 1}}
+    assert lp._unwrap_text_tool_call({"name": "t", "arguments": '{"a": 1}'}, "t") == {"a": 1}
+    assert lp._unwrap_text_tool_call(None, "t") is None
+
+
 def test_remote_custom_local_url_is_ignored(isolated):
     _write_settings(isolated, {"llm": {"local_url": "https://evil.example/v1"}})
     assert lp._custom_local_spec() is None

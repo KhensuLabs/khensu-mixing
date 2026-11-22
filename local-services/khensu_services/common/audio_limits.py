@@ -22,7 +22,12 @@ _MAX_AUDIO_SAMPLE_RATE = int(os.environ.get("KHENSU_MAX_AUDIO_SAMPLE_RATE", "192
 # float32 is the minimum typical in-memory representation used by librosa.
 # This cap is deliberately lower than the process working set because several
 # analyses allocate temporary spectral arrays alongside the decoded samples.
-_MAX_DECODED_AUDIO_BYTES = int(os.environ.get("KHENSU_MAX_DECODED_AUDIO_BYTES", str(256 * 1024 * 1024)))
+# STR-1: 256 MiB refused every route on a 3-minute 192 kHz master and a
+# 5-minute 7.1 bed (2.9 minutes was the most either could be). At 512 MiB
+# (~5.8 min at 192 kHz stereo or 48 kHz 7.1, ~25 min at 44.1 kHz stereo) every
+# route answered, peaking at 1.9 GB (artifacts_scan, 192 kHz); the memory gate
+# (common/memory_gate.py) queues jobs the RAM cannot hold.
+_MAX_DECODED_AUDIO_BYTES = int(os.environ.get("KHENSU_MAX_DECODED_AUDIO_BYTES", str(512 * 1024 * 1024)))
 
 
 class AudioInputLimitError(ValueError):

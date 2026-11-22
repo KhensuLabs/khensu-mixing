@@ -163,7 +163,34 @@ Severity bands: red = severe, amber = moderate, blue = minor, green = strength.
 source and confidence basis, and - measured on a corpus of released tracks -
 how often it fires on its own genre (false-alarm rate), how reliably it
 catches the defect it names when that defect is injected (sensitivity), and
-how often the app's own Fix clears it. Thresholds change only with these
+how often the app's own Fix clears it. The fire rate is split by severity:
+the **alarm rate** counts only firings at moderate or worse (severity >= 40),
+so a minor note - a quiet master that normalised players still play at
+level - is not counted as an alarm. **Delivery-spec checks** (true peak
+against -1 dBTP) report the share of released tracks that miss the spec
+instead: 82 % of released masters, lossless originals included, peak above
+-1 dBTP, which says how common the miss is, not that the check is wrong.
+**Harshness** is the 2.5-5 kHz RMS over the 500 Hz-8 kHz RMS, in dB,
+placed on the released-music distribution: the 90th percentile of the
+lossless originals (-5.1 dB) is the finding's edge (score 0.35), and each
+10 dB beyond it adds 1.0. (The old ratio x 2.5 read 0.99 at the median and
+fired on 87% of releases; now 10% fire and 58% of +8 dB bells are caught.)
+**Resonances** are judged at mixing scale: 1/12-octave band power, each
+band's level over the median of the half octave either side, averaged over
+a quarter octave (a sustained note is one semitone wide, a resonance two or
+more), 300 Hz-10 kHz, edge 5 dB, present in at least half the frames.
+17% of releases fire and 80% of injected +12 dB, Q 8 bells are found (the
+old 1.3 Hz-bin peak picker found notes: 87% and 40%). The fix is a cut of
+1.5x the prominence at the peak, Q 6, for a resonance that is not a note.
+**Experimental song-level findings** (hooks, memorability, heaviness,
+structure, the loudness arc) are capped at severity 35 - a minor note -
+until listener ratings back their models.
+
+Findings built from the service's deep pass (harshness, resonances, mono
+compatibility, mid/side balance, sections, hooks) are measured through the
+app's own analysis pipeline on the lossless originals, with injected
+resonance, harshness, comb-filter, wide-sub and bright-side defects, and say
+how many tracks their figures rest on. Thresholds change only with these
 numbers behind them.
 
 **Confidence.** Every measurement carries a value, a confidence and a quality
@@ -180,7 +207,19 @@ clear it ("-2.1 dB at 250 Hz"), checked by rendering it and measuring again.
 renderer's own filter) is applied in the frequency domain to the track's ten
 octave bands, and the gain that lands the metric on its target is solved for.
 (A fixed slope - "share difference x 8 dB" - cleared 0 of 42 injected defects;
-solving from the spectrum clears 68-81 %.)
+solving from the spectrum clears 68-81 %.) The **tilt** fix is solved the
+same way on the averaged FFT bins the tilt is fitted on: a 1 kHz high shelf
+(mid-spectrum, so it turns the slope across all ten octaves) whose gain lands
+the slope halfway from the window's edge to the genre target.
+
+**Artifact fixes.** A steady DC offset renders a 20 Hz high-pass.
+A high noise floor renders the service's spectral denoiser: each FFT bin's
+noise power is its 10th-percentile power over the track divided by
+-ln(0.9) (a noise bin's power over frames is exponential, so its 10th
+percentile is 0.105 of its mean), and each frame keeps
+sqrt(max(1 - 3 N/P, floor)) of its magnitude, the floor at -12 dB, smoothed
+over neighbouring bins and released slowly over time. Clipping stays advice:
+a declipper's result cannot be checked against the lost original.
 
 **Loudness fixes** compute the gain to the genre target, limited by the
 headroom the true-peak ceiling leaves.

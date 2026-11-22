@@ -33,8 +33,7 @@ class KhensuLookAndFeel final : public juce::LookAndFeel_V4 {
                                juce::Colour accentColour = juce::Colours::transparentBlack,
                                const juce::Image& blurredBackdrop = {});
 
-    /// Real-time backdrop blur for glass panels (shipped - see TODO.md's
-    /// hardware-verification note for the one open follow-up).
+    /// Real-time backdrop blur for glass panels.
     /// JUCE has no CSS-style `backdrop-filter` primitive, so this renders the
     /// SAME drawAppBackground() math cropped+translated to `regionInAppSpace`
     /// (a panel's bounds expressed in the root component's coordinate space),

@@ -45,6 +45,11 @@
 #endif
 #ifndef MyAppId
   ; Inno-escaped exactly as every earlier release wrote it, so upgrades find them.
+  ; NEVER change this string, even its odd ending: Inno turns "{{" into "{"
+  ; but keeps "}}", so the installed AppId (and the uninstall key,
+  ; "...F10}}_is1") ends in two braces. Every release since v1.0.0 must
+  ; carry the same id or it installs beside the old version instead of
+  ; upgrading it (verify_all installer-upgrade checks this).
   #define MyAppId "{{B3D0F7B4-6C1E-4E9A-9D2F-4B2C1A7E9F10}}"
 #endif
 

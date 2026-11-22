@@ -308,11 +308,11 @@ def test_harshness_and_resonance_peaks_are_dbfs():
     y = _sine(279 * SR / 4096, 4, 0.5)
     h = analyze_harshness(np.stack([y, y]), SR)
     assert h["peak_db"] == pytest.approx(-6.02, abs=0.3)
-    f_res = 149 * SR / 32768                     # ~200 Hz, bin-centred
+    f_res = 186 * SR / 8192                      # ~1 kHz, bin-centred on the resonance FFT
     x = _noise(6, 0.01) + _sine(f_res, 6, 0.5)
     res = analyze_resonances(np.stack([x, x]), SR)
     top = max(res["hotspots"], key=lambda r: r["db"])
-    assert top["hz"] == pytest.approx(200, abs=3)
+    assert top["hz"] == pytest.approx(f_res, rel=0.03)  # the 1/12-octave band centre
     assert top["db"] == pytest.approx(-6.02, abs=0.3)
 
 

@@ -28,15 +28,23 @@ screen and feature. For how the measurements work, see
   defaults are the folders DAWs scan), and the parts you want (app, VST3,
   CLAP, ARA). It installs for your account without administrator rights, or
   for everyone when run as administrator.
-- 🍎 **macOS 11+ (v1.1):** open the `.pkg`, choose *Install for me only* or
-  *for all users*, and untick parts you don't need; or drag the bundles from
-  the `.dmg` wherever you like.
+- 🍎 **macOS 11+ (v1.1), Intel and Apple Silicon:** open the `.pkg`, choose
+  *Install for me only* or *for all users*, and untick parts you don't need;
+  or drag the bundles from the `.dmg` wherever you like. Unless the package
+  carries its own Python, the analysis engine needs **Python 3.11, 3.12 or
+  3.13** from [python.org](https://www.python.org/downloads/macos/) or
+  Homebrew (not 3.14, and not a pre-release: on Intel Macs 3.14 has no
+  build of a library the engine needs). Khensu picks the newest of those it
+  finds. Its first launch sets the engine up in
+  `~/Library/KhensuMixing/service-venv` - a few minutes, once.
 
 ### First launch
 Khensu starts its local analysis engine in the background. While it starts,
 a notice at the top says so; nothing is uploaded and you never start the
 engine yourself. If it ever stops, the notice offers **Restart analysis
 service** (also in the command palette, `Ctrl+K`).
+
+On a Mac, push-to-talk voice commands ask for the microphone the first time.
 
 ### What you need
 Any WAV, AIFF, FLAC or MP3 mix or master. Stereo is the main case; 5.1, 7.1
@@ -276,7 +284,9 @@ client analyse, explain, fit chains and run the agent.
 An experimental feature works and is tested on synthetic input, but its
 answers haven't yet been checked on real material. It shows an
 **Experimental** badge (the tooltip names the missing check) and stays out of
-the Analysis screen's default Essentials view.
+the Analysis screen's default Essentials view. Findings from the
+experimental song-level models (hooks, memorability, heaviness, structure,
+the loudness arc) are shown as minor notes until they are checked.
 
 | Feature (id) | What still needs checking |
 |---|---|
@@ -285,14 +295,14 @@ the Analysis screen's default Essentials view.
 | Emotional Arc (`emotional_arc`) | The arc against listener ratings over time |
 | Heaviness (`heaviness`) | The model against tracks rated for heaviness |
 | Recreate Sound (`recreate_sound`) | The recreation against the source on real stems |
-| AI Artifacts (`ai_artifacts`) | Detection of untagged AI songs; false alarms on real releases |
+| AI Artifacts (`ai_artifacts`) | Partly checked: the learned probe (seven generators) scores 0.92-0.98 AUC on a generator it was not trained on, and calls 3.8% of lossless human releases AI. Still open: generators unlike all seven |
 | Spatial Audio / Atmos Readiness (`spatial_audio`) | Results against a Dolby renderer |
 | Structural Flow (`structural`) | Section boundaries against hand-marked songs |
 | Section Readiness (`section_readiness`) | Same as Structural Flow |
 | Listening room (`listening_room`) | A test from a second device |
-| Similar references (`similar_references`) | CLAP similarity on a real reference library |
-| Local LLM (`local_llm`) | A real GGUF model or local server |
-| Voice commands (`voice_commands`) | Whisper on real spoken instructions |
+| Similar references (`similar_references`) | Partly checked on 209 released tracks: with CLAP the nearest track shares the genre family 59% of the time (chance 23%); the hand-built fallback, used when CLAP is not installed, is near chance (30%). Still open: a user's own library |
+| Local LLM (`local_llm`) | Partly checked with Ollama and a 7B GGUF model (qwen2.5-coder): every structured reply valid, 0.8 s median, 85% of mixing commands read as the rule parser reads them. Still open: the in-process GGUF path (llama-cpp-python) |
+| Voice commands (`voice_commands`) | Partly checked with synthetic voices: 95% of spoken commands parse as typed (94% with room noise); "de-ess" is the usual miss. Still open: real voices in a control room |
 | Reference profiles (`reference_profiles`) | A hosted shared index |
 
 ---

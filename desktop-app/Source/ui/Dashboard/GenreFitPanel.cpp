@@ -1,17 +1,14 @@
 // desktop-app/Source/ui/Dashboard/GenreFitPanel.cpp
 #include "GenreFitPanel.h"
 #include "../shared/KhensuTheme.h"
+#include "../../BundledResources.h"
 
 namespace khensu {
 
 namespace {
 juce::File statsFile()
 {
-    const auto exeDir = juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory();
-    auto f = exeDir.getChildFile("resources/genre_norms/genre_corpus_stats.json");
-    if (!f.existsAsFile())
-        f = juce::File::getCurrentWorkingDirectory().getChildFile("resources/genre_norms/genre_corpus_stats.json");
-    return f;
+    return bundled_resources::find("resources/genre_norms/genre_corpus_stats.json");
 }
 } // namespace
 

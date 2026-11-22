@@ -470,6 +470,20 @@ bool HttpServiceBridge::is_service_available() const noexcept
     }
 }
 
+khensu::Result<int, BridgeError>
+HttpServiceBridge::sendSessionCredentials(const std::map<std::string, std::string>& credentials)
+{
+    juce::DynamicObject::Ptr map = new juce::DynamicObject();
+    for (const auto& [slot, secret] : credentials)
+        map->setProperty(juce::Identifier(juce::String(slot)), juce::String(juce::CharPointer_UTF8(secret.c_str())));
+    juce::DynamicObject::Ptr body = new juce::DynamicObject();
+    body->setProperty(api::fields::SessionCredentialsRequest::credentials, juce::var(map.get()));
+    const auto response = postJsonExpectJson("/settings/credentials", juce::var(body.get()));
+    if (response.is_err()) return khensu::Result<int, BridgeError>::err(response.error());
+    return khensu::Result<int, BridgeError>::ok(
+        static_cast<int>(response.value().getProperty(api::fields::SessionCredentialsResponse::held, 0)));
+}
+
 khensu::Result<void, BridgeError> HttpServiceBridge::requestGracefulShutdown()
 {
     const auto response = postJsonExpectJson("/shutdown", juce::var(new juce::DynamicObject()));
@@ -700,7 +714,15 @@ std::unique_ptr<juce::InputStream> BridgeTransport::openStream(const char* metho
                                                              ? juce::String("Accept: application/json")
                                                              : getHeaders(attempt > 0));
         // (InputStreamOptions isn't assignable - its handling member is const.)
-        stream = url.createInputStream(method != nullptr ? streamOptions.withHttpRequestCmd(method) : streamOptions);
+        const auto withCancel = options.shouldCancel
+                                    ? streamOptions.withProgressCallback(
+                                          [cancel = options.shouldCancel](int, int) { return !cancel(); })
+                                    : streamOptions;
+        stream = url.createInputStream(method != nullptr ? withCancel.withHttpRequestCmd(method) : withCancel);
+        if (stream == nullptr && options.shouldCancel && options.shouldCancel()) {
+            error = {BridgeError::Kind::ServiceUnavailable, "Cancelled: " + pathStd};
+            return nullptr;
+        }
         if (stream == nullptr || statusCode != 401 || !options.retryOnUnauthorized) break;
     }
 

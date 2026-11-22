@@ -45,6 +45,7 @@ from typing import Any
 
 import numpy as np
 from khensu_services.analysis import _lean_spectral as _lean
+from khensu_services.analysis.dsp_metrics import zero_crossing_rate
 
 FEATURE_NAMES = [
     "loudness_rms", "spectral_centroid_hz", "spectral_flatness", "spectral_rolloff_hz",
@@ -83,7 +84,7 @@ def extract_mood_features(y: np.ndarray, sr: int) -> np.ndarray:
     flatness = float(librosa.feature.spectral_flatness(y=y).mean())
     rolloff = float(_lean.spectral_rolloff(y, sr).mean())
     bandwidth = float(librosa.feature.spectral_bandwidth(y=y, sr=sr).mean())
-    zcr = float(librosa.feature.zero_crossing_rate(y).mean())
+    zcr = float(zero_crossing_rate(y).mean())
     tempo, _ = _lean.beat_track(y=y, sr=sr)
     tempo = float(np.atleast_1d(tempo)[0])
     from khensu_services.analysis._key import safe_chroma_cqt

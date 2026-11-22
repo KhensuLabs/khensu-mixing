@@ -168,3 +168,16 @@ TEST_CASE("PythonServiceManager::listenerPids finds this process listening", "[p
     CHECK(PythonServiceManager::listenerPids(port).empty());
 }
 #endif
+
+TEST_CASE("Only Python 3.11-3.13 final releases run the service (MAC-1)", "[python-service][mac1]")
+{
+    using khensu::PythonServiceManager;
+    CHECK(PythonServiceManager::supportedPythonMinor("3 13 final\n") == 13);
+    CHECK(PythonServiceManager::supportedPythonMinor("3 11 final") == 11);
+    CHECK(PythonServiceManager::supportedPythonMinor("3 14 final") == 0);  // no Intel-Mac numba
+    CHECK(PythonServiceManager::supportedPythonMinor("3 14 alpha") == 0);  // a pre-release
+    CHECK(PythonServiceManager::supportedPythonMinor("3 13 candidate") == 0);
+    CHECK(PythonServiceManager::supportedPythonMinor("3 10 final") == 0);
+    CHECK(PythonServiceManager::supportedPythonMinor("") == 0);
+    CHECK(PythonServiceManager::supportedPythonMinor("Python 3.12.4") == 0);  // not the probe's format
+}

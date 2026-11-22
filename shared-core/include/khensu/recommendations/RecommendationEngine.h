@@ -15,6 +15,13 @@ namespace khensu {
 /// THREAD_CONTEXT(WorkerThread | AnyThread) - pure computation, no I/O.
 class RecommendationEngine {
   public:
+    /// FULL-3: the song-level findings whose models have no listener
+    /// validation yet (hooks, memorability, heaviness, structure, the
+    /// loudness arc - experimental in docs/manual.md) fired at moderate or
+    /// worse on 25-59% of released tracks. Until a listener study backs them
+    /// they are minor notes: their severity is capped here.
+    static constexpr float kUnvalidatedSeverityCap = 35.0f;
+
     std::vector<Recommendation> generate(const AnalysisResult& result, const GenreEntry& genre,
                                          const CreativeTarget& target) const;
 

@@ -44,6 +44,9 @@ jobs:
         run: |
           uv lock --check --project .
           python ../scripts/generate_hashed_requirements.py --check
+          # MAC-1: every runtime package has a wheel on each shipped platform
+          # (an Intel Mac has no compiler for llvmlite).
+          for p in macos-x86_64 macos-arm64 win-amd64; do python ../scripts/check_platform_wheels.py --platform "$p"; done
           python ../scripts/generate_demucs_stems_requirements.py --check
 
       # soundfile needs libsndfile; mido/python-rtmidi need ALSA headers.

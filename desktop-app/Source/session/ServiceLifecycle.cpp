@@ -7,6 +7,8 @@
 #include <khensu/ipc/generated/ApiSchema.h>
 #include <khensu/session/OutboxDispatcher.h>
 #include <khensu/session/SessionManager.h>
+#include <khensu/common/AppPaths.h>
+#include "../settings/OnlineSettings.h"
 
 namespace khensu {
 
@@ -117,6 +119,7 @@ void ServiceLifecycle::applyHealthResult(bool running, bool processRunning, bool
     case HS::Running:
         setStatus(PythonStatus::Running);
         svc.notifyHealthy();
+        pushCredentialsIfNeeded();
         if (onServiceRunning) onServiceRunning(); // the once-per-launch update check
         break;
     case HS::Starting:
@@ -128,6 +131,7 @@ void ServiceLifecycle::applyHealthResult(bool running, bool processRunning, bool
         setStatus(PythonStatus::GaveUp);
         break;
     case HS::Stopped:
+        credentialsSentMs_->store(0); // a restarted service starts empty
         setStatus(PythonStatus::Stopped, svc.consecutiveFailureCount());
         break;
     }
@@ -147,6 +151,30 @@ void ServiceLifecycle::applyHealthResult(bool running, bool processRunning, bool
     // DSK-17: the owner names the real cause when another program owns the
     // service port - "check Python" sent users after the wrong problem.
     if (d.notifyGaveUp && onGaveUp) onGaveUp(svc.portInUseByOtherProcess());
+}
+
+void ServiceLifecycle::pushCredentialsIfNeeded()
+{
+    const auto configDir = juce::File(juce::String(AppPaths::dataDirectory()));
+    const auto settingsFile = configDir.getChildFile("settings.json");
+    const juce::int64 stamp =
+        settingsFile.existsAsFile() ? settingsFile.getLastModificationTime().toMilliseconds() : 1;
+    if (stamp == credentialsSentMs_->load() || credentialsInFlight_->exchange(true)) return;
+    auto inFlight = credentialsInFlight_;
+    auto sentMs = credentialsSentMs_;
+    work_.runInBackground([configDir, stamp, inFlight, sentMs] {
+        const auto s = OnlineSettings::load(configDir);
+        const std::map<std::string, std::string> keys{
+            {"acoustid.api_key", s.acoustidApiKey.toStdString()},
+            {"llm.anthropic_api_key", s.anthropicApiKey.toStdString()},
+            {"llm.gemini_api_key", s.geminiApiKey.toStdString()},
+            {"llm.openai_api_key", s.openaiApiKey.toStdString()},
+            {"llm.deepseek_api_key", s.deepseekApiKey.toStdString()},
+            {"llm.moonshot_api_key", s.moonshotApiKey.toStdString()},
+        };
+        if (ipc::HttpServiceBridge{}.sendSessionCredentials(keys).is_ok()) sentMs->store(stamp);
+        inFlight->store(false);
+    });
 }
 
 void ServiceLifecycle::startPlayheadPoll()

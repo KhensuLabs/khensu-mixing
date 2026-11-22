@@ -527,6 +527,21 @@ async def job_events(store: JobStore, job_id: str, model: Any,
         quiet += EVENT_CHECK_SEC
 
 
+#: MAC-1: macOS's URL loading (NSURLSession, under the desktop's HTTP client)
+#: holds a response until it has 512 bytes of body to sniff the content
+#: type, so a chat reply's first tokens - and a render's first status - sat
+#: in a buffer. Every event stream opens with a 1 KB SSE comment, which every
+#: SSE client (and the desktop's parser) ignores.
+SSE_PRELUDE = ": " + " " * 1020 + "\n\n"
+
+
+async def with_sse_prelude(events):
+    """``events`` (an async iterator of SSE frames) after SSE_PRELUDE."""
+    yield SSE_PRELUDE
+    async for frame in events:
+        yield frame
+
+
 # --- Worker-side lifecycle helpers ------------------------------------------
 #
 # Workers must never index ``store[job_id]`` directly: a job can be evicted

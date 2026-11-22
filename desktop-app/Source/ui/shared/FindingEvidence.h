@@ -7,6 +7,7 @@
 // on the same tracks. Loaded once; header-only and testable through parse().
 #pragma once
 #include <JuceHeader.h>
+#include "../../BundledResources.h"
 #include <map>
 #include <mutex>
 #include <optional>
@@ -24,6 +25,12 @@ struct Entry {
     double falseAlarmRate = 0.0;
     int firedOn = 0;
     int corpusTracks = 0;
+    /// EVID-1: the share it fires on at moderate severity or worse (-1 = not
+    /// measured). A minor note is not an alarm.
+    double alarmRate = -1.0;
+    /// EVID-2: a delivery-spec check - its corpus rate is the share of
+    /// released tracks that miss the spec, not a false alarm.
+    bool spec = false;
     std::vector<Detection> detects;
     /// MEAS-4: of the defects this finding caught, the share the app's own
     /// Fix cleared (-1 = not measured); `adviceOnly` when it has no render.
@@ -41,7 +48,10 @@ inline std::map<juce::String, Entry> parse(const juce::var& doc)
             Entry e;
             e.falseAlarmRate = (double)p.value["false_alarm_rate"];
             e.firedOn = (int)p.value["fired_on"];
-            e.corpusTracks = tracks;
+            // FULL-1: a finding measured through the service names its own count.
+            e.corpusTracks = p.value.hasProperty("tracks") ? (int)p.value["tracks"] : tracks;
+            if (p.value.hasProperty("alarm_rate")) e.alarmRate = (double)p.value["alarm_rate"];
+            e.spec = p.value["kind"].toString() == "spec";
             if (auto* arr = p.value["detects"].getArray())
                 for (const auto& d : *arr)
                     e.detects.push_back({d["defect"].toString(), (double)d["rate"], (int)d["tracks"]});
@@ -61,10 +71,7 @@ inline const std::map<juce::String, Entry>& table()
     static std::once_flag once;
     static std::map<juce::String, Entry> entries;
     std::call_once(once, [] {
-        const auto exeDir = juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory();
-        auto f = exeDir.getChildFile("resources/calibration/finding_evidence.json");
-        if (!f.existsAsFile())
-            f = juce::File::getCurrentWorkingDirectory().getChildFile("resources/calibration/finding_evidence.json");
+        const auto f = bundled_resources::find("resources/calibration/finding_evidence.json");
         if (f.existsAsFile()) entries = parse(juce::JSON::parse(f));
     });
     return entries;
@@ -74,9 +81,18 @@ inline const std::map<juce::String, Entry>& table()
 /// or empty when the finding was not measured.
 inline juce::String describe(const Entry& e)
 {
-    juce::String s = TRANS("Tested on released music: fires on %p% of %n tracks graded against their own genre")
-                         .replace("%p", juce::String(e.falseAlarmRate * 100.0, 1))
-                         .replace("%n", juce::String(e.corpusTracks));
+    juce::String s;
+    if (e.spec)
+        s = TRANS("A delivery-spec check: %p% of %n released tracks miss it")
+                .replace("%p", juce::String(e.falseAlarmRate * 100.0, 1))
+                .replace("%n", juce::String(e.corpusTracks));
+    else
+        s = TRANS("Tested on released music: fires on %p% of %n tracks graded against their own genre")
+                .replace("%p", juce::String(e.falseAlarmRate * 100.0, 1))
+                .replace("%n", juce::String(e.corpusTracks));
+    if (e.alarmRate >= 0.0 && e.alarmRate < e.falseAlarmRate)
+        s << " " << TRANS("(%a% at moderate or worse; the rest are minor notes)")
+                        .replace("%a", juce::String(e.alarmRate * 100.0, 1));
     for (const auto& d : e.detects)
         s << "; " << TRANS("catches a %d on %r% of %t tracks")
                          .replace("%d", d.defect.replace("_", " "))

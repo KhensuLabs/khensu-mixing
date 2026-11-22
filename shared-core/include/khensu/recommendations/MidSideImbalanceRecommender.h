@@ -17,9 +17,10 @@ namespace khensu {
 ///
 /// Two findings are flagged independently:
 ///  1. Sub-bass too wide  - side/mid below 100 Hz > 0.30 → mono bass risk
-///  2. HF brightness      - side/mid above 4 kHz > 1.50 AND severity > 0.50
+///  2. HF brightness      - side/mid above 4 kHz > 1.0 (FULL-3)
 class MidSideImbalanceRecommender {
   public:
+    static constexpr float kSideBrightRatio = 1.0f;
     std::vector<Recommendation> recommend(const AnalysisResult& result, const GenreEntry& /*genre*/,
                                           const CreativeTarget& /*target*/) const
     {
@@ -64,11 +65,15 @@ class MidSideImbalanceRecommender {
         }
 
         // --- M/S brightness imbalance ---
-        if (ms.imbalance_severity > 0.50f && ms.side_bright_ratio > 1.50f) {
+        // FULL-3: the side brighter than the mid above 4 kHz. The old gate
+        // (ratio > 1.5 and a composite severity > 0.5) sat above every
+        // released track and caught 23% of a +10 dB side boost; at 1.0 it
+        // fires on 3% of released tracks and catches about half.
+        if (ms.side_bright_ratio > kSideBrightRatio) {
             Recommendation r;
             r.id = "ms_brightness_imbalance_" + result.file_id;
             r.type = RecommendationType::Technical;
-            r.severity = std::clamp(ms.imbalance_severity * 80.0f, 30.0f, 80.0f);
+            r.severity = std::clamp(20.0f + (ms.side_bright_ratio - kSideBrightRatio) * 80.0f, 20.0f, 80.0f);
             r.confidence = 0.70f;
             r.stem_or_bus = "MixBus";
             r.is_target_relative = false;

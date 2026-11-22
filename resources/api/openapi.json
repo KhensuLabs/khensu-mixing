@@ -26143,6 +26143,35 @@
         "title": "SessionCommentList",
         "type": "object"
       },
+      "SessionCredentialsRequest": {
+        "description": "The desktop's saved API keys, slot id -> secret (``llm.anthropic_api_key``\n...). Sent after the service proves its identity and whenever a key is\nsaved; held in memory, never written (MAC-1).",
+        "properties": {
+          "credentials": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Credentials",
+            "type": "object"
+          }
+        },
+        "title": "SessionCredentialsRequest",
+        "type": "object"
+      },
+      "SessionCredentialsResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "held": {
+            "title": "Held",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "held"
+        ],
+        "title": "SessionCredentialsResponse",
+        "type": "object"
+      },
       "SetModelsDirRequest": {
         "properties": {
           "models_dir": {
@@ -38945,6 +38974,50 @@
           }
         ],
         "summary": "Separate Cancel"
+      }
+    },
+    "/settings/credentials": {
+      "post": {
+        "description": "The app's saved keys for this run: on macOS the Keychain items trust\nonly the app, so the service no longer reads them itself (MAC-1).",
+        "operationId": "session_credentials_settings_credentials_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCredentialsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCredentialsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Session Credentials"
       }
     },
     "/shutdown": {

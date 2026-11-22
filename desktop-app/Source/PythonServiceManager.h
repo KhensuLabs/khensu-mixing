@@ -31,7 +31,7 @@ class PythonServiceManager : private juce::Thread {
     /// check is a STALE service process (old build still bound to the port):
     /// the diagnosed root cause of "Could not reach /analyze/..." panels, since
     /// its routes predate the ones this app calls (spec §0).
-    static constexpr const char* kExpectedServiceVersion = "0.2.104";
+    static constexpr const char* kExpectedServiceVersion = "0.2.105";
 
     PythonServiceManager() : juce::Thread("khensu-service-launch") {}
     ~PythonServiceManager() override
@@ -117,6 +117,13 @@ class PythonServiceManager : private juce::Thread {
     /// IPv4). Empty when nothing listens or the table can't be read (non-
     /// Windows builds: always empty, so a missed probe gets no grace there).
     static std::vector<juce::uint32> listenerPids(int port);
+
+    /// MAC-1: whether a Python can run the service - 3.11, 3.12 or 3.13, a
+    /// final release - from the output of
+    /// `python -c "import sys; print(*sys.version_info[:2], sys.version_info.releaselevel)"`
+    /// ("3 13 final"). 3.14 has no Intel-Mac numba; an alpha is not a release.
+    /// Returns the minor version (11..13), or 0 when unsupported.
+    static int supportedPythonMinor(const juce::String& probeOutput) noexcept;
 
     /// True if the child process is currently running. Never blocks on a
     /// shutdown in progress (DSK-06): the message thread calls it every

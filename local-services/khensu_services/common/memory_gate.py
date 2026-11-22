@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -57,6 +58,15 @@ def physical_memory_bytes() -> int | None:
             status.dwLength = ctypes.sizeof(_MemStatus)
             if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
                 return int(status.ullTotalPhys)
+            return None
+        if sys.platform == "darwin":
+            # MAC-1: macOS has no SC_PHYS_PAGES; sysctl hw.memsize is the RAM.
+            import ctypes
+            libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+            size = ctypes.c_uint64(0)
+            length = ctypes.c_size_t(ctypes.sizeof(size))
+            if libc.sysctlbyname(b"hw.memsize", ctypes.byref(size), ctypes.byref(length), None, 0) == 0:
+                return int(size.value)
             return None
         return int(os.sysconf("SC_PAGE_SIZE")) * int(os.sysconf("SC_PHYS_PAGES"))
     except (AttributeError, OSError, ValueError):

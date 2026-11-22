@@ -396,3 +396,26 @@ TEST_CASE("RecommendationEngine: a finding that needs an optional input says so 
     }
 }
 
+
+TEST_CASE("Unvalidated song-level findings are capped at a minor note (FULL-3)", "[recengine]")
+{
+    AnalysisResult r;
+    r.file_id = "f_heavy";
+    r.python_analysis_ran = true;
+    r.loudness.lufs_integrated = -10.0f;
+    r.python_data.heaviness.extremity = 0.0f;  // far under a heavy genre's norm
+    r.python_data.heaviness.distortion = 0.0f;
+    GenreEntry genre;
+    genre.id = "deathcore";
+    genre.heaviness_extremity_norm = 0.95f;
+    genre.heaviness_distortion_norm = 0.9f;
+    const auto recs = RecommendationEngine{}.generate(r, genre, CreativeTarget{});
+    bool sawHeaviness = false;
+    for (const auto& rec : recs)
+        if (rec.id.rfind("heaviness_", 0) == 0) {
+            sawHeaviness = true;
+            CHECK(rec.severity <= RecommendationEngine::kUnvalidatedSeverityCap);
+            CHECK(rec.confidence_reason.find("Experimental") != std::string::npos);
+        }
+    CHECK(sawHeaviness);
+}

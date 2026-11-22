@@ -119,3 +119,22 @@ TEST_CASE("Finding evidence parses and words the measured rates (NEW-2)", "[evid
     CHECK(khensu::finding_evidence::describe(t2.at("low_end_light")).contains("cleared it on 85% of 20"));
     CHECK(khensu::finding_evidence::describe(t2.at("clipping_detected")).contains("advice only"));
 }
+
+TEST_CASE("Finding evidence words alarms, spec checks and per-finding counts (EVID-1/2, FULL-1)", "[evidence]")
+{
+    auto doc = juce::JSON::parse(R"({"tracks": 1462, "findings": {
+        "lufs_too_quiet": {"false_alarm_rate": 0.384, "alarm_rate": 0.12, "fired_on": 561},
+        "true_peak_over": {"false_alarm_rate": 0.824, "alarm_rate": 0.5, "fired_on": 1205, "kind": "spec"},
+        "resonance_hotspot": {"false_alarm_rate": 0.05, "alarm_rate": 0.05, "fired_on": 10, "tracks": 200,
+                              "source": "full"}}})");
+    const auto t = khensu::finding_evidence::parse(doc);
+    const auto quiet = khensu::finding_evidence::describe(t.at("lufs_too_quiet"));
+    CHECK(quiet.contains("38.4%"));
+    CHECK(quiet.contains("12.0% at moderate or worse"));
+    const auto peak = khensu::finding_evidence::describe(t.at("true_peak_over"));
+    CHECK(peak.contains("delivery-spec check"));
+    CHECK_FALSE(peak.contains("graded against their own genre"));
+    CHECK(t.at("resonance_hotspot").corpusTracks == 200);
+    // Every firing an alarm: no "minor notes" clause.
+    CHECK_FALSE(khensu::finding_evidence::describe(t.at("resonance_hotspot")).contains("minor"));
+}

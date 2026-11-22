@@ -31,7 +31,7 @@
 <!-- Project -->
 ![Python deps](https://img.shields.io/badge/python%20deps-16%20base%20%2F%2039%20with%20extras-4299e1)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20in%20v1.1-555555)
-![Status](https://img.shields.io/badge/release-v1.0.0-2ea44f)
+![Status](https://img.shields.io/badge/release-v1.0.1-2ea44f)
 ![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
 
 **🎚️ An explainable mixing and mastering assistant that runs on your own machine.**
@@ -40,7 +40,7 @@ Khensu listens to a mix or a master and tells you what is wrong, why it matters 
 
 🔒 **Local-first.** All audio processing happens on your computer. The few online features (song identification, a cloud chat model, model downloads, update checks) can each be switched off in Settings, and one master switch turns them all off.
 
-> 🚀 **v1.0.0, Windows first.** Download it from the public [releases page](https://github.com/KhensuLabs/khensu-mixing/releases/latest). macOS has an installer build (`packaging/macos/`, `release-macos.yml`) that becomes a verified release in v1.1.
+> 🚀 **v1.0.1, Windows first.** Download it from the public [releases page](https://github.com/KhensuLabs/khensu-mixing/releases/latest). macOS has an installer build (`packaging/macos/`, `release-macos.yml`) that becomes a verified release in v1.1.
 >
 > **How this is verified.** Hosted GitHub Actions have been blocked by an account billing issue since 2026-07-24, so every number in the badges comes from local runs: `scripts/verify_all.ps1` builds everything and runs the three Catch2 suites, the full pytest suite with the analyzer golden gate, pluginval, a Debug run with its debug output captured, and the doc-drift, lint and string-template gates. Last full pass: 2026-11-18, with the AddressSanitizer step passing as well.
 
@@ -334,11 +334,17 @@ The build is warning-clean under `/W4 /WX`. Built artifacts:
 - `build/desktop-app/KhensuDesktop_artefacts/Release/Khensu Mixing.exe`
 - `build/plugin-copilot/KhensuCopilot_artefacts/Release/VST3/Khensu Copilot.vst3` (plus the `.clap` and the ARA2 `.vst3`)
 
-#### macOS (not yet verified on hardware)
+#### macOS (Intel and Apple Silicon)
+
+The service needs Python 3.11-3.13 (3.14 has no Intel-Mac numba build; the
+lock pins Intel Macs to numba 0.62 / llvmlite 0.45 -
+`scripts/check_platform_wheels.py --platform macos-x86_64` checks every
+runtime package has a wheel). `packaging/macos/build_and_package.sh` builds,
+bundles and signs (ad hoc without a Developer ID) the app and plug-ins.
 
 ```bash
 cmake -B build -G Xcode && cmake --build build --config Release
-cd local-services && python3 -m venv .venv && .venv/bin/python -m pip install -e . && cd ..
+cd local-services && python3.13 -m venv .venv && .venv/bin/python -m pip install --require-hashes -r requirements-hashed.txt && .venv/bin/python -m pip install --no-deps -e . && cd ..
 open "build/desktop-app/KhensuDesktop_artefacts/Release/Khensu Mixing.app"
 ```
 

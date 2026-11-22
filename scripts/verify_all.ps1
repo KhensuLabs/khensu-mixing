@@ -50,6 +50,14 @@
       bench          performance benchmarks if a runner exists (non-blocking)
       installer-stage  scripts/stage_local_services.py --check: stages the
                      service the installer ships and fails on debris (P0-3)
+      installer-upgrade  STR-3: installs the published v1.0.0 installer
+                     (app only, per user, into the log folder), runs this
+                     build's installer over it with the arguments the in-app
+                     updater passes (UpdateInstaller.cpp: no /DIR, no
+                     /COMPONENTS), checks it upgraded in place - same folder,
+                     this build's exe, one uninstall entry, no plug-ins added,
+                     the user's config dir untouched - then uninstalls.
+                     Uses the real AppId: SKIP when Khensu is installed here.
       installer-smoke  compiles packaging/khensu-installer.iss (own AppId),
                      installs it silently into the log folder with only the
                      app component, checks the files that must and must not
@@ -114,7 +122,8 @@ if (-not $AsanBuildDir) {
 if (-not $LogDir) { $LogDir = Join-Path $BuildDir ("verify-logs\" + (Get-Date -Format "yyyyMMdd-HHmmss")) }
 
 $AllSteps = @("lock-sync", "doc-drift", "i18n", "ruff", "script-tests", "cpp-build", "cpp-tests", "real-plugins", "app-smoke", "app-loop", "pytest",
-              "clap-e2e", "pluginval", "debug-capture", "bad-files", "asan", "bench", "installer-stage", "installer-smoke")
+              "clap-e2e", "pluginval", "debug-capture", "bad-files", "asan", "bench", "installer-stage", "installer-smoke",
+              "installer-upgrade")
 $FastSteps = @("doc-drift", "i18n", "ruff")
 $TestExes = @("KhensuCoreTests", "KhensuTests", "KhensuPluginTests")
 $PluginvalVersion = "v1.0.4"
@@ -277,6 +286,13 @@ $Steps = [ordered]@{
         # stack from the one that ships. Report the drift, never block on it.
         Require-Python
         if ($DryRun) { Invoke-Native $Python @("scripts/check_venv_lock_sync.py"); return }
+        # MAC-1: a runtime package without a wheel on a shipped platform fails
+        # that platform's first run (no compiler on a user's Mac).
+        foreach ($plat in @("macos-x86_64", "macos-arm64", "win-amd64")) {
+            $wheels = Invoke-NativeCapture $Python @("scripts/check_platform_wheels.py", "--platform", $plat)
+            $wheels.Output | ForEach-Object { Write-Host "    $_" }
+            if ($wheels.ExitCode -ne 0) { Warn-Step "a runtime package has no $plat wheel - listed above" }
+        }
         $result = Invoke-NativeCapture $Python @("scripts/check_venv_lock_sync.py")
         $out = $result.Output
         $code = $result.ExitCode
@@ -294,6 +310,93 @@ $Steps = [ordered]@{
     "installer-stage" = @{ Blocking = $true; Minutes = 15; Run = {
         Require-Python
         Invoke-Native $Python @("scripts/stage_local_services.py", "--check")
+    } }
+    "installer-upgrade" = @{ Blocking = $true; Minutes = 30; Run = {
+        $iscc = @(
+            (Get-Command ISCC.exe -ErrorAction SilentlyContinue | ForEach-Object Source),
+            (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"),
+            (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+            (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+        ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+        if (-not $iscc) { Skip-Step "Inno Setup 6 (ISCC.exe) not installed" }
+        # The shipped AppId really ends in "}}": Inno escapes "{{" but not
+        # "}}" (khensu-installer.iss), so v1.0.0's uninstall key is this.
+        $appId = "{B3D0F7B4-6C1E-4E9A-9D2F-4B2C1A7E9F10}}_is1"
+        $uninstKeys = @("HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$appId",
+                        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$appId",
+                        "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\$appId")
+        # The real AppId: never run over a real install on this machine.
+        if ($uninstKeys | Where-Object { Test-Path $_ }) { Skip-Step "Khensu Mixing is installed on this machine" }
+        $gh = Get-Command gh -ErrorAction SilentlyContinue
+        if (-not $gh) { Skip-Step "gh CLI not installed (downloads the v1.0.0 installer)" }
+        $out = Join-Path $LogDir "installer-upgrade"
+        New-Item -ItemType Directory -Force $out | Out-Null
+        $old = Join-Path $out "khensu-setup-1.0.0.exe"
+        if (-not (Test-Path -LiteralPath $old)) {
+            Invoke-Native $gh.Source @("release", "download", "v1.0.0", "-R", "KhensuLabs/khensu-mixing",
+                                       "-p", "khensu-setup-1.0.0.exe", "-D", $out)
+        }
+        $defines = @("/Q", "/DBuildDir=$BuildDir", "/O$out", "/Fkhensu-upgrade")
+        if (-not (Test-Path -LiteralPath (Join-Path $BuildDir "packaging\python-runtime"))) { $defines += "/DNoRuntime" }
+        Invoke-Native $iscc ($defines + @((Join-Path $Root "packaging\khensu-installer.iss")))
+        if ($DryRun) { return }
+        # A short folder: the bundled runtime's deepest files pass MAX_PATH
+        # under a long log folder (MoveFile code 3), as they would not under
+        # the default install folder.
+        $dir = Join-Path ([IO.Path]::GetTempPath()) "khu-upgrade"
+        if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
+        $configDir = Join-Path $env:APPDATA "KhensuMixing"
+        # A running app or service keeps writing its db, logs and caches here,
+        # so the check is what an installer could break: nothing removed, and
+        # the user's settings unchanged.
+        $configFiles = { if (Test-Path $configDir) { @(Get-ChildItem -LiteralPath $configDir -Recurse -File -Force |
+            ForEach-Object FullName) } else { @() } }
+        $settings = Join-Path $configDir "settings.json"
+        $settingsHash = { if (Test-Path -LiteralPath $settings) { (Get-FileHash -LiteralPath $settings).Hash } else { "" } }
+        $configBefore = & $configFiles
+        $settingsBefore = & $settingsHash
+        $userVst3 = Join-Path $env:LOCALAPPDATA "Programs\Common\VST3\Khensu Copilot.vst3"
+        $vst3Before = Test-Path -LiteralPath $userVst3
+        try {
+            $p = Start-Process -FilePath $old -Wait -PassThru -ArgumentList @(
+                "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/NOICONS", "/TASKS=""""",
+                "/COMPONENTS=""app""", "/DIR=""$dir""", "/LOG=""$(Join-Path $out 'install-1.0.0.log')""")
+            if ($p.ExitCode -ne 0) { throw "v1.0.0 install exited $($p.ExitCode)" }
+            $exe = Join-Path $dir "Khensu Mixing.exe"
+            if (-not (Test-Path -LiteralPath $exe)) { throw "v1.0.0 did not install into $dir" }
+            $oldHash = (Get-FileHash -LiteralPath $exe).Hash
+            # Exactly what UpdateInstaller.cpp passes: the folder and the
+            # components must come from the previous install.
+            $p = Start-Process -FilePath (Join-Path $out "khensu-upgrade.exe") -Wait -PassThru -ArgumentList @(
+                "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/CURRENTUSER",
+                "/LOG=""$(Join-Path $out 'install-upgrade.log')""")
+            if ($p.ExitCode -ne 0) { throw "upgrade install exited $($p.ExitCode) (see $out\install-upgrade.log)" }
+            $built = Join-Path $BuildDir "desktop-app\KhensuDesktop_artefacts\Release\Khensu Mixing.exe"
+            $newHash = (Get-FileHash -LiteralPath $exe).Hash
+            if ($newHash -ne (Get-FileHash -LiteralPath $built).Hash) {
+                throw "the upgrade did not replace the app in $dir (old $($oldHash.Substring(0,8)), now $($newHash.Substring(0,8)))"
+            }
+            $keys = @($uninstKeys | Where-Object { Test-Path $_ })
+            if ($keys.Count -ne 1) { throw "expected one uninstall entry, found $($keys.Count)" }
+            $loc = (Get-ItemProperty $keys[0]).InstallLocation.TrimEnd('\')
+            if ($loc -ne $dir.TrimEnd('\')) { throw "the upgrade moved the install: $loc (was $dir)" }
+            if (-not $vst3Before -and (Test-Path -LiteralPath $userVst3)) {
+                throw "the upgrade added the VST3 plug-in the v1.0.0 install had left out"
+            }
+            $configAfter = & $configFiles
+            $gone = @($configBefore | Where-Object { $configAfter -notcontains $_ -and $_ -notmatch '\\(logs|cache)\\|-wal$|-shm$|\.tmp$' })
+            if ($gone) { throw "the installers removed $($gone.Count) file(s) from $configDir, e.g. $($gone[0])" }
+            if ((& $settingsHash) -ne $settingsBefore) { throw "the installers changed $settings" }
+            Write-Host "  v1.0.0 -> this build: upgraded in place ($dir), one uninstall entry, config untouched"
+        } finally {
+            $unins = Join-Path $dir "unins000.exe"
+            if (Test-Path -LiteralPath $unins) {
+                Start-Process -FilePath $unins -Wait -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") | Out-Null
+                for ($i = 0; $i -lt 30 -and (Test-Path -LiteralPath (Join-Path $dir "Khensu Mixing.exe")); $i++) { Start-Sleep -Seconds 1 }
+            }
+        }
+        if (Test-Path -LiteralPath (Join-Path $dir "Khensu Mixing.exe")) { throw "uninstall left the app behind in $dir" }
+        if ($uninstKeys | Where-Object { Test-Path $_ }) { throw "uninstall left its uninstall entry behind" }
     } }
     "installer-smoke" = @{ Blocking = $true; Minutes = 20; Run = {
         $iscc = @(

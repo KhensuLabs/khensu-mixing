@@ -7,13 +7,16 @@ the import graph rather than a wall-clock time, which would flake on a busy
 machine: any of these at start-up is a regression.
 """
 import json
+import os
 import subprocess
 import sys
 
 HEAVY = ["torch", "torchaudio", "tensorflow", "basic_pitch", "demucs", "onnxruntime", "transformers",
          "sklearn", "numba", "faster_whisper", "audioseal", "wavmark",
          "scipy.signal", "scipy.stats", "reportlab"]
-IMPORT_BUDGET_SEC = 1.5
+# KHENSU_IMPORT_BUDGET_SEC raises it on a shared CI runner (Nightly's 3.13
+# job measured 1.66 s with every core busy); the local gate stays at 1.5 s.
+IMPORT_BUDGET_SEC = float(os.environ.get("KHENSU_IMPORT_BUDGET_SEC", "1.5"))
 
 
 def test_server_import_leaves_heavy_ml_stacks_unloaded():

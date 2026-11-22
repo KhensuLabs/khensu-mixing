@@ -189,7 +189,7 @@ def test_every_dispatched_effect_has_a_declared_routing():
         "PhaseRotator", "MultibandCompressor", "DynamicEQ", "Doubler",
         "DynamicDeEsser", "Humanize", "Exciter", "MidSideProcessor", "Clipper",
         "Flanger", "Tremolo", "Vibrato", "AutoPan", "ConvolutionReverb", "PlosiveRemover",
-        "FormantShifter",
+        "FormantShifter", "SpectralDenoise",
     }
     for name in custom | set(EFFECT_MAP):
         assert name in EFFECT_ROUTING, f"{name} has no declared channel routing"

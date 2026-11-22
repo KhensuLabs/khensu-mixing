@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from khensu_services.common.job_status import JobStatus
 from khensu_services.copilot.llm_config import claude_max_tokens, decision_hash, extract_json_object
 from khensu_services.copilot.llm_provider import get_provider_for_purpose, ProviderUnavailable
-from khensu_services.common.jobs import JobStore, admit_or_429, new_job_id
+from khensu_services.common.jobs import JobStore, admit_or_429, new_job_id, with_sse_prelude
 from starlette.background import BackgroundTask
 from khensu_services.common.executors import llm_executor as _llm_executor, run_llm_blocking
 from khensu_services.copilot.chat_intents import _myth_guardrail_prompt
@@ -384,5 +384,5 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
 
     # The background task also releases the slot if the body never ran
     # (e.g. the client vanished before the first chunk).
-    return StreamingResponse(sse_generator(), media_type="text/event-stream",
+    return StreamingResponse(with_sse_prelude(sse_generator()), media_type="text/event-stream",
                              background=BackgroundTask(_finish_stream_slot, stream_id))

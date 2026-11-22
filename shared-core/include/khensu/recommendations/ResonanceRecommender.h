@@ -15,7 +15,15 @@ namespace khensu {
 
 class ResonanceRecommender {
   public:
-    static constexpr float kMinProminenceDb = 10.0f;
+    /// FULL-3: prominence is the service's quarter-octave peak over its
+    /// half-octave surroundings (extended_analyzer.RES_EDGE_DB). At 5 dB it
+    /// fires on 12-17% of released tracks and finds ~80% of injected +12 dB,
+    /// Q 8 bells, which read about 6.5 dB on this scale. (The old 10 dB edge
+    /// was on a 1.3 Hz-bin scale and fired on 87% of released tracks.)
+    static constexpr float kMinProminenceDb = 5.0f;
+    /// Severity: minor at the edge, moderate from ~6 dB, 100 at 10 dB.
+    static constexpr float kSeverityAtEdge = 20.0f;
+    static constexpr float kSeverityPerDb = 16.0f;
     /// A peak within this fraction of n x a lower peak (n = 2..kMaxHarmonic)
     /// is that peak's harmonic.
     static constexpr float kHarmonicTolerance = 0.03f;
@@ -43,7 +51,7 @@ class ResonanceRecommender {
     {
         std::vector<AnalysisResult::ResonancePeak> strong;
         for (const auto& p : hotspots)
-            if (p.prominence > kMinProminenceDb && p.hz > 0.0f) strong.push_back(p);
+            if (p.prominence >= kMinProminenceDb && p.hz > 0.0f) strong.push_back(p);
         std::sort(strong.begin(), strong.end(), [](const auto& a, const auto& b) { return a.hz < b.hz; });
 
         std::vector<std::vector<AnalysisResult::ResonancePeak>> groups;
@@ -76,7 +84,8 @@ class ResonanceRecommender {
             float maxProminence = 0.0f;
             for (const auto& p : group) maxProminence = std::max(maxProminence, p.prominence);
 
-            float sev = std::clamp((maxProminence - kMinProminenceDb) * 6.0f, 20.0f, 100.0f);
+            float sev = std::clamp(kSeverityAtEdge + (maxProminence - kMinProminenceDb) * kSeverityPerDb,
+                                   kSeverityAtEdge, 100.0f);
             if (pitched) sev = std::max(10.0f, sev * kPitchedSeverityScale);
 
             const std::string hz = std::to_string(int(root.hz));
@@ -133,7 +142,13 @@ class ResonanceRecommender {
             }
             r.suggested_parameters["eq_center_hz"] = root.hz;
             r.suggested_parameters["eq_q"] = 6.0f;
-            r.suggested_parameters["eq_cut_db"] = std::min(6.0f, root.prominence * 0.3f);
+            // A rendered notch only for a plain resonance: a pitched one is a
+            // note, and its advice is a dynamic EQ on the part, not a static
+            // cut on the master. The quarter-octave average reads a bell at
+            // about half its height: cut 1.5x the prominence (a +12 dB bell
+            // reads ~6.5).
+            if (!pitched)
+                r.suggested_parameters["eq_cut_db"] = std::clamp(root.prominence * 1.5f, 3.0f, 12.0f);
             r.alternative_strategies = {
                 "Use a dynamic EQ (e.g., Fabfilter Pro-MB) to cut the resonance only when it exceeds a threshold.",
                 "Trace the resonance back to its source instrument and address it on the channel, not the master.",
