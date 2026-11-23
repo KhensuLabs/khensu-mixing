@@ -15,7 +15,6 @@
 #include <khensu/recommendations/TranslationRiskRecommender.h>
 #include <khensu/recommendations/ResonanceRecommender.h>
 #include <khensu/recommendations/MidSideImbalanceRecommender.h>
-#include <khensu/recommendations/LoudnessArcRecommender.h>
 #include <khensu/recommendations/SectionFlowRecommender.h>
 #include <khensu/recommendations/MaskingRecommender.h>
 #include <khensu/recommendations/StrengthRecommender.h>
@@ -130,13 +129,11 @@ std::vector<Recommendation> RecommendationEngine::generate(const AnalysisResult&
 
     append(LoudnessRecommender{}.recommend(result, genre, target));
     {
-        // Two spectral findings read more than the spectrum: the kick/bass
-        // collision needs the drum scan, the vocal-masking one the resonances.
+        // One spectral finding reads more than the spectrum: the kick/bass
+        // collision needs the drum scan.
         auto spectral = SpectralRecommender{}.recommend(result, genre, target);
-        for (auto& r : spectral) {
+        for (auto& r : spectral)
             if (r.id.rfind("kick_bass_collision", 0) == 0) r.requires_inputs |= in::kDrums;
-            if (r.id.rfind("midrange_vocal_masking", 0) == 0) r.requires_inputs |= in::kResonance;
-        }
         append(std::move(spectral));
     }
     append(DynamicsRecommender{}.recommend(result, genre, target));
@@ -151,7 +148,6 @@ std::vector<Recommendation> RecommendationEngine::generate(const AnalysisResult&
     append(TranslationRiskRecommender{}.recommend(result, genre, target), in::kTranslationRisk);
     append(ResonanceRecommender{}.recommend(result, genre, target), in::kResonance);
     append(MidSideImbalanceRecommender{}.recommend(result, genre, target), in::kMidSide);
-    appendUnvalidated(LoudnessArcRecommender{}.recommend(result, genre, target), in::kSections);
     appendUnvalidated(SectionFlowRecommender{}.recommend(result, genre, target), in::kSections);
     append(MaskingRecommender{}.recommend(result, genre, target), in::kMasking);
     // Green "what's right" notes (spec §4) - severity 0, so the sort below

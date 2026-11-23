@@ -273,6 +273,28 @@ TEST_CASE("CORE-05: tilt and crest severity start near 0 at the tolerance edge",
     CHECK(crest->severity < 5.0f); // was ~52
 }
 
+TEST_CASE("TUNE-4: crest above target fires only past the genre's measured ceiling", "[severity][tune]")
+{
+    GenreEntry genre;
+    genre.crest_factor_target_db = 10.0f;
+    genre.crest_factor_ceiling_db = 16.0f; // released tracks reach 16 dB
+    CHECK(DynamicsRecommender::crestCeilingDb(genre) == 16.0f);
+
+    auto r = stereoResult("f");
+    r.dynamics.crest_factor_db = 15.0f; // past target + 3, inside what releases do
+    CHECK(findCode(DynamicsRecommender{}.recommend(r, genre, CreativeTarget{}), "crest_above_genre_target") == nullptr);
+
+    r.dynamics.crest_factor_db = 16.2f;
+    const auto dyn = DynamicsRecommender{}.recommend(r, genre, CreativeTarget{});
+    const auto* crest = findCode(dyn, "crest_above_genre_target");
+    REQUIRE(crest != nullptr);
+    CHECK(crest->severity < 5.0f); // severity from the ceiling
+
+    // A measured ceiling never makes the rule stricter than target + 3.
+    genre.crest_factor_ceiling_db = 11.0f;
+    CHECK(DynamicsRecommender::crestCeilingDb(genre) == 13.0f);
+}
+
 // ---------------------------------------------------------------------------
 // CORE-06 / CORE-08 / CORE-09 phase consistency and correlation policy
 // ---------------------------------------------------------------------------

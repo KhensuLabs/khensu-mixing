@@ -21,6 +21,9 @@ class SpectralRecommender {
     // Scorecard and the evidence trail all read these, so a card, its score
     // and its "why" cannot disagree about where a rule fires or how bad it is.
 
+    /// Kick and bass fundamentals closer than this are a collision note (TUNE-8).
+    static constexpr float kKickBassCollisionHz = 4.0f;
+
     /// Centroid window: the genre centroid +25% / -25%.
     static constexpr float kCentroidCeilingRatio = 1.25f;
     static constexpr float kCentroidFloorRatio = 0.75f;
@@ -64,6 +67,17 @@ class SpectralRecommender {
                                                                       s.centroid_hz, aim, kHighShelfHz, lo, hi);
         if (std::isfinite(fromBins)) return fromBins;
         return tonal_fix::highShelfGainForCentroid(s.rms_per_octave_db, s.centroid_hz, aim, kHighShelfHz, lo, hi);
+    }
+
+    /// The low-shelf gain toward `aim` share: from the FFT bins when the
+    /// result has them (TUNE-10), else the octave bands.
+    static float lowShelfGain(const AnalysisResult& result, float aim, double lo, double hi)
+    {
+        const auto& s = result.spectral;
+        const float fromBins = tonal_fix::lowShelfGainForShareFft(s.fft_mid_magnitudes, result.sample_rate,
+                                                                  s.balance_low, aim, kLowShelfHz, lo, hi);
+        if (std::isfinite(fromBins)) return fromBins;
+        return tonal_fix::lowShelfGainForShare(s.rms_per_octave_db, s.balance_low, aim, kLowShelfHz, lo, hi);
     }
 
     static float centroidCeilingHz(const GenreEntry& genre) noexcept
@@ -247,7 +261,7 @@ class SpectralRecommender {
             auto r = make("low_end_heavy", lowEndSeverity(s.balance_low, genre), ProcessingStage::MixBus, 3);
             const float aim = heavy_thresh - kAimTowardTarget * (heavy_thresh - genre.low_end_weight);
             const float gain = modelledGain(
-                tonal_fix::lowShelfGainForShare(s.rms_per_octave_db, s.balance_low, aim, kLowShelfHz, -15.0, 0.0),
+                lowShelfGain(result, aim, -15.0, 0.0),
                 -std::clamp((s.balance_low - heavy_thresh) * 8.0f, 0.5f, 6.0f), -15.0f, -0.5f);
             r.what = "Low-end energy share is " + f1(s.balance_low * 100.0f) + "% - the genre target is " +
                      f1(genre.low_end_weight * 100.0f) + "%.";
@@ -272,7 +286,7 @@ class SpectralRecommender {
             auto r = make("low_end_light", lowEndSeverity(s.balance_low, genre), ProcessingStage::MixBus, 3);
             const float aim = light_thresh + kAimTowardTarget * (genre.low_end_weight - light_thresh);
             const float gain = modelledGain(
-                tonal_fix::lowShelfGainForShare(s.rms_per_octave_db, s.balance_low, aim, kLowShelfHz, 0.0, 15.0),
+                lowShelfGain(result, aim, 0.0, 15.0),
                 std::clamp((light_thresh - s.balance_low) * 10.0f, 0.5f, 4.5f), 0.5f, 15.0f);
             r.what = "Low-end energy share is " + f1(s.balance_low * 100.0f) + "% - below the " +
                      f1(light_thresh * 100.0f) + "% genre floor.";
@@ -294,15 +308,16 @@ class SpectralRecommender {
         }
 
         // --- Cross-Stem Low-End Collision Recommendation ---
-        if (result.drums.has_value() && result.drums->kick_bass_clash) {
-            // FULL-3: kick and bass fundamentals within 10 Hz on 34% of
-            // released masters - often a kick tuned to the key on purpose.
-            // A minor note to check, not an alarm.
+        // TUNE-8: the service flags fundamentals within 10 Hz, which held on
+        // 33% of 203 released masters - often a kick tuned to the key on
+        // purpose. Within kKickBassCollisionHz, 15%. A minor note to check.
+        if (result.drums.has_value() && result.drums->kick_bass_clash &&
+            result.drums->kick_bass_proximity_hz < kKickBassCollisionHz) {
             auto r = make("kick_bass_collision", 30.0f, ProcessingStage::MixBus, 4);
             r.what = "Low-end frequency collision detected between Kick and Bass. Proximity: " +
                      f1(result.drums->kick_bass_proximity_hz) + " Hz.";
-            r.why_helps = "When the kick and bass fundamental frequencies overlap too closely (within 10 Hz), "
-                          "they mask each other, creating a muddy low-end and causing phase cancellation.";
+            r.why_helps = "When the kick and bass fundamentals sit this close (within 4 Hz), they mask each "
+                          "other, creating a muddy low end and beating against each other.";
             r.suggested_action = "Carve space: apply a narrow EQ cut (-3 dB, Q=2.0) on the Bass stem at the Kick's "
                                  "fundamental frequency, or sidechain-compress the Bass using the Kick as the trigger.";
             r.engineer_note =
@@ -313,31 +328,12 @@ class SpectralRecommender {
             out.push_back(std::move(r));
         }
 
-        // --- Cross-Stem Midrange Masking (Vocals vs. Guitars/Keys) Recommendation ---
-        if (result.resonance.has_value()) {
-            for (const auto& peak : result.resonance->hotspots) {
-                if (peak.hz >= 1000.0f && peak.hz <= 3000.0f && peak.prominence > 4.0f) {
-                    auto r = make("midrange_vocal_masking", 60.0f, ProcessingStage::MixBus, 4);
-                    r.what = "Prominent midrange resonance detected at " + f0(peak.hz) +
-                             " Hz (Prominence: " + f1(peak.prominence) + " dB).";
-                    r.why_helps = "Midrange build-ups in the 1-3 kHz region often mask the lead vocal, "
-                                  "making it sound buried and reduced in clarity.";
-                    r.suggested_action = "Dampen guitar/synth masking: apply a dynamic EQ cut or narrow bell cut "
-                                         "of -2.5 dB at " +
-                                         f0(peak.hz) + " Hz on clashing backing instruments.";
-                    r.engineer_note = "Carving a small pocket in the backing instruments at this frequency "
-                                      "will allow the vocal presence to pop out without having to raise "
-                                      "the vocal fader.";
-                    r.how_to_verify = "Vocals should sound more front-of-mix and clear without sibilance increasing.";
-                    r.suggested_parameters["eq_type"] = 0.0f; // Bell
-                    r.suggested_parameters["eq_freq_hz"] = peak.hz;
-                    r.suggested_parameters["eq_gain_db"] = -2.5f;
-                    r.suggested_parameters["eq_q"] = 2.0f; // Narrow
-                    out.push_back(std::move(r));
-                    break; // Just report the strongest one to avoid spamming
-                }
-            }
-        }
+        // TUNE-7: the engine no longer guesses vocal masking from the mix. Its
+        // midrange_vocal_masking was any 1-3 kHz resonance over 4 dB - the
+        // resonance finding a second time, at a fixed severity of 60 (7.7% of
+        // released tracks alarmed). The resonance finding now says when its
+        // peak sits in the vocal's presence range; real vocal masking comes
+        // from separated stems (the service's multitrack advice).
 
         return out;
     }

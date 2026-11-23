@@ -47,10 +47,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.4
     },
     {
       "id": "acid-house",
@@ -95,10 +97,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.6
     },
     {
       "id": "afro-house",
@@ -143,10 +147,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 13.3
     },
     {
       "id": "amapiano",
@@ -191,10 +197,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 21.2
     },
     {
       "id": "ambient",
@@ -239,10 +247,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 17.5
     },
     {
       "id": "ambient-dub",
@@ -287,10 +297,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.5
     },
     {
       "id": "breakcore",
@@ -335,10 +347,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.3
     },
     {
       "id": "breaks",
@@ -383,10 +397,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 22.5
     },
     {
       "id": "brostep",
@@ -431,10 +447,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.4
     },
     {
       "id": "chillstep",
@@ -479,10 +497,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.1
     },
     {
       "id": "chillwave",
@@ -527,10 +547,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 23.2
     },
     {
       "id": "dark-ambient",
@@ -575,10 +597,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 17.6
     },
     {
       "id": "darksynth",
@@ -623,10 +647,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 21.8
     },
     {
       "id": "deconstructed-club",
@@ -671,10 +697,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.6
     },
     {
       "id": "deep-house",
@@ -719,10 +747,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.9
     },
     {
       "id": "digital-hardcore",
@@ -767,10 +797,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 13.2
     },
     {
       "id": "drone",
@@ -815,10 +847,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.6
     },
     {
       "id": "drum-and-bass",
@@ -863,10 +897,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.5
     },
     {
       "id": "dubstep",
@@ -911,10 +947,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 17.2
     },
     {
       "id": "dungeon-synth",
@@ -959,10 +997,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 20.3
     },
     {
       "id": "ebm",
@@ -1007,10 +1047,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.0
     },
     {
       "id": "electro-house",
@@ -1055,10 +1097,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.6
     },
     {
       "id": "electro-swing",
@@ -1103,10 +1147,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.2
     },
     {
       "id": "experimental-noise",
@@ -1151,10 +1197,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.4
     },
     {
       "id": "footwork",
@@ -1199,10 +1247,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.7
     },
     {
       "id": "future-bass",
@@ -1247,10 +1297,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.7
     },
     {
       "id": "future-garage",
@@ -1295,10 +1347,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 22.2
     },
     {
       "id": "gabber",
@@ -1343,10 +1397,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.9
     },
     {
       "id": "garage",
@@ -1391,10 +1447,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.7
     },
     {
       "id": "glitch-hop",
@@ -1439,10 +1497,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 20.3
     },
     {
       "id": "gqom",
@@ -1480,10 +1540,12 @@
       "measured": {
         "tracks": 6,
         "fields": [
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json"
-      }
+      },
+      "crest_factor_ceiling_db": 22.2
     },
     {
       "id": "hard-techno",
@@ -1562,10 +1624,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.7
     },
     {
       "id": "hardvapour",
@@ -1610,10 +1674,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.5
     },
     {
       "id": "house",
@@ -1669,10 +1735,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 25.3
     },
     {
       "id": "industrial",
@@ -1717,10 +1785,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 23.6
     },
     {
       "id": "industrial-techno",
@@ -1765,10 +1835,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.5
     },
     {
       "id": "jungle",
@@ -1813,10 +1885,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 22.5
     },
     {
       "id": "liquid-drum-and-bass",
@@ -1929,10 +2003,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 21.5
     },
     {
       "id": "melodic-dubstep",
@@ -1977,10 +2053,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 13.9
     },
     {
       "id": "minimal-techno",
@@ -2025,10 +2103,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.2
     },
     {
       "id": "neurofunk",
@@ -2073,10 +2153,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 13.2
     },
     {
       "id": "nightcore",
@@ -2121,10 +2203,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.3
     },
     {
       "id": "progressive-house",
@@ -2169,10 +2253,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.2
     },
     {
       "id": "retrowave",
@@ -2217,10 +2303,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 17.9
     },
     {
       "id": "riddim",
@@ -2265,10 +2353,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 23.6
     },
     {
       "id": "speedcore",
@@ -2313,10 +2403,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.8
     },
     {
       "id": "synthwave",
@@ -2361,10 +2453,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.1
     },
     {
       "id": "tech-house",
@@ -2443,10 +2537,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 24.8
     },
     {
       "id": "trance",
@@ -2491,10 +2587,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.4
     },
     {
       "id": "uk-garage",
@@ -2539,10 +2637,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 23.0
     },
     {
       "id": "vaporwave",
@@ -2587,10 +2687,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 17.6
     },
     {
       "id": "witch-house",
@@ -2635,10 +2737,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 20.1
     },
     {
       "id": "acoustic",
@@ -2694,10 +2798,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 21.3
     },
     {
       "id": "singer-songwriter",
@@ -2742,10 +2848,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 19.1
     },
     {
       "id": "boom-bap",
@@ -2858,10 +2966,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.9
     },
     {
       "id": "digicore",
@@ -2906,10 +3016,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.2
     },
     {
       "id": "drill",
@@ -2954,10 +3066,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 26.5
     },
     {
       "id": "emo-rap",
@@ -3036,10 +3150,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.3
     },
     {
       "id": "jerk",
@@ -3084,10 +3200,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 25.0
     },
     {
       "id": "jersey-club",
@@ -3132,10 +3250,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 21.4
     },
     {
       "id": "latin-trap",
@@ -3282,10 +3402,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 17.4
     },
     {
       "id": "plugg",
@@ -3364,10 +3486,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 22.0
     },
     {
       "id": "rap",
@@ -3491,10 +3615,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 13.8
     },
     {
       "id": "uk-drill",
@@ -4259,10 +4385,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.9
     },
     {
       "id": "free-jazz",
@@ -4307,10 +4435,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 27.4
     },
     {
       "id": "metal",
@@ -4355,10 +4485,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.3
     },
     {
       "id": "black-metal",
@@ -4403,10 +4535,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.8
     },
     {
       "id": "death-metal",
@@ -4451,10 +4585,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 17.5
     },
     {
       "id": "deathcore",
@@ -4499,10 +4635,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.8
     },
     {
       "id": "djent",
@@ -4547,10 +4685,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 21.5
     },
     {
       "id": "doom-metal",
@@ -4595,10 +4735,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.2
     },
     {
       "id": "mathcore",
@@ -4643,10 +4785,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.0
     },
     {
       "id": "metalcore",
@@ -4691,10 +4835,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.2
     },
     {
       "id": "nu-metal",
@@ -4739,10 +4885,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.0
     },
     {
       "id": "pop",
@@ -4832,10 +4980,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 17.1
     },
     {
       "id": "avant-garde-pop",
@@ -4914,10 +5064,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.8
     },
     {
       "id": "bubblegum-pop",
@@ -4962,10 +5114,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.1
     },
     {
       "id": "chillpop",
@@ -5044,10 +5198,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 19.4
     },
     {
       "id": "dance-pop",
@@ -5092,10 +5248,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 17.9
     },
     {
       "id": "dariacore",
@@ -5140,10 +5298,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 10.9
     },
     {
       "id": "dream-pop",
@@ -5188,10 +5348,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.6
     },
     {
       "id": "electropop",
@@ -5236,10 +5398,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.2
     },
     {
       "id": "hyperpop",
@@ -5284,10 +5448,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 17.0
     },
     {
       "id": "indie-pop",
@@ -5332,10 +5498,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.5
     },
     {
       "id": "j-pop",
@@ -5380,10 +5548,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 19.3
     },
     {
       "id": "k-pop",
@@ -5428,10 +5598,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 23.4
     },
     {
       "id": "synthpop",
@@ -5476,10 +5648,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.5
     },
     {
       "id": "teen-pop",
@@ -5513,7 +5687,15 @@
         130
       ],
       "vocal_presence_db": 5.0,
-      "notes": "Bright, upbeat, mass appeal, radio-optimized, accessible"
+      "notes": "Bright, upbeat, mass appeal, radio-optimized, accessible",
+      "crest_factor_ceiling_db": 15.4,
+      "measured": {
+        "tracks": 6,
+        "fields": [
+          "crest_factor_ceiling_db"
+        ],
+        "source": "genre_corpus_stats.json"
+      }
     },
     {
       "id": "alt-pop",
@@ -6335,10 +6517,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.8
     },
     {
       "id": "soul",
@@ -6383,10 +6567,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 20.8
     },
     {
       "id": "contemporary-rnb",
@@ -6791,10 +6977,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 17.3
     },
     {
       "id": "emo-rock",
@@ -6873,10 +7061,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.1
     },
     {
       "id": "hardcore-punk",
@@ -6921,10 +7111,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 19.1
     },
     {
       "id": "indie-rock",
@@ -6969,10 +7161,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.3
     },
     {
       "id": "math-rock",
@@ -7017,10 +7211,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.6
     },
     {
       "id": "midwest-emo",
@@ -7065,10 +7261,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 13.9
     },
     {
       "id": "noise-rock",
@@ -7113,10 +7311,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.2
     },
     {
       "id": "post-hardcore",
@@ -7161,10 +7361,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.0
     },
     {
       "id": "post-rock",
@@ -7209,10 +7411,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.4
     },
     {
       "id": "punk",
@@ -7257,10 +7461,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.7
     },
     {
       "id": "sadcore",
@@ -7305,10 +7511,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 17.8
     },
     {
       "id": "screamo",
@@ -7353,10 +7561,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.3
     },
     {
       "id": "slowcore",
@@ -7401,10 +7611,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 17.1
     },
     {
       "id": "stoner-rock",
@@ -7449,10 +7661,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 19.1
     },
     {
       "id": "art-rock",
@@ -7857,10 +8071,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.4
     },
     {
       "id": "baile-funk",
@@ -7939,10 +8155,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.7
     },
     {
       "id": "reggaeton",
@@ -7987,10 +8205,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 14.3
     },
     {
       "id": "country",
@@ -8035,10 +8255,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 20.2
     },
     {
       "id": "corridos-tumbados",
@@ -8117,10 +8339,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 24.4
     },
     {
       "id": "trap-soul",
@@ -8199,10 +8423,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 19.2
     },
     {
       "id": "rock",
@@ -8258,10 +8484,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 18.7
     },
     {
       "id": "pop-punk",
@@ -8306,10 +8534,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.7
     },
     {
       "id": "blues",
@@ -8354,10 +8584,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 22.9
     },
     {
       "id": "reggae",
@@ -8402,10 +8634,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 15.8
     },
     {
       "id": "dancehall",
@@ -8450,10 +8684,12 @@
           "spectral_tilt_target_db_per_octave",
           "crest_factor_target_db",
           "stereo_width_range",
-          "lra_range"
+          "lra_range",
+          "crest_factor_ceiling_db"
         ],
         "source": "genre_corpus_stats.json (MEAS-1)"
-      }
+      },
+      "crest_factor_ceiling_db": 16.0
     }
   ]
 }

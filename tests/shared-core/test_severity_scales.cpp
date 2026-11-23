@@ -359,6 +359,7 @@ TEST_CASE("memorability findings score a shortfall the same at every threshold",
         INFO("memorability_target " << t);
 
         auto result = deepResult();
+        result.python_data.hooks.hook_count = 2;
         result.python_data.memorability.score = TargetInterpolator::memorabilityThreshold(target) - 0.10f;
         result.python_data.memorability.earworm_likelihood = TargetInterpolator::earwormThreshold(target) - 0.05f;
         const auto recs = rec.recommend(result, GenreEntry{}, target);
@@ -387,40 +388,44 @@ TEST_CASE("heaviness findings score a miss the same whatever the genre norm", "[
 {
     HeavinessRecommender rec;
 
-    SECTION("heaviness_extremity_mismatch: 0.25 off target = 50, either side")
+    // TUNE-8: the bands are wide (odds 10 and 8), so the misses are scores
+    // near the ends; the severity is still |score - norm| / 0.5.
+    SECTION("heaviness_extremity_mismatch: severity is the distance on the 0-1 scale, either side")
     {
         for (const float norm : {0.30f, 0.50f, 0.70f}) {
             GenreEntry genre;
             genre.heaviness_extremity_norm = norm;
-            for (const float miss : {0.25f, -0.25f}) {
+            for (const float score : {0.98f, 0.02f}) {
+                const float miss = score - norm;
                 auto result = deepResult();
-                result.python_data.heaviness.extremity = norm + miss;
+                result.python_data.heaviness.extremity = score;
                 result.python_data.heaviness.weight = 1.0f;
                 result.python_data.heaviness.distortion = genre.heaviness_distortion_norm;
                 INFO("heaviness_extremity_norm " << norm << " miss " << miss);
                 const auto sev =
                     severityOf(rec.recommend(result, genre, CreativeTarget{}), "heaviness_extremity_mismatch");
                 REQUIRE(sev.has_value());
-                CHECK(*sev == Approx(50.0f).margin(0.01));
+                CHECK(*sev == Approx(std::min(100.0f, std::abs(miss) / 0.5f * 100.0f)).margin(0.01));
             }
         }
     }
 
-    SECTION("heaviness_distortion_mismatch: 0.30 off the norm = 60, either side")
+    SECTION("heaviness_distortion_mismatch: severity is the distance on the 0-1 scale, either side")
     {
         for (const float norm : {0.30f, 0.50f, 0.70f}) {
             GenreEntry genre;
             genre.heaviness_distortion_norm = norm;
-            for (const float miss : {0.30f, -0.30f}) {
+            for (const float score : {0.98f, 0.02f}) {
+                const float miss = score - norm;
                 auto result = deepResult();
                 result.python_data.heaviness.extremity = genre.heaviness_extremity_norm;
                 result.python_data.heaviness.weight = 1.0f;
-                result.python_data.heaviness.distortion = norm + miss;
+                result.python_data.heaviness.distortion = score;
                 INFO("heaviness_distortion_norm " << norm << " miss " << miss);
                 const auto sev =
                     severityOf(rec.recommend(result, genre, CreativeTarget{}), "heaviness_distortion_mismatch");
                 REQUIRE(sev.has_value());
-                CHECK(*sev == Approx(60.0f).margin(0.01));
+                CHECK(*sev == Approx(std::min(100.0f, std::abs(miss) / 0.5f * 100.0f)).margin(0.01));
             }
         }
     }

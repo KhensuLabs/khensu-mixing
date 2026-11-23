@@ -91,7 +91,17 @@ def main() -> int:
     print("2. all four tokenizers came from the verified folder")
 
     from transformers import RobertaTokenizer
-    hub = RobertaTokenizer.from_pretrained("roberta-base")
+    # The reference is read from the cache at the pinned commit, not by the
+    # name "roberta-base": offline, a cache without refs/main leaves that name
+    # unresolved and transformers 5 then builds an EMPTY tokenizer (every text
+    # encodes as [2, 3]) instead of raising, which read as a pinned-tokenizer
+    # failure (verify_all 2026-11-22).
+    roberta = next(p for p in safe_weights.CLAP_TEXT_REPOS if p.repo_id == "roberta-base")
+    hub = RobertaTokenizer.from_pretrained("roberta-base", revision=roberta.revision)
+    if len(hub) < 50000:
+        print(f"FAIL: the reference roberta-base tokenizer at {roberta.revision[:12]} is not in the "
+              f"Hugging Face cache (vocabulary of {len(hub)}); nothing to compare against")
+        return 1
     text = "Warm, wide pads with a punchy kick at 128 BPM - and a vocal."
     if hub(text)["input_ids"] != model.tokenize(text)["input_ids"]:
         print("FAIL: the pinned tokenizer encodes text differently")

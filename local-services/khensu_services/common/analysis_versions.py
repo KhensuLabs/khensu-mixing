@@ -26,7 +26,7 @@ ANALYZER_VERSIONS: dict[str, str] = {
     # router_audio: the quick / advanced bundle and the extended extras
     # (analyze_quick, analyze_advanced, compute_extended_result).
     "analyze_base": "3",  # 2: NEW-1 song structure (roles, groups); 3: NEW-8 genre key profile
-    "analyze_extended": "2",  # 2: harshness calibrated on released music (FULL-3)
+    "analyze_extended": "3",  # 2: harshness calibrated on released music (FULL-3); 3: presence-band bump (TUNE-9)
     # router_audio: per-section pass, drums, chords, reference comparison.
     "analyze_sections": "2",  # 2: NEW-1 song structure
     "analyze_drums": "1",

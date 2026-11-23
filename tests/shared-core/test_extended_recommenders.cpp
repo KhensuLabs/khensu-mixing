@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include <khensu/analysis/AnalysisResult.h>
 #include <khensu/recommendations/HarshnessRecommender.h>
 #include <khensu/recommendations/MonoCompatRecommender.h>
@@ -8,6 +9,8 @@
 #include <khensu/recommendations/ProcessingStage.h>
 #include <khensu/recommendations/DynamicsRecommender.h>
 #include <khensu/recommendations/StrengthRecommender.h>
+#include <khensu/recommendations/SectionFlowRecommender.h>
+#include <khensu/recommendations/SpectralRecommender.h>
 #include <algorithm>
 #include <cmath>
 
@@ -31,6 +34,10 @@ TEST_CASE("HarshnessRecommender fires above threshold", "[recommenders][extended
     CHECK(recs[0].stage == ProcessingStage::Master);
     CHECK(recs[0].chain_position == 7);
     CHECK(recs[0].is_taste_decision == false);
+    CHECK(recs[0].severity == Catch::Approx(45.0f)); // 0.25 past the edge (TUNE-9)
+
+    r.harshness->score = 0.37f; // just past the released-music edge: a minor note
+    CHECK(HarshnessRecommender{}.recommend(r, {}, {})[0].severity < 40.0f);
 }
 
 TEST_CASE("HarshnessRecommender silent below threshold", "[recommenders][extended][harshness]")
@@ -56,39 +63,52 @@ TEST_CASE("HarshnessRecommender silent when harshness absent", "[recommenders][e
 // MonoCompatRecommender
 // ---------------------------------------------------------------------------
 
-TEST_CASE("MonoCompatRecommender fires on wide low end", "[recommenders][extended][mono_compat]")
+TEST_CASE("MonoCompatRecommender fires on comb-filtered mids and highs", "[recommenders][extended][mono_compat]")
 {
     AnalysisResult r;
     r.file_id = "f_mono";
     r.mono_compat = AnalysisResult::MonoCompatData{};
-    r.mono_compat->low_end_stereo_pct = 45.0f; // > 30.0 threshold
-    r.mono_compat->per_band_correlation["sub"] = 0.3f;
-    r.mono_compat->per_band_correlation["bass"] = 0.5f;
-    r.mono_compat->per_band_correlation["midrange"] = 0.8f;
-    r.mono_compat->per_band_correlation["upper_mid"] = 0.9f;
-    r.mono_compat->per_band_correlation["air"] = 0.95f;
+    r.mono_compat->per_band_correlation["sub"] = 0.95f;
+    r.mono_compat->per_band_correlation["bass"] = 0.9f;
+    r.mono_compat->per_band_correlation["midrange"] = -0.05f; // a 0.5 ms comb reads about 0
+    r.mono_compat->per_band_correlation["upper_mid"] = 0.02f;
+    r.mono_compat->per_band_correlation["air"] = 0.0f;
 
     auto recs = MonoCompatRecommender{}.recommend(r, {}, {});
-    REQUIRE_FALSE(recs.empty());
-    CHECK(recs[0].stage == ProcessingStage::MixBus);
-}
-
-TEST_CASE("MonoCompatRecommender fires on low band correlation", "[recommenders][extended][mono_compat]")
-{
-    AnalysisResult r;
-    r.file_id = "f_mono_corr";
-    r.mono_compat = AnalysisResult::MonoCompatData{};
-    r.mono_compat->low_end_stereo_pct = 10.0f;         // below 30 - won't fire on this
-    r.mono_compat->per_band_correlation["sub"] = 0.2f; // < 0.4 threshold
-    r.mono_compat->per_band_correlation["bass"] = 0.5f;
-    r.mono_compat->per_band_correlation["midrange"] = 0.8f;
-    r.mono_compat->per_band_correlation["upper_mid"] = 0.9f;
-    r.mono_compat->per_band_correlation["air"] = 0.95f;
-
-    auto recs = MonoCompatRecommender{}.recommend(r, {}, {});
-    REQUIRE_FALSE(recs.empty());
+    REQUIRE(recs.size() == 1);
+    CHECK(recs[0].id.rfind("mono_compat_warning_band_correlation", 0) == 0);
     CHECK(recs[0].stage == ProcessingStage::MixBus);
     CHECK(recs[0].chain_position == 6);
+    CHECK(recs[0].severity >= 40.0f); // moderate: well under the 0.15 floor
+}
+
+TEST_CASE("MonoCompatRecommender: one wide band or a wide low end is not a mono fault (TUNE-3)",
+          "[recommenders][extended][mono_compat]")
+{
+    AnalysisResult r;
+    r.file_id = "f_mono_one_band";
+    r.mono_compat = AnalysisResult::MonoCompatData{};
+    r.mono_compat->low_end_stereo_pct = 45.0f;          // sub_bass_too_wide's job
+    r.mono_compat->per_band_correlation["sub"] = 0.2f;  // likewise
+    r.mono_compat->per_band_correlation["bass"] = 0.5f;
+    r.mono_compat->per_band_correlation["midrange"] = 0.8f;
+    r.mono_compat->per_band_correlation["upper_mid"] = 0.7f;
+    r.mono_compat->per_band_correlation["air"] = -0.1f; // a wide reverb tail
+    CHECK(MonoCompatRecommender{}.recommend(r, {}, {}).empty());
+}
+
+TEST_CASE("MonoCompatRecommender fires on an anti-correlated bass band", "[recommenders][extended][mono_compat]")
+{
+    AnalysisResult r;
+    r.file_id = "f_mono_bass";
+    r.mono_compat = AnalysisResult::MonoCompatData{};
+    r.mono_compat->per_band_correlation["bass"] = -0.2f;
+    r.mono_compat->per_band_correlation["midrange"] = 0.8f;
+    r.mono_compat->per_band_correlation["upper_mid"] = 0.9f;
+    r.mono_compat->per_band_correlation["air"] = 0.95f;
+    auto recs = MonoCompatRecommender{}.recommend(r, {}, {});
+    REQUIRE(recs.size() == 1);
+    CHECK(recs[0].id.rfind("mono_compat_warning_bass", 0) == 0);
 }
 
 TEST_CASE("MonoCompatRecommender silent when absent", "[recommenders][extended][mono_compat]")
@@ -109,7 +129,7 @@ TEST_CASE("TranslationRiskRecommender fires on high earbuds risk", "[recommender
     r.file_id = "f_trans";
     r.translation_risk = AnalysisResult::TranslationRiskData{};
     r.translation_risk->per_environment["studio"] = 0.1f;
-    r.translation_risk->per_environment["earbuds"] = 0.75f; // > 0.6 threshold
+    r.translation_risk->per_environment["earbuds"] = 0.75f; // > 0.45 threshold
     r.translation_risk->per_environment["phone"] = 0.2f;
     r.translation_risk->per_environment["car"] = 0.3f;
     r.translation_risk->per_environment["club"] = 0.2f;
@@ -129,7 +149,7 @@ TEST_CASE("TranslationRiskRecommender silent when all risks low", "[recommenders
     r.file_id = "f_trans_ok";
     r.translation_risk = AnalysisResult::TranslationRiskData{};
     r.translation_risk->per_environment["studio"] = 0.1f;
-    r.translation_risk->per_environment["earbuds"] = 0.5f; // <= 0.6
+    r.translation_risk->per_environment["earbuds"] = 0.4f; // <= 0.45 (TUNE-8)
     r.translation_risk->per_environment["phone"] = 0.2f;
     r.translation_risk->per_environment["car"] = 0.3f;
     r.translation_risk->per_environment["club"] = 0.2f;
@@ -213,7 +233,7 @@ TEST_CASE("ResonanceRecommender groups a harmonic series into one pitched findin
     });
     REQUIRE(p154 != recs.end());
     CHECK(p154->confidence == 0.72f);
-    CHECK(p154->severity == 36.0f); // 20 at the 5 dB edge + 16 per dB
+    CHECK(p154->severity == 30.0f); // 20 at the 5 dB edge + 10 per dB (TUNE-6)
     CHECK(p154->suggested_parameters.at("eq_cut_db") == 9.0f);
     CHECK(a3->suggested_parameters.count("eq_cut_db") == 0); // a note: no static notch
 }
@@ -277,10 +297,10 @@ TEST_CASE("All extended recommenders return complete recommendations", "[recomme
     r.mono_compat = AnalysisResult::MonoCompatData{};
     r.mono_compat->low_end_stereo_pct = 50.0f;
     r.mono_compat->per_band_correlation["sub"] = 0.2f;
-    r.mono_compat->per_band_correlation["bass"] = 0.6f;
-    r.mono_compat->per_band_correlation["midrange"] = 0.8f;
-    r.mono_compat->per_band_correlation["upper_mid"] = 0.85f;
-    r.mono_compat->per_band_correlation["air"] = 0.9f;
+    r.mono_compat->per_band_correlation["bass"] = -0.1f;
+    r.mono_compat->per_band_correlation["midrange"] = 0.0f;
+    r.mono_compat->per_band_correlation["upper_mid"] = 0.05f;
+    r.mono_compat->per_band_correlation["air"] = 0.0f;
 
     r.translation_risk = AnalysisResult::TranslationRiskData{};
     r.translation_risk->per_environment["studio"] = 0.1f;
@@ -314,4 +334,97 @@ TEST_CASE("M/S brightness fires once the side is brighter than the mid (FULL-3)"
     REQUIRE(recs.size() == 1);
     CHECK(recs[0].id.rfind("ms_brightness_imbalance", 0) == 0);
     CHECK(recs[0].severity == 40.0f);
+}
+
+TEST_CASE("Sub-bass too wide fires only on a sub near full width (TUNE-5)", "[recommenders][extended][midside]")
+{
+    AnalysisResult r;
+    r.file_id = "f_sub";
+    r.mid_side_imbalance = AnalysisResult::MidSideImbalanceData{};
+    r.mid_side_imbalance->side_bright_ratio = 0.2f;
+    r.mid_side_imbalance->side_heavy_ratio = 0.45f; // released masters reach this
+    CHECK(MidSideImbalanceRecommender{}.recommend(r, {}, {}).empty());
+    r.mid_side_imbalance->side_heavy_ratio = 0.9f; // a sub at full width reads 0.8-1.0
+    const auto recs = MidSideImbalanceRecommender{}.recommend(r, {}, {});
+    REQUIRE(recs.size() == 1);
+    CHECK(recs[0].id.rfind("sub_bass_too_wide", 0) == 0);
+    CHECK(recs[0].severity >= 40.0f);
+}
+
+// ---------------------------------------------------------------------------
+// TUNE-8: song-level gates from 203 released tracks
+// ---------------------------------------------------------------------------
+
+TEST_CASE("TUNE-8 translation risk: the phone edge is 0.65, the others 0.45", "[recommenders][extended][translation]")
+{
+    auto risks = [](float phone, float car) {
+        AnalysisResult r;
+        r.file_id = "f_t8";
+        r.translation_risk = AnalysisResult::TranslationRiskData{};
+        r.translation_risk->per_environment["phone"] = phone;
+        r.translation_risk->per_environment["car"] = car;
+        r.translation_risk->per_environment["earbuds"] = 0.1f;
+        r.translation_risk->per_environment["club"] = 0.1f;
+        r.translation_risk->per_environment["studio"] = 0.1f;
+        return TranslationRiskRecommender{}.recommend(r, {}, {});
+    };
+    CHECK(risks(0.62f, 0.1f).empty()); // a typical released master's phone score
+    REQUIRE(risks(0.70f, 0.1f).size() == 1);
+    CHECK(risks(0.70f, 0.1f)[0].id.find("phone") != std::string::npos);
+    REQUIRE(risks(0.2f, 0.50f).size() == 1); // a low cut shows up in the car score
+    CHECK(risks(0.2f, 0.50f)[0].id.find("car") != std::string::npos);
+}
+
+namespace {
+AnalysisResult sectionsAt(std::initializer_list<float> lufs)
+{
+    AnalysisResult r;
+    r.file_id = "f_sec";
+    r.section_analysis = SectionAnalysis{};
+    float t = 0.0f;
+    for (const float l : lufs) {
+        SectionData s;
+        s.label = "S";
+        s.start_sec = t;
+        s.end_sec = t + 20.0f;
+        s.lufs_integrated = l;
+        r.section_analysis->sections.push_back(s);
+        t += 20.0f;
+    }
+    return r;
+}
+bool hasCode(const std::vector<Recommendation>& recs, const std::string& code)
+{
+    return std::any_of(recs.begin(), recs.end(), [&](const auto& x) { return x.id.rfind(code, 0) == 0; });
+}
+} // namespace
+
+TEST_CASE("TUNE-8 section arc: flat below 1 LU, not below 2", "[recommenders][extended][sections]")
+{
+    GenreEntry genre;
+    genre.lufs_range_min = -14.0f;
+    SectionFlowRecommender rec;
+    CHECK_FALSE(hasCode(rec.recommend(sectionsAt({-10.0f, -11.5f, -10.5f}), genre, {}), "section_arc_too_flat"));
+    CHECK(hasCode(rec.recommend(sectionsAt({-10.0f, -10.6f, -10.3f}), genre, {}), "section_arc_too_flat"));
+}
+
+TEST_CASE("TUNE-8 section peak too quiet: more than 3 dB under the genre floor", "[recommenders][extended][sections]")
+{
+    GenreEntry genre;
+    genre.lufs_range_min = -14.0f;
+    SectionFlowRecommender rec;
+    CHECK_FALSE(hasCode(rec.recommend(sectionsAt({-16.0f, -19.0f, -17.0f}), genre, {}), "section_peak_too_quiet"));
+    CHECK(hasCode(rec.recommend(sectionsAt({-17.5f, -21.0f, -19.0f}), genre, {}), "section_peak_too_quiet"));
+}
+
+TEST_CASE("TUNE-8 kick/bass collision needs fundamentals within 4 Hz", "[recommenders][extended][spectral]")
+{
+    AnalysisResult r;
+    r.file_id = "f_kb";
+    r.drums = AnalysisResult::DrumData{};
+    r.drums->kick_bass_clash = true; // the service's 10 Hz flag
+    r.drums->kick_bass_proximity_hz = 7.0f;
+    CHECK_FALSE(hasCode(SpectralRecommender{}.recommend(r, GenreEntry{}, {}), "kick_bass_collision"));
+    r.drums->kick_bass_proximity_hz = 2.0f;
+    CHECK(hasCode(SpectralRecommender{}.recommend(r, GenreEntry{}, {}), "kick_bass_collision"));
 }

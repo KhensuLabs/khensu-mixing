@@ -108,17 +108,17 @@ TEST_CASE("TargetInterpolator::memorabilityThreshold", "[interpolator]")
     SECTION("t=50 returns norm 0.50")
     {
         auto t = makeTarget(50.0f, 50.0f, 50.0f);
-        CHECK_THAT(TargetInterpolator::memorabilityThreshold(t), WithinAbs(0.50f, 0.001f));
+        CHECK_THAT(TargetInterpolator::memorabilityThreshold(t), WithinAbs(0.65f, 0.001f));
     }
     SECTION("t=0 returns floor 0.30")
     {
         auto t = makeTarget(50.0f, 50.0f, 0.0f);
-        CHECK_THAT(TargetInterpolator::memorabilityThreshold(t), WithinAbs(0.30f, 0.001f));
+        CHECK_THAT(TargetInterpolator::memorabilityThreshold(t), WithinAbs(0.45f, 0.001f));
     }
     SECTION("t=100 returns ceil 0.70")
     {
         auto t = makeTarget(50.0f, 50.0f, 100.0f);
-        CHECK_THAT(TargetInterpolator::memorabilityThreshold(t), WithinAbs(0.70f, 0.001f));
+        CHECK_THAT(TargetInterpolator::memorabilityThreshold(t), WithinAbs(0.85f, 0.001f));
     }
 }
 
@@ -129,17 +129,17 @@ TEST_CASE("TargetInterpolator::earwormThreshold", "[interpolator]")
     SECTION("t=50 returns norm 0.40")
     {
         auto t = makeTarget(50.0f, 50.0f, 50.0f);
-        CHECK_THAT(TargetInterpolator::earwormThreshold(t), WithinAbs(0.40f, 0.001f));
+        CHECK_THAT(TargetInterpolator::earwormThreshold(t), WithinAbs(0.50f, 0.001f));
     }
     SECTION("t=0 returns floor 0.25")
     {
         auto t = makeTarget(50.0f, 50.0f, 0.0f);
-        CHECK_THAT(TargetInterpolator::earwormThreshold(t), WithinAbs(0.25f, 0.001f));
+        CHECK_THAT(TargetInterpolator::earwormThreshold(t), WithinAbs(0.35f, 0.001f));
     }
     SECTION("t=100 returns ceil 0.60")
     {
         auto t = makeTarget(50.0f, 50.0f, 100.0f);
-        CHECK_THAT(TargetInterpolator::earwormThreshold(t), WithinAbs(0.60f, 0.001f));
+        CHECK_THAT(TargetInterpolator::earwormThreshold(t), WithinAbs(0.70f, 0.001f));
     }
 }
 

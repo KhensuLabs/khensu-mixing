@@ -118,3 +118,29 @@ lists what needs the owner (a person, a Mac, hardware or a certificate).
       vocals vs other; `scripts/eval_masking.py`); the full corpus needs
       days of Demucs.
 - [ ] SHIP-D Code-signing certificate for the Windows installer.
+
+## 9. Fire-rate tuning, round 2 (2026-11-22)
+Bar: a finding alarms (moderate or worse) on about 5% or fewer released
+tracks, and still catches the defect it names.
+- [x] TUNE-1 Injected defects for the findings with no sensitivity data:
+      a hard-limited master (+8 dB into a limiter), a downward-expanded one,
+      a 10 dB quieter one, side x2 and side x0.2 (native pass); a bass-heavy
+      and a thin master for translation risk (full pass).
+- [x] TUNE-2 `[.measurefull]` writes the inputs of every song-level finding
+      (hooks, memorability, heaviness, arc, sections, kick/bass, translation
+      per environment) and the thresholds it was graded against.
+- [x] TUNE-3 Mono compatibility: 12.4% alarm - retune the band thresholds and
+      drop the low-end sub-finding that repeats `sub_bass_too_wide`.
+- [x] TUNE-4 Crest above genre target: 10.3% alarm.
+- [x] TUNE-5 Sub-bass too wide: 9.6% alarm, catches 100% - raise the gate.
+- [x] TUNE-6 Resonance: 9.1% alarm.
+- [x] TUNE-7 Midrange vocal masking: 7.7% alarm; it is any 1-3 kHz resonance
+      over 4 dB - a second copy of the resonance finding.
+- [x] TUNE-8 Song-level notes on a third or more of released tracks (heaviness,
+      earworm, memorability, hooks, kick/bass, loudness arc, section arc):
+      gate each to about 15% or less until the listener study.
+- [x] TUNE-9 Weak detection: M/S brightness 45%, harshness 52%, low end heavy
+      62%, tilt too bright 65%.
+- [x] TUNE-10 Weak fixes: tilt too bright clears 62%, low end light 68%.
+- [x] TUNE-11 Final pass on the shipped code -> finding_evidence.json, docs.
+- [ ] TUNE-12 Release 1.0.2 (app + plugin), public snapshot.

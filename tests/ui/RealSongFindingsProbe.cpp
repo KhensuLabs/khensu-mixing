@@ -20,7 +20,6 @@
 #include <khensu/recommendations/HarshnessRecommender.h>
 #include <khensu/recommendations/HeavinessRecommender.h>
 #include <khensu/recommendations/HookRecommender.h>
-#include <khensu/recommendations/LoudnessArcRecommender.h>
 #include <khensu/recommendations/LoudnessRecommender.h>
 #include <khensu/recommendations/MaskingRecommender.h>
 #include <khensu/recommendations/MemorabilityRecommender.h>
@@ -190,7 +189,6 @@ TEST_CASE("Real song: what fired and what did not", "[.realsong]")
     report("TranslationRisk", TranslationRiskRecommender{}.recommend(r, judged, t));
     report("Resonance", ResonanceRecommender{}.recommend(r, judged, t));
     report("MidSideImbalance", MidSideImbalanceRecommender{}.recommend(r, judged, t));
-    report("LoudnessArc (sections)", LoudnessArcRecommender{}.recommend(r, judged, t));
     report("SectionFlow (sections)", SectionFlowRecommender{}.recommend(r, judged, t));
     report("Masking (stems)", MaskingRecommender{}.recommend(r, judged, t));
     report("Strength", StrengthRecommender{}.recommend(r, judged, t));

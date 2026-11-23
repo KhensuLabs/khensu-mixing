@@ -43,6 +43,11 @@ struct GenreEntry {
     // density-convention default + 3.01 (AUDIT-009, see GenreDatabase.cpp).
     float spectral_tilt_target_db_per_octave = -1.49f;
     float crest_factor_target_db = 10.0f;
+    /// TUNE-4: the 90th percentile of this genre's released tracks' whole-
+    /// track crest factor (measure_genre_norms.py apply_crest); 0 = not
+    /// measured. crest_above_genre_target fires above the higher of this and
+    /// target + 3 dB.
+    float crest_factor_ceiling_db = 0.0f;
 
     // --- Stereo ---
     float stereo_width_min = 0.4f;
@@ -131,6 +136,11 @@ inline GenreEntry blendGenreEntries(const std::vector<std::pair<GenreEntry, floa
     blended.low_end_weight = mix(&GenreEntry::low_end_weight);
     blended.spectral_tilt_target_db_per_octave = mix(&GenreEntry::spectral_tilt_target_db_per_octave);
     blended.crest_factor_target_db = mix(&GenreEntry::crest_factor_target_db);
+    // One unmeasured (0) genre in the blend: fall back to target + 3.
+    const bool allCrestMeasured = std::all_of(entries.begin(), entries.end(), [](const auto& e) {
+        return e.first.crest_factor_ceiling_db > 0.0f;
+    });
+    blended.crest_factor_ceiling_db = allCrestMeasured ? mix(&GenreEntry::crest_factor_ceiling_db) : 0.0f;
     blended.stereo_width_min = mix(&GenreEntry::stereo_width_min);
     blended.stereo_width_max = mix(&GenreEntry::stereo_width_max);
     blended.compression_ratio_typical = mix(&GenreEntry::compression_ratio_typical);

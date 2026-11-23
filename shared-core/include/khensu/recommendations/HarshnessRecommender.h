@@ -13,6 +13,11 @@ namespace khensu {
 
 class HarshnessRecommender {
   public:
+    /// The service's score: 0.35 = the 90th percentile of released tracks'
+    /// presence-band bump (extended_analyzer.HARSH_EDGE_DB), +1 per 10 dB.
+    static constexpr float kThreshold = 0.35f;
+    static constexpr float kSeverityAtEdge = 20.0f;
+    static constexpr float kSeverityPerUnit = 100.0f; // +0.2 (2 dB) = moderate
     std::vector<Recommendation> recommend(const AnalysisResult& result, const GenreEntry& /*genre*/,
                                           const CreativeTarget& /*target*/) const
     {
@@ -20,9 +25,12 @@ class HarshnessRecommender {
         if (!result.harshness.has_value()) return out;
         const auto& h = *result.harshness;
 
-        if (h.score <= 0.35f) return out;
+        if (h.score <= kThreshold) return out;
 
-        const float sev = std::clamp(h.score * 100.0f, 0.0f, 100.0f);
+        // TUNE-9: minor at the edge (the released-music 90th percentile),
+        // moderate 2 dB past it; the old score x 100 was moderate 0.5 dB past.
+        const float sev =
+            std::clamp(kSeverityAtEdge + (h.score - kThreshold) * kSeverityPerUnit, kSeverityAtEdge, 100.0f);
         const float peak_hz = h.peak_hz.value_or(0.0f);
 
         Recommendation r;

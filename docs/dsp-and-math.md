@@ -170,28 +170,78 @@ level - is not counted as an alarm. **Delivery-spec checks** (true peak
 against -1 dBTP) report the share of released tracks that miss the spec
 instead: 82 % of released masters, lossless originals included, peak above
 -1 dBTP, which says how common the miss is, not that the check is wrong.
-**Harshness** is the 2.5-5 kHz RMS over the 500 Hz-8 kHz RMS, in dB,
-placed on the released-music distribution: the 90th percentile of the
-lossless originals (-5.1 dB) is the finding's edge (score 0.35), and each
-10 dB beyond it adds 1.0. (The old ratio x 2.5 read 0.99 at the median and
-fired on 87% of releases; now 10% fire and 58% of +8 dB bells are caught.)
+**Harshness** is a bump in the presence range: the 2.5-5 kHz band's level
+per Hz over the mean of its neighbours' (1-2.5 kHz and 5-10 kHz), in dB,
+each channel measured on its own. The 90th percentile of the lossless
+originals (3.8 dB) is the finding's edge, and it reaches moderate 2 dB past
+it. It fires on 8% of releases (2% at moderate or worse) and catches 56% of
++8 dB, Q 1 bells at 3.5 kHz; it fires on none of the tracks given a broad
++10 dB high shelf (bright is not harsh; the centroid and tilt findings cover
+brightness), where the previous ratio (2.5-5 kHz over 500 Hz-8 kHz) fired
+on 14%.
 **Resonances** are judged at mixing scale: 1/12-octave band power, each
 band's level over the median of the half octave either side, averaged over
 a quarter octave (a sustained note is one semitone wide, a resonance two or
-more), 300 Hz-10 kHz, edge 5 dB, present in at least half the frames.
-17% of releases fire and 80% of injected +12 dB, Q 8 bells are found (the
-old 1.3 Hz-bin peak picker found notes: 87% and 40%). The fix is a cut of
-1.5x the prominence at the peak, Q 6, for a resonance that is not a note.
+more), 300 Hz-10 kHz, edge 5 dB, present in at least 70% of the frames (an
+EQ bump or a room mode is there all song; a note comes and goes). It fires
+on 14% of releases and finds 81% of injected +12 dB, Q 8 bells at 2.5 kHz
+(68% at 400 Hz); it reaches moderate from 7 dB, where it alarms on 6% of
+releases - so an injected bell, about 6.3 dB on this scale, is usually a
+minor note with its fix: a cut of 1.5x the prominence at the peak, Q 6, for
+a resonance that is not a note. A peak at 1-3 kHz is named as the vocal's
+presence range; vocal masking itself is judged only from separated stems.
+**Mono compatibility** is the mean left/right correlation of the midrange,
+upper-mid and air bands: comb filtering (one channel a fraction of a
+millisecond late) drags all three toward zero at once, while a wide reverb
+lowers one. Under 0.15 it fires on 8% of releases and catches 94% of a
+0.5 ms comb; it is moderate under 0.05 (4% of releases). The low end is
+judged by **sub-bass width** - the side/mid energy ratio below 100 Hz, over
+0.70 (3.8% of releases; a sub moved to full width reads 0.79 or more).
+**Crest above target** fires past the higher of the genre's crest target
++ 3 dB and its measured ceiling, the 90th percentile of its released
+tracks' crest factor (the hand-set targets alone fired on 22% of releases);
+it alarms on 4.5% of 1,462 released tracks.
 **Experimental song-level findings** (hooks, memorability, heaviness,
 structure, the loudness arc) are capped at severity 35 - a minor note -
-until listener ratings back their models.
+until listener ratings back their models, and each is gated to fire on about
+15% of released tracks or fewer (203 lossless originals):
+- *No hooks* - the hook detector finds none on a third of released tracks,
+  so the note also needs a weak structure: memorability, which without a
+  hook is 0.3 x section recurrence + 0.2 x tempo alignment, under 0.25 (9%).
+  Memorability and earworm notes are judged only when a hook was found (they
+  would repeat the same miss), at 0.65 and 0.50 (the lowest ~10% of tracks
+  with a hook).
+- *Heaviness* extremity and distortion fire outside an odds band of 10 and 8
+  around the genre value (0.09-0.91 and 0.11-0.89 at 0.50): 16% and 12%.
+  The old +/-0.20 and +/-0.25 bands fired on 65% and 43%.
+- *Section arc too flat* - the loudest and quietest sections within 1 LU
+  (16%; 2 LU flagged 34%). The separate "flat loudness arc" note measured the
+  same thing and is retired.
+- *Section peak too quiet* - the loudest section more than 3 dB under the
+  genre's loudness floor (13%).
+- *Kick/bass collision* - fundamentals within 4 Hz (15%; the service's 10 Hz
+  flag held on 33%, often a kick tuned to the key on purpose).
+- *Translation risk* - per playback device; the phone score runs high on
+  released masters (median 0.43), so its edge is 0.65 and the others' 0.45:
+  18% of releases, 24% of a +10 dB low shelf at 120 Hz, 17% of a -12 dB low
+  cut at 150 Hz. The score is weakly sensitive to either defect.
 
 Findings built from the service's deep pass (harshness, resonances, mono
-compatibility, mid/side balance, sections, hooks) are measured through the
-app's own analysis pipeline on the lossless originals, with injected
-resonance, harshness, comb-filter, wide-sub and bright-side defects, and say
-how many tracks their figures rest on. Thresholds change only with these
-numbers behind them.
+compatibility, mid/side balance, sections, hooks, translation risk) are
+measured through the app's own analysis pipeline on the lossless originals,
+with injected resonance, harshness, comb-filter, wide-sub, bright-side,
+bass-heavy and thin defects, and say how many tracks their figures rest on.
+The whole-track measures add limiting (+8 dB into a -1 dBFS limiter),
+3:1 downward expansion, a 10 dB gain cut and side gain of x2 and x0.2 to the
+hiss, clipping and peak-normalisation defects. Two limits stand: over
+compression is judged against the genre's measured crest range, so a
+limited master that stays inside it is not flagged (66% of +8 dB limiting
+draws a loudness or dynamics finding), and the tilt-too-bright and
+low-end-heavy windows are as wide as their genres' released tracks, which
+caps their sensitivity at 62-65%. The mid/side brightness ratio finds 44% of a
++10 dB lift of the side above 6 kHz at any edge from 0.8 to 1.1 (many shelved tracks
+read lower than before it), so its edge stays at 1.0 (3% of releases). Thresholds change only with these numbers
+behind them.
 
 **Confidence.** Every measurement carries a value, a confidence and a quality
 flag; a clipped signal marks its loudness reading unreliable, and findings
@@ -207,7 +257,7 @@ clear it ("-2.1 dB at 250 Hz"), checked by rendering it and measuring again.
 renderer's own filter) is applied in the frequency domain to the track's ten
 octave bands, and the gain that lands the metric on its target is solved for.
 (A fixed slope - "share difference x 8 dB" - cleared 0 of 42 injected defects;
-solving from the spectrum clears 68-81 %.) The **tilt** fix is solved the
+solving from the spectrum clears 75-80 %.) The **tilt** fix is solved the
 same way on the averaged FFT bins the tilt is fitted on: a 1 kHz high shelf
 (mid-spectrum, so it turns the slope across all ten octaves) whose gain lands
 the slope halfway from the window's edge to the genre target.

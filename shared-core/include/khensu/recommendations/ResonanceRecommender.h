@@ -21,9 +21,12 @@ class ResonanceRecommender {
     /// Q 8 bells, which read about 6.5 dB on this scale. (The old 10 dB edge
     /// was on a 1.3 Hz-bin scale and fired on 87% of released tracks.)
     static constexpr float kMinProminenceDb = 5.0f;
-    /// Severity: minor at the edge, moderate from ~6 dB, 100 at 10 dB.
+    /// Severity: minor at the edge, moderate from 7 dB, 100 at 13 dB.
+    /// TUNE-6: moderate from 6.25 dB alarmed on 9% of released tracks; from
+    /// 7 dB, 5.7% - an injected +12 dB, Q 8 bell (about 6.3 dB on this scale)
+    /// is then mostly a minor note, still with its notch fix.
     static constexpr float kSeverityAtEdge = 20.0f;
-    static constexpr float kSeverityPerDb = 16.0f;
+    static constexpr float kSeverityPerDb = 10.0f;
     /// A peak within this fraction of n x a lower peak (n = 2..kMaxHarmonic)
     /// is that peak's harmonic.
     static constexpr float kHarmonicTolerance = 0.03f;
@@ -31,6 +34,9 @@ class ResonanceRecommender {
     /// A peak with harmonics is most likely a sustained musical note, not a
     /// room or instrument resonance: its severity is scaled down.
     static constexpr float kPitchedSeverityScale = 0.6f;
+    /// The lead vocal's presence range, named in the finding's text.
+    static constexpr float kVocalPresenceLowHz = 1000.0f;
+    static constexpr float kVocalPresenceHighHz = 3000.0f;
 
     /// Nearest note name with octave, e.g. 219 Hz -> "A3".
     static std::string noteName(float hz)
@@ -153,6 +159,11 @@ class ResonanceRecommender {
                 "Use a dynamic EQ (e.g., Fabfilter Pro-MB) to cut the resonance only when it exceeds a threshold.",
                 "Trace the resonance back to its source instrument and address it on the channel, not the master.",
             };
+            // TUNE-7: what the old midrange_vocal_masking finding said, on the
+            // one finding that measures the peak.
+            if (root.hz >= kVocalPresenceLowHz && root.hz <= kVocalPresenceHighHz)
+                r.why_helps += " At " + hz + " Hz it sits in the lead vocal's presence range (1-3 kHz), where a "
+                               "build-up in the backing parts can bury the vocal.";
             out.push_back(std::move(r));
         }
         return out;

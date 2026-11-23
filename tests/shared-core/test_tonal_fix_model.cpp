@@ -126,3 +126,19 @@ TEST_CASE("A tilt finding renders a shelf that clears it (FIX-A)", "[tonal_fix]"
     const double after = tiltOf(r.spectral.fft_mid_magnitudes, SpectralRecommender::kTiltShelfHz, g);
     CHECK(after > -5.0); // inside the window: the finding clears
 }
+
+TEST_CASE("Low-shelf gain from the FFT bins moves the low-end share the right way (TUNE-10)", "[tonal_fix]")
+{
+    const auto bins = slopedBins(-4.5);
+    const double measured = 0.30;
+    for (double aim : {0.40, 0.20}) {
+        const float g = tonal_fix::lowShelfGainForShareFft(bins, 48000.0, measured, aim, 150.0, -15.0, 15.0);
+        REQUIRE(std::isfinite(g));
+        CHECK((aim > measured ? g > 0.0f : g < 0.0f));
+    }
+    // Larger moves need larger gains (the model is monotone).
+    const float small = tonal_fix::lowShelfGainForShareFft(bins, 48000.0, measured, 0.35, 150.0, 0.0, 15.0);
+    const float large = tonal_fix::lowShelfGainForShareFft(bins, 48000.0, measured, 0.45, 150.0, 0.0, 15.0);
+    CHECK(large > small);
+    CHECK(std::isnan(tonal_fix::lowShelfGainForShareFft({}, 48000.0, 0.3, 0.4, 150.0, 0.0, 15.0)));
+}

@@ -13,6 +13,33 @@ namespace khensu {
 
 class MonoCompatRecommender {
   public:
+    /// TUNE-3: comb filtering (one channel a fraction of a millisecond late)
+    /// drags the correlation of every band above 500 Hz toward zero at once,
+    /// while a wide reverb or a stereo synth lowers one band. So the test is
+    /// the MEAN of the midrange, upper-mid and air correlations: under 0.15
+    /// it fires on 8% of released tracks (209 lossless originals) and on 94%
+    /// of a 0.5 ms comb; it reaches moderate under 0.05 (4% of releases).
+    /// The old per-band test (any band under 0 / -0.2) alarmed on 12% and
+    /// caught 67%. The low end is left to sub_bass_too_wide, which this
+    /// finding used to repeat (low_end_stereo_pct over 30%).
+    static constexpr float kHighBandCorrelationFloor = 0.15f;
+    static constexpr float kBassCorrelationFloor = 0.10f;
+    static constexpr float kSeverityAtFloor = 20.0f;
+    static constexpr float kSeverityPerUnit = 200.0f; // 0.10 below the floor = moderate (40)
+
+    static float highBandMean(const AnalysisResult::MonoCompatData& mc) noexcept
+    {
+        float sum = 0.0f;
+        int n = 0;
+        for (const char* band : {"midrange", "upper_mid", "air"}) {
+            const auto it = mc.per_band_correlation.find(band);
+            if (it == mc.per_band_correlation.end()) continue;
+            sum += it->second;
+            ++n;
+        }
+        return n >= 2 ? sum / static_cast<float>(n) : 1.0f;
+    }
+
     std::vector<Recommendation> recommend(const AnalysisResult& result, const GenreEntry& /*genre*/,
                                           const CreativeTarget& /*target*/) const
     {
@@ -20,25 +47,18 @@ class MonoCompatRecommender {
         if (!result.mono_compat.has_value()) return out;
         const auto& mc = *result.mono_compat;
 
-        bool low_end_wide = mc.low_end_stereo_pct > 30.0f;
-        bool band_fail = false;
+        const float hi = highBandMean(mc);
         std::string worst_band;
         float worst_corr = 1.0f;
-
-        for (const auto& kv : mc.per_band_correlation) {
-            float threshold = 0.4f;
-            if (kv.first == "midrange" || kv.first == "upper_mid") {
-                threshold = 0.0f;
-            } else if (kv.first == "air") {
-                threshold = -0.2f;
-            }
-
-            if (kv.second < threshold && kv.second < worst_corr) {
-                band_fail = true;
-                worst_band = kv.first;
-                worst_corr = kv.second;
+        for (const char* band : {"midrange", "upper_mid", "air"}) {
+            const auto it = mc.per_band_correlation.find(band);
+            if (it != mc.per_band_correlation.end() && it->second < worst_corr) {
+                worst_corr = it->second;
+                worst_band = band;
             }
         }
+        const auto bassIt = mc.per_band_correlation.find("bass");
+        const float bass = bassIt != mc.per_band_correlation.end() ? bassIt->second : 1.0f;
 
         auto makeRec = [&](const std::string& subCode, float sev, const std::string& what, const std::string& action) {
             Recommendation r;
@@ -53,38 +73,43 @@ class MonoCompatRecommender {
             r.chain_position = 6;
             r.is_taste_decision = false;
             r.what = what;
-            r.why_helps = "Mono-compatible low end ensures the mix sounds full on phones, "
-                          "club PA systems, and any device playing in mono.";
+            r.why_helps = "A mono-compatible mix keeps its body and clarity on phones, smart speakers, "
+                          "club PA systems and any device that plays in mono.";
             r.suggested_action = action;
-            r.engineer_note = "Mono compat is critical for streaming on phones and for club PA. "
-                              "Most engineers mono-ize below 100 Hz as standard practice.";
-            r.confidence_reason = "Per-band correlation computed via bandpass filtering + pearson correlation.";
-            r.trade_off = "Mono-izing the low end may slightly reduce perceived stereo width of bass elements.";
-            r.how_to_verify = "Sum the mix to mono and check that kick, bass, and sub are still audible "
-                              "and punchy. A significant volume drop on these elements indicates mono cancellation.";
+            r.engineer_note = "Mono compatibility matters for phones, smart speakers and club PA. "
+                              "Low correlation across every band at once usually means a timing or polarity "
+                              "problem between the channels rather than deliberate width.";
+            r.confidence_reason = "Per-band left/right correlation (band-pass filter + Pearson), "
+                                  "calibrated on 209 released tracks and injected comb filtering.";
+            r.trade_off = "Narrowing a widened part trades a little stereo width for a solid mono fold-down.";
+            r.how_to_verify = "Sum the mix to mono: the vocal, snare and lead parts should keep their level "
+                              "and tone. A hollow, phasey or quieter mono sum indicates cancellation.";
             r.alternative_strategies = {
-                "Use the Brauer Motion or Infected Mushroom Stereoizer only on mid/high frequencies.",
-                "Use an MS encoder, process only the side channel, and keep bass in mid.",
+                "Re-align a delayed or polarity-flipped stereo pair (a sample-accurate delay or a polarity switch).",
+                "Replace a Haas-style widener with mid/side width that sums cleanly to mono.",
             };
             return r;
         };
 
-        if (low_end_wide) {
-            float low_sev = std::clamp((mc.low_end_stereo_pct - 30.0f) * 2.0f, 30.0f, 100.0f);
-            std::string what = "Low-end stereo content is " + std::to_string(int(mc.low_end_stereo_pct)) +
-                               "% uncorrelated - bass energy may collapse or cancel in mono.";
-            std::string action = "Use a mid-side EQ or bass mono plugin to mono-ize content below 100-120 Hz.";
-            out.push_back(makeRec("low_end", low_sev, what, action));
+        if (hi < kHighBandCorrelationFloor) {
+            const float sev =
+                std::clamp(kSeverityAtFloor + (kHighBandCorrelationFloor - hi) * kSeverityPerUnit, kSeverityAtFloor, 90.0f);
+            std::string what = "Left and right are barely correlated above 500 Hz (mean correlation " +
+                               std::to_string(hi).substr(0, 4) + ", lowest in the " + worst_band +
+                               " band) - the mids and highs may thin out or comb-filter in mono.";
+            std::string action = "Check for a delayed or phase-inverted channel, a wide chorus or a Haas-style "
+                                 "widener on a main part; fold the mix to mono and listen for hollow, phasey mids.";
+            out.push_back(makeRec("band_correlation", sev, what, action));
         }
 
-        if (band_fail) {
-            float band_sev = std::clamp((0.4f - worst_corr) * 200.0f, 30.0f, 100.0f);
-            std::string what = "Stereo correlation in the " + worst_band + " band is " +
-                               std::to_string(worst_corr).substr(0, 4) +
-                               " - may cause phase cancellation in mono playback.";
-            std::string action = "Check stereo-imaging on the " + worst_band +
-                                 " bus. Reduce or remove stereo processing below the problem band.";
-            out.push_back(makeRec("band_correlation", band_sev, what, action));
+        if (bass < kBassCorrelationFloor) {
+            const float sev =
+                std::clamp(kSeverityAtFloor + (kBassCorrelationFloor - bass) * kSeverityPerUnit, kSeverityAtFloor, 90.0f);
+            std::string what = "Stereo correlation in the bass band is " + std::to_string(bass).substr(0, 4) +
+                               " - bass notes may cancel in mono playback.";
+            std::string action = "Check stereo-imaging on the bass bus. Reduce or remove stereo processing below "
+                                 "the problem band.";
+            out.push_back(makeRec("bass", sev, what, action));
         }
 
         return out;

@@ -354,8 +354,19 @@ TEST_CASE("MemorabilityRecommender", "[memorability]")
     {
         auto result = makeResult();
         result.python_data.bpm_detected = 120.0f;
-        result.python_data.memorability.score = 0.60f;              // > 0.50 threshold at t=50
-        result.python_data.memorability.earworm_likelihood = 0.50f; // > 0.40 threshold at t=50
+        result.python_data.hooks.hook_count = 2;
+        result.python_data.memorability.score = 0.75f;              // > 0.65 threshold at t=50
+        result.python_data.memorability.earworm_likelihood = 0.60f; // > 0.50 threshold at t=50
+        CHECK(rec.recommend(result, genre, CreativeTarget{}).empty());
+    }
+
+    SECTION("TUNE-8: silent without a detected hook (no_hooks_detected speaks)")
+    {
+        auto result = makeResult();
+        result.python_data.bpm_detected = 120.0f;
+        result.python_data.hooks.hook_count = 0;
+        result.python_data.memorability.score = 0.25f;
+        result.python_data.memorability.earworm_likelihood = 0.0f;
         CHECK(rec.recommend(result, genre, CreativeTarget{}).empty());
     }
 
@@ -363,8 +374,9 @@ TEST_CASE("MemorabilityRecommender", "[memorability]")
     {
         auto result = makeResult();
         result.python_data.bpm_detected = 120.0f;
-        result.python_data.memorability.score = 0.30f;              // < 0.50
-        result.python_data.memorability.earworm_likelihood = 0.50f; // ok
+        result.python_data.hooks.hook_count = 2;
+        result.python_data.memorability.score = 0.30f;              // < 0.65
+        result.python_data.memorability.earworm_likelihood = 0.60f; // ok
         auto findings = rec.recommend(result, genre, CreativeTarget{});
         REQUIRE(findings.size() == 1);
         CHECK(findings[0].id.rfind("memorability_low_", 0) == 0);
@@ -375,8 +387,9 @@ TEST_CASE("MemorabilityRecommender", "[memorability]")
     {
         auto result = makeResult();
         result.python_data.bpm_detected = 120.0f;
-        result.python_data.memorability.score = 0.60f;              // ok
-        result.python_data.memorability.earworm_likelihood = 0.20f; // < 0.40
+        result.python_data.hooks.hook_count = 2;
+        result.python_data.memorability.score = 0.75f;              // ok
+        result.python_data.memorability.earworm_likelihood = 0.20f; // < 0.50
         auto findings = rec.recommend(result, genre, CreativeTarget{});
         REQUIRE(findings.size() == 1);
         CHECK(findings[0].id.rfind("earworm_likelihood_low_", 0) == 0);
@@ -439,17 +452,17 @@ TEST_CASE("HeavinessRecommender", "[heaviness]")
         result.python_data.heaviness.extremity = 0.50f;  // matches threshold at t=50
         result.python_data.heaviness.weight = 0.65f;     // > 0.60 threshold (won't fire since heaviness_target=50)
         result.python_data.heaviness.distortion = 0.40f; // matches norm
-        // heaviness_extremity_mismatch: |0.50 - 0.50| = 0.0 < 0.20 → ok
+        // heaviness_extremity_mismatch: on the threshold → ok
         // heaviness_weight_low: weight > threshold but also heaviness_target=50, not > 50 → no fire
-        // heaviness_distortion_mismatch: |0.40 - 0.40| = 0.0 < 0.25 → ok
+        // heaviness_distortion_mismatch: on the norm → ok
         CHECK(rec.recommend(result, genre, CreativeTarget{}).empty());
     }
 
-    SECTION("heaviness_extremity_mismatch fires when |extremity - threshold| > 0.20")
+    SECTION("heaviness_extremity_mismatch fires outside the odds-10 band (0.09..0.91 at 0.50)")
     {
         auto result = makeResult();
         result.python_data.bpm_detected = 120.0f;
-        result.python_data.heaviness.extremity = 0.85f; // |0.85 - 0.50| = 0.35 > 0.20
+        result.python_data.heaviness.extremity = 0.95f; // above the 0.91 ceiling
         result.python_data.heaviness.weight = 0.65f;
         result.python_data.heaviness.distortion = 0.40f;
         auto findings = rec.recommend(result, genre, CreativeTarget{});
@@ -474,13 +487,13 @@ TEST_CASE("HeavinessRecommender", "[heaviness]")
         CHECK(found_weight);
     }
 
-    SECTION("heaviness_distortion_mismatch fires when |distortion - norm| > 0.25")
+    SECTION("heaviness_distortion_mismatch fires outside the odds-8 band (ceiling 0.84 at 0.40)")
     {
         auto result = makeResult();
         result.python_data.bpm_detected = 120.0f;
         result.python_data.heaviness.extremity = 0.50f;
         result.python_data.heaviness.weight = 0.65f;
-        result.python_data.heaviness.distortion = 0.80f; // |0.80 - 0.40| = 0.40 > 0.25
+        result.python_data.heaviness.distortion = 0.90f; // above the 0.84 ceiling
         auto findings = rec.recommend(result, genre, CreativeTarget{});
         REQUIRE(findings.size() == 1);
         CHECK(findings[0].id.rfind("heaviness_distortion_mismatch_", 0) == 0);

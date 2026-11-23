@@ -22,6 +22,10 @@ class MemorabilityRecommender {
 
         std::vector<Recommendation> out;
         const auto& mem = result.python_data.memorability;
+        // TUNE-8: without a detected hook, earworm likelihood is 0 and
+        // memorability only structure and tempo, so both fired on every such
+        // track (a third of released ones) and repeated no_hooks_detected.
+        if (result.python_data.hooks.hook_count == 0) return out;
 
         using namespace khensu::recommendations::common;
         auto make = [&](const char* code, float sevVal, bool isTargetRel, ProcessingStage stg, int pos,

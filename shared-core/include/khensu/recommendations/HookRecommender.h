@@ -15,6 +15,13 @@ namespace khensu {
 
 class HookRecommender {
   public:
+    /// TUNE-8: the hook detector finds none on a third of released tracks, so
+    /// "no hooks" alone is mostly the detector. The note fires only when the
+    /// song also lacks a recurring section structure or sits far from a
+    /// common tempo: memorability (0.3 structure + 0.2 tempo without a hook)
+    /// below 0.25 - 9% of 203 released tracks.
+    static constexpr float kNoHookMemorabilityCeiling = 0.25f;
+
     std::vector<Recommendation> recommend(const AnalysisResult& result, const GenreEntry& genre,
                                           const CreativeTarget& target) const
     {
@@ -38,6 +45,7 @@ class HookRecommender {
         // Every finding carries its own text: the screens show `what` and
         // `suggested_action`, and a blank one drew an empty card (2026-11-18).
         if (hooks.hook_count == 0) {
+            if (result.python_data.memorability.score >= kNoHookMemorabilityCeiling) return out;
             auto r = make("no_hooks_detected", 85.0f, ProcessingStage::Arrangement, 1, true);
             r.what = "No hook segments detected in the audio.";
             r.why_helps = "Hooks are the main reason listeners replay a track. Tracks without an identifiable "

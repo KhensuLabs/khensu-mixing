@@ -221,7 +221,7 @@ def report() -> dict:
       normalisation from ``dynamics``);
     * fix - of the defects it caught, the share the app's own Fix cleared
       (``fixcheck``), or advice_only when it has nothing to render."""
-    dyn = [json.loads(x) for f in _dyn_raw_files() for x in f.read_text(encoding="utf-8").splitlines()]
+    dyn = _dyn_rows()
     dyn_clean = [r for r in dyn if not r["variants"].get("clean", {}).get("error") and "clean" in r["variants"]]
     ev = [json.loads(x) for x in EVIDENCE_RAW.read_text(encoding="utf-8").splitlines()] if EVIDENCE_RAW.exists() else []
     ev_clean = [r for r in ev if "clean" in r["variants"]]
@@ -335,6 +335,9 @@ FULL_DEFECTS = {
     "comb_0.5ms": ("mono_compat_warning", "phase_issue"),  # right channel 0.5 ms late
     "sub_wide": ("sub_bass_too_wide",),          # the sub (< 120 Hz) at full width
     "side_bright": ("ms_brightness_imbalance",),  # the side's top (> 6 kHz) +10 dB
+    # TUNE-1: tonal faults the playback environments punish (phone, car, club)
+    "bass_heavy": ("translation_risk_high",),     # +10 dB low shelf at 120 Hz
+    "thin": ("translation_risk_high",),           # -12 dB low shelf at 150 Hz
 }
 #: Defects on every n-th track (each variant is a full deep pass).
 FULL_DEFECT_EVERY = 3
@@ -342,6 +345,18 @@ FULL_DEFECT_EVERY = 3
 
 def _full_raw_files() -> list[Path]:
     return sorted(FULL_RAW.parent.glob(FULL_RAW.stem + "*.jsonl"))
+
+
+def _full_rows() -> list[dict]:
+    """One row per track: the latest whose clean pass succeeded (a retried
+    track appears twice in the raw files)."""
+    rows: dict[str, dict] = {}
+    for f in _full_raw_files():
+        for x in f.read_text(encoding="utf-8").splitlines():
+            r = json.loads(x)
+            if "clean" in r["variants"] and not r["variants"]["clean"].get("error"):
+                rows[r["key"]] = r
+    return list(rows.values())
 
 
 def _peaking(x, sr: int, freq: float, gain_db: float, q: float):
@@ -364,6 +379,11 @@ def _full_variant(x, sr: int, name: str):
         return _peaking(x, sr, 2500.0, 12.0, 8.0)
     if name == "harsh_3500":
         return _peaking(x, sr, 3500.0, 8.0, 1.0)
+    if name == "bass_heavy":
+        y = _shelf(x, sr, False, 120.0, 10.0)
+        return (y / max(1.0, float(np.max(np.abs(y))))).astype("float32")
+    if name == "thin":
+        return _shelf(x, sr, False, 150.0, -12.0)
     if x.shape[1] < 2:
         x = np.repeat(x, 2, axis=1)
     if name == "comb_0.5ms":
@@ -438,7 +458,8 @@ def full() -> None:
         for t in tracks:
             if t.get("file") and (LOSSLESS / g / t["file"]).is_file():
                 items.append((g, LOSSLESS / g / t["file"], len(items) % FULL_DEFECT_EVERY == 0))
-    done = {json.loads(x)["key"] for f in _full_raw_files() for x in f.read_text(encoding="utf-8").splitlines()}
+    # A track whose clean pass failed (the service died mid-run) is tried again.
+    done = {r["key"] for r in _full_rows()}
     todo = [it for it in items if f"{it[0]}/{it[1].name}" not in done]
     # KHENSU_SHARD=i/n: n processes side by side (the service has the DSP
     # workers), each on every n-th track and appending to its own file.
@@ -487,10 +508,7 @@ def _add_full(out: dict) -> None:
     corpus run cannot produce (it needs the deep pass), its rate on the
     released tracks graded through the service, and its detection of the
     FULL_DEFECTS defects. Each such entry names its own track count."""
-    rows = [json.loads(x) for f in _full_raw_files() for x in f.read_text(encoding="utf-8").splitlines()]
-    if not rows:
-        return
-    clean = [r for r in rows if "clean" in r["variants"] and not r["variants"]["clean"].get("error")]
+    clean = _full_rows()
     if not clean:
         return
     known = set(out["findings"])
@@ -541,9 +559,17 @@ LOSSLESS = ROOT / "corpus_data" / "genre_corpus_lossless"
 #: Defects for the artifact findings, at a size an engineer would call a
 #: fault: steady hiss 5 dB above the noise threshold, a hard clip of 6 dB,
 #: and a peak-normalised master (sample peak at full scale).
-DYN_DEFECTS = ("hiss_-45", "clip_+6", "peak_norm_0", "dc_0.005")
+#: TUNE-1: and for the dynamics, loudness and width findings - a master
+#: pushed 8 dB into a limiter, one run through a 3:1 downward expander, one
+#: 10 dB quieter, and the side channel doubled or cut to a fifth.
+DYN_DEFECTS = ("hiss_-45", "clip_+6", "peak_norm_0", "dc_0.005",
+               "limit_+8", "expand_3", "gain_-10", "side_x2", "side_x0.2")
 DYN_FINDINGS = {"hiss_-45": ("noise_floor_high",), "clip_+6": ("clipping_detected",),
-                "peak_norm_0": ("true_peak_over",), "dc_0.005": ("dc_offset",)}
+                "peak_norm_0": ("true_peak_over",), "dc_0.005": ("dc_offset",),
+                "limit_+8": ("over_compressed", "lra_too_compressed", "lufs_too_loud"),
+                "expand_3": ("crest_above_genre_target", "under_compressed", "lra_too_dynamic"),
+                "gain_-10": ("lufs_too_quiet",),
+                "side_x2": ("stereo_too_wide",), "side_x0.2": ("stereo_too_narrow",)}
 DYN_DEFECT_TRACKS_PER_GENRE = 1
 
 
@@ -562,11 +588,82 @@ def _dyn_variant(x, name: str, seed: int):
     if name == "peak_norm_0":
         peak = float(np.max(np.abs(x))) or 1.0
         return (x * (1.0 / peak)).astype("float32")
+    if name == "limit_+8":
+        return _limit(x * (10.0 ** (8.0 / 20.0)), sr=_DYN_SR[0])
+    if name == "expand_3":
+        return _expand(x, sr=_DYN_SR[0], ratio=3.0)
+    if name == "gain_-10":
+        return (x * (10.0 ** (-10.0 / 20.0))).astype("float32")
+    if name in ("side_x2", "side_x0.2"):
+        if x.shape[1] < 2:
+            return x
+        k = 2.0 if name == "side_x2" else 0.2
+        mid = (x[:, 0] + x[:, 1]) * 0.5
+        side = (x[:, 0] - x[:, 1]) * 0.5 * k
+        y = np.stack([mid + side, mid - side], axis=1)
+        peak = float(np.max(np.abs(y))) or 1.0
+        return (y / max(1.0, peak)).astype("float32")
     raise ValueError(name)
 
 
-def _dyn_raw_files() -> list[Path]:
-    return sorted(DYN_RAW.parent.glob(DYN_RAW.stem + "*.jsonl"))
+#: The sample rate of the track _dyn_variant is working on (set by the caller).
+_DYN_SR = [44100]
+
+
+def _limit(x, sr: int, ceiling_db: float = -1.0, lookahead_ms: float = 5.0, release_ms: float = 80.0):
+    """A brick-wall peak limiter: the gain each sample needs, held over a
+    lookahead window, released with a one-pole filter, never above what the
+    peak needs; a final clip at the ceiling catches what the smoothing let by."""
+    import numpy as np
+    from scipy.ndimage import minimum_filter1d
+    from scipy.signal import lfilter
+    ceiling = 10.0 ** (ceiling_db / 20.0)
+    peak = np.max(np.abs(x), axis=1).astype("float64")
+    need = np.minimum(1.0, ceiling / np.maximum(peak, 1e-9))
+    win = max(1, int(sr * lookahead_ms / 1000.0))
+    held = minimum_filter1d(need, size=2 * win + 1, mode="nearest")
+    a = np.exp(-1.0 / (sr * release_ms / 1000.0))
+    smooth = lfilter([1.0 - a], [1.0, -a], held, zi=[held[0] * a])[0]
+    g = np.minimum(smooth, held)
+    return np.clip(x * g[:, None], -ceiling, ceiling).astype("float32")
+
+
+def _expand(x, sr: int, ratio: float = 2.0):
+    """A 3:1 downward expander below the track's own 90th-percentile level
+    (50 ms RMS): the quiet passages drop, the loud ones stay."""
+    import numpy as np
+    from scipy.signal import lfilter
+    p = np.mean(x.astype("float64") ** 2, axis=1)
+    a = np.exp(-1.0 / (sr * 0.05))
+    env = lfilter([1.0 - a], [1.0, -a], p)
+    env_db = 10.0 * np.log10(np.maximum(env, 1e-12))
+    thr = float(np.percentile(env_db, 90))
+    gain_db = np.where(env_db < thr, (env_db - thr) * (ratio - 1.0), 0.0)
+    gain_db = np.maximum(gain_db, -40.0)
+    return (x * (10.0 ** (gain_db / 20.0))[:, None]).astype("float32")
+
+
+DYN_RAW_EXTRA = ROOT / "bench-results" / "dynamics_raw_extra.jsonl"
+
+
+def _dyn_raw_files(include_extra: bool = False) -> list[Path]:
+    files = sorted(p for p in DYN_RAW.parent.glob(DYN_RAW.stem + "*.jsonl") if "_extra" not in p.name)
+    if include_extra:
+        files += sorted(DYN_RAW_EXTRA.parent.glob(DYN_RAW_EXTRA.stem + "*.jsonl"))
+    return files
+
+
+def _dyn_rows() -> list[dict]:
+    """The dynamics rows, with any extra variants merged in by key."""
+    rows: dict[str, dict] = {}
+    for f in _dyn_raw_files(include_extra=True):
+        for x in f.read_text(encoding="utf-8").splitlines():
+            r = json.loads(x)
+            if r["key"] in rows:
+                rows[r["key"]]["variants"].update(r["variants"])
+            else:
+                rows[r["key"]] = r
+    return [r for r in rows.values() if "clean" in r["variants"]]
 
 
 def dynamics() -> None:
@@ -585,14 +682,28 @@ def dynamics() -> None:
             for t in tracks:
                 if t.get("file"):
                     items.append((g, LOSSLESS / g / t["file"], "lossless", True))
-    done = {json.loads(x)["key"] for f in _dyn_raw_files() for x in f.read_text(encoding="utf-8").splitlines()}
-    todo = [it for it in items if it[1].is_file() and f"{it[2]}:{it[0]}/{it[1].name}" not in done]
+    # KHENSU_DYN_EXTRA=1: only the defect variants a measured track still
+    # lacks (a defect added later), into dynamics_raw_extra*.jsonl.
+    extra = os.environ.get("KHENSU_DYN_EXTRA") == "1"
+    done_variants: dict[str, set[str]] = {}
+    for f in _dyn_raw_files(include_extra=True):
+        for x in f.read_text(encoding="utf-8").splitlines():
+            row = json.loads(x)
+            done_variants.setdefault(row["key"], set()).update(row["variants"])
+    done = {k for k, v in done_variants.items() if "clean" in v}
+    if extra:
+        todo = [it for it in items if it[1].is_file() and it[3]
+                and f"{it[2]}:{it[0]}/{it[1].name}" in done
+                and not set(DYN_DEFECTS) <= done_variants[f"{it[2]}:{it[0]}/{it[1].name}"]]
+    else:
+        todo = [it for it in items if it[1].is_file() and f"{it[2]}:{it[0]}/{it[1].name}" not in done]
     # KHENSU_SHARD=i/n: run n processes side by side, each on every n-th track
     # and appending to its own file (the analyzer is single-threaded).
     shard, shards = (int(x) for x in os.environ.get("KHENSU_SHARD", "0/1").split("/"))
     todo = todo[shard::shards]
-    raw = DYN_RAW.with_suffix(f".{shard}.jsonl") if shards > 1 else DYN_RAW
-    print(f"{len(done)} done, {len(todo)} to go", flush=True)
+    base_raw = DYN_RAW_EXTRA if extra else DYN_RAW
+    raw = base_raw.with_suffix(f".{shard}.jsonl") if shards > 1 else base_raw
+    print(f"{len(done)} done, {len(todo)} to go{' (extra variants)' if extra else ''}", flush=True)
     step = 8
     for start in range(0, len(todo), step):
         batch = todo[start:start + step]
@@ -604,12 +715,16 @@ def dynamics() -> None:
                 dst = Path(tmp) / f"{i:03d}.wav"
                 if not _decode_to_wav(path, dst, DYN_EXCERPT_SEC):
                     continue
-                lines[str(dst)] = (key, "clean")
+                if not extra:
+                    lines[str(dst)] = (key, "clean")
                 info = sf.info(str(dst))
                 seconds[key] = info.frames / info.samplerate
                 if with_defects:
                     x, sr = sf.read(str(dst), dtype="float32", always_2d=True)
+                    _DYN_SR[0] = sr
                     for j, name in enumerate(DYN_DEFECTS):
+                        if extra and name in done_variants.get(key, ()):
+                            continue
                         vdst = Path(tmp) / f"{i:03d}_{name}.wav"
                         sf.write(str(vdst), _dyn_variant(x, name, i * 7 + j), sr, subtype="FLOAT")
                         lines[str(vdst)] = (key, name)
@@ -776,6 +891,41 @@ def apply_dynamics() -> None:
     print(f"lra_range widened for {changed} genres")
 
 
+def apply_crest() -> None:
+    """TUNE-4: each genre's crest-factor ceiling from its released tracks
+    (``dynamics``): ``crest_factor_ceiling_db`` = the 90th percentile of
+    the whole-track crest factor. The engine fires crest_above_genre_target
+    above the higher of this and target + 3 dB (DynamicsRecommender), so the
+    hand-set target can only be loosened where released music disagrees.
+    The hand-set targets alone fired on 22% of released tracks and alarmed
+    on 10%."""
+    rows = _dyn_rows()
+    by: dict[str, list[float]] = {}
+    for r in rows:
+        c = r["variants"].get("clean") or {}
+        if not c.get("error") and c.get("lufs", -99.0) > -60.0 and "crest_factor_db" in c:
+            by.setdefault(r["genre"], []).append(float(c["crest_factor_db"]))
+    st = json.loads(STATS.read_text(encoding="utf-8"))
+    doc = json.loads(TARGETS.read_text(encoding="utf-8"))
+    changed = 0
+    for e in doc["genres"]:
+        xs = by.get(e["id"], [])
+        if len(xs) < MIN_TRACKS:
+            continue
+        p10, p90 = _pct(xs, 0.1), _pct(xs, 0.9)
+        st["genres"].setdefault(e["id"], {})["crest_whole_track"] = {
+            "n": len(xs), "p10": round(p10, 2), "median": round(statistics.median(xs), 2), "p90": round(p90, 2)}
+        if e.get("crest_factor_ceiling_db") != round(p90, 1):
+            e["crest_factor_ceiling_db"] = round(p90, 1)
+            changed += 1
+        m = e.setdefault("measured", {"tracks": len(xs), "fields": [], "source": "genre_corpus_stats.json"})
+        if "crest_factor_ceiling_db" not in m["fields"]:
+            m["fields"].append("crest_factor_ceiling_db")
+    STATS.write_text(json.dumps(st, indent=1) + chr(10), encoding="utf-8")
+    TARGETS.write_text(json.dumps(doc, indent=2, ensure_ascii=False), encoding="utf-8", newline=chr(10))
+    print(f"crest_factor_ceiling_db set for {changed} genres")
+
+
 def _pct(xs: list[float], q: float) -> float:
     xs = sorted(xs)
     if len(xs) == 1:
@@ -850,4 +1000,4 @@ def apply() -> None:
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "measure"
     {"measure": measure, "stats": stats, "apply": apply, "evidence": evidence, "report": report,
-     "dynamics": dynamics, "fixcheck": fixcheck, "apply_dynamics": apply_dynamics, "full": full}[cmd]()
+     "dynamics": dynamics, "fixcheck": fixcheck, "apply_dynamics": apply_dynamics, "apply_crest": apply_crest, "full": full}[cmd]()

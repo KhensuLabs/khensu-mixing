@@ -104,7 +104,7 @@ endfunction()
 
 juce_add_plugin(KhensuCopilot
     PRODUCT_NAME        "Khensu Copilot"
-    VERSION             "1.0.1"
+    VERSION             "1.0.2"
     BUNDLE_ID           "com.khensu.mixing.copilot"
     COMPANY_NAME        "Khensu"
     PLUGIN_MANUFACTURER_CODE KhMx
@@ -134,7 +134,7 @@ endif()
 if(KHENSU_ARA_AVAILABLE)
     juce_add_plugin(KhensuCopilotARA
         PRODUCT_NAME        "Khensu Copilot ARA"
-        VERSION             "1.0.1"
+        VERSION             "1.0.2"
         BUNDLE_ID           "com.khensu.mixing.copilot.ara"
         COMPANY_NAME        "Khensu"
         PLUGIN_MANUFACTURER_CODE KhMx

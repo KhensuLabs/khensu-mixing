@@ -13,6 +13,15 @@ namespace khensu {
 
 class TranslationRiskRecommender {
   public:
+    /// TUNE-8: the phone score runs high on released masters (median 0.43,
+    /// 85th percentile 0.62) and the others low (car / club median ~0.01), so
+    /// one 0.60 edge was the phone alone: 17% of 203 released tracks, 31% of a
+    /// +10 dB low shelf, 2% of a -12 dB low cut. Phone 0.65 and 0.45 elsewhere:
+    /// 18%, 24% and 17%. The score is weakly sensitive either way.
+    static constexpr float kPhoneRiskEdge = 0.65f;
+    static constexpr float kOtherRiskEdge = 0.45f;
+    static float riskEdge(const std::string& env) { return env == "phone" ? kPhoneRiskEdge : kOtherRiskEdge; }
+
     std::vector<Recommendation> recommend(const AnalysisResult& result, const GenreEntry& /*genre*/,
                                           const CreativeTarget& /*target*/) const
     {
@@ -32,9 +41,10 @@ class TranslationRiskRecommender {
             auto it = tr.per_environment.find(envKey);
             if (it == tr.per_environment.end()) continue;
             const float risk = it->second;
-            if (risk <= 0.60f) continue;
+            const float edge = riskEdge(envKey);
+            if (risk <= edge) continue;
 
-            const float sev = std::clamp((risk - 0.60f) * 250.0f, 20.0f, 100.0f);
+            const float sev = std::clamp((risk - edge) * 250.0f, 20.0f, 100.0f);
 
             Recommendation r;
             r.id = std::string("translation_risk_high_") + envKey + "_" + result.file_id;

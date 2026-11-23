@@ -295,24 +295,32 @@ AnalysisResult richResult()
 
     r.mono_compat = AnalysisResult::MonoCompatData{};
     r.mono_compat->low_end_stereo_pct = 50.0f;
-    r.mono_compat->per_band_correlation["sub"] = 0.2f;
+    r.mono_compat->per_band_correlation["midrange"] = 0.0f; // comb-filtered mids and highs (TUNE-3)
+    r.mono_compat->per_band_correlation["upper_mid"] = 0.0f;
+    r.mono_compat->per_band_correlation["air"] = 0.0f;
 
     r.translation_risk = AnalysisResult::TranslationRiskData{};
     r.translation_risk->per_environment["earbuds"] = 0.8f;
 
     r.resonance = AnalysisResult::ResonanceData{};
     r.resonance->hotspots.push_back({800.0f, 0.0f, 14.0f});
-    r.resonance->hotspots.push_back({2000.0f, 0.0f, 12.0f}); // also the Spectral midrange-masking note
+    r.resonance->hotspots.push_back({2000.0f, 0.0f, 12.0f}); // in the vocal presence range
 
     r.mid_side_imbalance = AnalysisResult::MidSideImbalanceData{};
 
     r.drums = AnalysisResult::DrumData{};
     r.drums->kick_bass_clash = true;
-    r.drums->kick_bass_proximity_hz = 4.0f;
+    r.drums->kick_bass_proximity_hz = 3.0f; // inside the 4 Hz collision edge (TUNE-8)
 
     r.section_analysis = SectionAnalysis{};
     r.section_analysis->loudness_arc.section_count = 4;
     r.section_analysis->loudness_arc.chorus_verse_delta_lu = 0.5f; // a flat arc
+    for (const float lufs : {-10.0f, -10.4f, -10.2f}) { // within 1 LU: section_arc_too_flat
+        SectionData s;
+        s.label = "S";
+        s.lufs_integrated = lufs;
+        r.section_analysis->sections.push_back(s);
+    }
 
     r.masking = MaskingSummary{};
     return r;

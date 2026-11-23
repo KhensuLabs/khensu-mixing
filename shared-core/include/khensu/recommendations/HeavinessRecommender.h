@@ -38,7 +38,7 @@ class HeavinessRecommender {
         };
 
         // heaviness_extremity_mismatch: outside an odds band around the threshold
-        // (+/-0.20 at 0.50, reachable at every target - FIX-9).
+        // (reachable at every target - FIX-9; width from TUNE-8).
         const float ext_thresh = TargetInterpolator::heavinessExtremityThreshold(genre, target);
         if (h.extremity > unitOddsCeiling(ext_thresh, kHeavinessExtremityOdds) ||
             h.extremity < unitOddsFloor(ext_thresh, kHeavinessExtremityOdds)) {
@@ -87,7 +87,7 @@ class HeavinessRecommender {
         }
 
         // heaviness_distortion_mismatch: outside an odds band around the genre norm
-        // (+/-0.25 at 0.50; reachable for a near-clean or near-saturated norm - FIX-9).
+        // (reachable for a near-clean or near-saturated norm - FIX-9; width from TUNE-8).
         if (h.distortion > unitOddsCeiling(genre.heaviness_distortion_norm, kHeavinessDistortionOdds) ||
             h.distortion < unitOddsFloor(genre.heaviness_distortion_norm, kHeavinessDistortionOdds)) {
             const bool too_clean = h.distortion < genre.heaviness_distortion_norm;
@@ -111,9 +111,10 @@ class HeavinessRecommender {
                                 f2(genre.heaviness_distortion_norm) + ".";
             r.engineer_note = "This is a taste decision - apply in context of the full mix at "
                               "listening volume rather than solo.";
-            r.how_to_verify = "Re-run deep analysis - distortion score should be within +/-0.25 "
-                              "of " +
-                              f2(genre.heaviness_distortion_norm) + ".";
+            r.how_to_verify = "Re-run deep analysis - distortion score should be between " +
+                              f2(unitOddsFloor(genre.heaviness_distortion_norm, kHeavinessDistortionOdds)) +
+                              " and " +
+                              f2(unitOddsCeiling(genre.heaviness_distortion_norm, kHeavinessDistortionOdds)) + ".";
             out.push_back(std::move(r));
         }
 

@@ -428,6 +428,18 @@ $Steps = [ordered]@{
                      "local-services\khensu_services\server.py", "unins000.exe") |
             Where-Object { -not (Test-Path -LiteralPath (Join-Path $dir $_)) }
         if ($missing) { throw "installed tree lacks: $($missing -join ', ')" }
+        # The installer takes its version from the app's version resource,
+        # which JUCE writes once and does not rewrite after a version bump: a
+        # 1.0.2 build once carried 1.0.1 (and the plugin 0.1.0). Delete the
+        # build tree's *_resources.rc files and rebuild when this fails.
+        $want = [regex]::Match((Get-Content -Raw -LiteralPath (Join-Path $Root "shared-core\include\khensu\common\Version.h")),
+            'KHENSU_VERSION_STRING\s+"([^"]+)"').Groups[1].Value
+        $exeVersion = (Get-Item -LiteralPath (Join-Path $dir "Khensu Mixing.exe")).VersionInfo.ProductVersion
+        $vst3Dll = Get-ChildItem -LiteralPath (Join-Path $BuildDir $Vst3Rel) -Recurse -Filter "*.vst3" -File | Select-Object -First 1
+        $pluginVersion = if ($vst3Dll) { $vst3Dll.VersionInfo.FileVersion } else { "(not built)" }
+        if ($exeVersion -ne $want -or $pluginVersion -ne $want) {
+            throw "version resources: app $exeVersion, plugin $pluginVersion, Version.h $want"
+        }
         # The bundled Python runtime (local-services\runtime, from the hash-pinned
         # build-python-env.ps1) ships precompiled .pyc on purpose - an install
         # under Program Files can't write its own - and its packages' own test

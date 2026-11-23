@@ -49,17 +49,21 @@ class TargetInterpolator {
     }
 
     /// Memorability firing threshold.
-    /// Absolute constants: floor=0.30, norm=0.50, ceil=0.70
+    /// Absolute constants: floor=0.45, norm=0.65, ceil=0.85. TUNE-8: on 203
+    /// released tracks with a detected hook, memorability sits at 0.63-0.87
+    /// (10th-75th percentile); 0.65 flags the lowest ~9%. (Without a hook the
+    /// score is 0.21-0.29 by construction and no_hooks_detected speaks.)
     static float memorabilityThreshold(const CreativeTarget& target) noexcept
     {
-        return interpolate(target.memorability_target, 0.30f, 0.50f, 0.70f);
+        return interpolate(target.memorability_target, 0.45f, 0.65f, 0.85f);
     }
 
     /// Earworm likelihood firing threshold.
-    /// Absolute constants: floor=0.25, norm=0.40, ceil=0.60
+    /// Absolute constants: floor=0.35, norm=0.50, ceil=0.70 (TUNE-8: the
+    /// lowest ~10% of released tracks with a detected hook).
     static float earwormThreshold(const CreativeTarget& target) noexcept
     {
-        return interpolate(target.memorability_target, 0.25f, 0.40f, 0.60f);
+        return interpolate(target.memorability_target, 0.35f, 0.50f, 0.70f);
     }
 
     /// Structural-flow (arc quality) firing threshold, driven by the Intake

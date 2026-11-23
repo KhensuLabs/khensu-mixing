@@ -67,29 +67,57 @@ def _averaged_spectrum(mono: npt.NDArray, sr: int, n_fft: int = 4096) -> tuple[n
 # ---------------------------------------------------------------------------
 # Harshness detection (2.5–5.0 kHz transient energy)
 # ---------------------------------------------------------------------------
-#: FULL-3 calibration of the harshness score. The band ratio (2.5-5 kHz RMS
-#: over 500 Hz-8 kHz RMS, in dB) of released music: median -8.4 dB, 90th
-#: percentile -5.1 dB on the genre corpus's 209 lossless originals; a broad
-#: +8 dB bell at 3.5 kHz raises it by 4 dB. The old score (ratio x 2.5,
-#: clipped) read 0.95 at the MEDIAN and fired on 87% of released tracks.
-#: Now the 90th percentile maps to 0.35 - the recommender's threshold - and
-#: each HARSH_DB_PER_UNIT dB above it adds 1.0: 10% of released tracks fire,
-#: and 58% of the +8 dB bells are caught.
-HARSH_EDGE_DB = -5.1
+#: TUNE-9 harshness measure: the 2.5-5 kHz band's level per Hz against the
+#: mean of its neighbours' (1-2.5 kHz and 5-10 kHz), in dB - a bump in the
+#: presence range, not overall brightness. The old ratio (2.5-5 kHz over
+#: 500 Hz-8 kHz) also rose with any bright master: it fired on 14% of tracks
+#: given a broad +10 dB high shelf and caught 56% of +8 dB, Q 1 bells at
+#: 3.5 kHz at a 10% fire rate. The bump catches 66% at the same fire rate and
+#: fires on none of the shelved tracks (209 lossless originals,
+#: two-minute middle excerpts).
+#: The edge is the bump's 90th percentile on those releases (3.8 dB), mapped
+#: to the recommender's threshold 0.35; each HARSH_DB_PER_UNIT dB beyond it
+#: adds 1.0.
+HARSH_EDGE_DB = 3.8
 HARSH_EDGE_SCORE = 0.35
 HARSH_DB_PER_UNIT = 10.0
+HARSH_BANDS = ((1000.0, 2500.0), (2500.0, 5000.0), (5000.0, 10000.0))
 
 
-def harshness_from_ratio(rms_harsh: float, rms_mid: float) -> float:
-    """The 0-1 harshness score from the two band RMS levels (FULL-3)."""
-    ratio_db = 20.0 * np.log10(max(rms_harsh, 1e-12) / max(rms_mid, 1e-12))
-    return float(np.clip(HARSH_EDGE_SCORE + (ratio_db - HARSH_EDGE_DB) / HARSH_DB_PER_UNIT, 0.0, 1.0))
+def harshness_from_bands(ms_low: float, ms_harsh: float, ms_high: float, sr: int) -> float:
+    """The 0-1 harshness score from the mean-square levels of HARSH_BANDS
+    (TUNE-9): the presence band's level per Hz over the mean of its
+    neighbours' (geometric, in dB)."""
+    top = min(HARSH_BANDS[2][1], 0.45 * sr)
+    if top <= HARSH_BANDS[2][0] + 500.0 or min(ms_low, ms_harsh, ms_high) <= 1e-18:
+        return 0.0
+    widths = (HARSH_BANDS[0][1] - HARSH_BANDS[0][0], HARSH_BANDS[1][1] - HARSH_BANDS[1][0], top - HARSH_BANDS[2][0])
+    d_low, d_harsh, d_high = (10.0 * np.log10(ms / w) for ms, w in zip((ms_low, ms_harsh, ms_high), widths))
+    bump_db = d_harsh - 0.5 * (d_low + d_high)
+    return float(np.clip(HARSH_EDGE_SCORE + (bump_db - HARSH_EDGE_DB) / HARSH_DB_PER_UNIT, 0.0, 1.0))
+
+
+def _harsh_band_power(y: npt.NDArray, sr: int) -> list[npt.NDArray]:
+    """Per-sample power in each of HARSH_BANDS, averaged over the channels
+    (each channel filtered on its own, so wide content counts as it does on
+    two speakers: (L^2 + R^2) / 2 = M^2 + S^2, the calibration's measure)."""
+    x = y if y.ndim == 2 else y[np.newaxis, :]
+    top = min(HARSH_BANDS[2][1], 0.45 * sr)
+    edges = (HARSH_BANDS[0], HARSH_BANDS[1], (HARSH_BANDS[2][0], max(top, HARSH_BANDS[2][0] + 1.0)))
+    out = []
+    for lo, hi in edges:
+        acc = np.zeros(x.shape[-1])
+        for ch in x:
+            acc += _bandpass(ch, sr, lo, hi) ** 2
+        out.append(acc / x.shape[0])
+    return out
 
 
 def analyze_harshness(y: npt.NDArray, sr: int) -> dict[str, Any]:
     """
-    Detect 2.5–5 kHz harshness by measuring the ratio of upper-mid energy
-    (2.5–5 kHz) to overall mid energy (500 Hz–8 kHz).
+    Detect 2.5–5 kHz harshness: a bump in the presence range over its
+    neighbours (1–2.5 kHz and 5–10 kHz), so a bright master is not called
+    harsh (TUNE-9; see HARSH_EDGE_DB).
 
     Peak frequency is identified by averaging the FFT magnitude spectrum over
     the **full track** (not just the first window), so a harsh chorus that
@@ -102,12 +130,11 @@ def analyze_harshness(y: npt.NDArray, sr: int) -> dict[str, Any]:
         peak_db: float | None — dB level of dominant peak
     """
     mono = y.mean(axis=0) if y.ndim == 2 else y
-    harsh_band = _bandpass(y, sr, 2500.0, 5000.0)
-    mid_band   = _bandpass(y, sr,  500.0, 8000.0)
-
-    rms_harsh = float(np.sqrt(np.mean(harsh_band ** 2)) + 1e-12)
-    rms_mid   = float(np.sqrt(np.mean(mid_band   ** 2)) + 1e-12)
-    harshness_score = harshness_from_ratio(rms_harsh, rms_mid) if rms_mid > 1e-9 else 0.0
+    if 0.45 * sr <= HARSH_BANDS[2][0] + 500.0:
+        harshness_score = 0.0
+    else:
+        lo, harsh, hi = (float(np.mean(p)) for p in _harsh_band_power(y, sr))
+        harshness_score = harshness_from_bands(lo, harsh, hi, sr)
 
     peak_hz: float | None = None
     peak_db: float | None = None
@@ -132,29 +159,27 @@ def analyze_harshness(y: npt.NDArray, sr: int) -> dict[str, Any]:
 
 def windowed_harshness_curve(y: npt.NDArray, sr: int,
                              block_sec: float = 3.0, hop_sec: float = 1.0) -> list[float]:
-    """Per-window harshness score (same 2.5-5 kHz / 500 Hz-8 kHz ratio as
+    """Per-window harshness score (the same presence-band bump as
     analyze_harshness, windowed) so a harsh chorus is localizable instead of
     being averaged into one whole-track scalar (pipeline #6). Same block/hop as
-    short_term_loudness_curve, so the series align window-for-window. The mean
-    of this curve tracks the scalar analyze_harshness score."""
-    harsh = _bandpass(y, sr, 2500.0, 5000.0)
-    mid = _bandpass(y, sr, 500.0, 8000.0)
-    # Same window grid as loudness.short_term_loudness_series.
+    short_term_loudness_curve, so the series align window-for-window."""
     block = max(1, int(round(block_sec * sr)))
     hop = max(1, int(round(hop_sec * sr)))
-    n = harsh.shape[0]
+    x = y if y.ndim == 2 else y[np.newaxis, :]
+    n = x.shape[-1]
+    if 0.45 * sr <= HARSH_BANDS[2][0] + 500.0:
+        return [0.0] * (1 if n < block else len(range(0, n - block + 1, hop)))
+    sq = [np.concatenate([[0.0], np.cumsum(p)]) for p in _harsh_band_power(y, sr)]
 
     # Digital silence is judged on the input (the band-pass filters ring on
     # past the end of content, so their output alone can't tell).
-    x = y if y.ndim == 2 else y[np.newaxis, :]
     nz = np.concatenate([[0], np.cumsum(np.any(x != 0.0, axis=0))])
 
     def _score(s0: int, s1: int) -> float:
-        rm = float(np.sqrt(np.mean(mid[s0:s1] ** 2)))
-        if nz[s1] == nz[s0] or rm < 1e-9:   # silent window: 0, not "max harsh"
+        if nz[s1] == nz[s0]:   # silent window: 0, not "max harsh"
             return 0.0
-        rh = float(np.sqrt(np.mean(harsh[s0:s1] ** 2)))
-        return harshness_from_ratio(rh, rm)
+        lo, harsh, hi = ((c[s1] - c[s0]) / max(1, s1 - s0) for c in sq)
+        return harshness_from_bands(lo, harsh, hi, sr)
 
     if n < block:
         return [_score(0, n)]
@@ -455,7 +480,11 @@ RES_EDGE_DB = 5.0
 RES_NEIGHBOURS = 6      # bands either side (half an octave)
 RES_SMOOTH_BANDS = 3    # 1/4 octave
 RES_PERSIST_DB = 3.0
-RES_MIN_PERSISTENCE = 0.5
+#: TUNE-6: an EQ bump or a room mode is there all song; a note comes and
+#: goes. Requiring the peak in 70% of frames (was half) takes the released
+#: tracks that fire from 19% to 14% and keeps 76% of injected +12 dB, Q 8
+#: bells at 2.5 kHz (68% at 400 Hz).
+RES_MIN_PERSISTENCE = 0.7
 _RES_N_FFT = 8192
 _RES_HOP = 4096
 

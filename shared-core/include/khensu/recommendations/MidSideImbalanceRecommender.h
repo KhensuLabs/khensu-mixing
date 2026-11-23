@@ -16,11 +16,16 @@ namespace khensu {
 /// by the Python /analyze/extended endpoint (MidSideImbalanceData).
 ///
 /// Two findings are flagged independently:
-///  1. Sub-bass too wide  - side/mid below 100 Hz > 0.30 → mono bass risk
+///  1. Sub-bass too wide  - side/mid below 100 Hz > 0.70 → mono bass risk (TUNE-5)
 ///  2. HF brightness      - side/mid above 4 kHz > 1.0 (FULL-3)
 class MidSideImbalanceRecommender {
   public:
     static constexpr float kSideBrightRatio = 1.0f;
+    /// TUNE-5: at 0.30 the gate fired on 9.6% of released tracks (209
+    /// lossless originals) - all of them at moderate or worse. A sub moved to
+    /// full width reads 0.79 or more on 95% of tracks; at 0.70 the finding
+    /// fires on 3.8% of releases and still catches every injected wide sub.
+    static constexpr float kSideHeavyRatio = 0.70f;
     std::vector<Recommendation> recommend(const AnalysisResult& result, const GenreEntry& /*genre*/,
                                           const CreativeTarget& /*target*/) const
     {
@@ -29,8 +34,8 @@ class MidSideImbalanceRecommender {
         const auto& ms = *result.mid_side_imbalance;
 
         // --- Sub-bass too wide ---
-        if (ms.side_heavy_ratio > 0.30f) {
-            const float raw_sev = (ms.side_heavy_ratio - 0.30f) / 0.40f; // 0-1 above threshold
+        if (ms.side_heavy_ratio > kSideHeavyRatio) {
+            const float raw_sev = (ms.side_heavy_ratio - kSideHeavyRatio) / 0.30f; // 0-1 above threshold
             Recommendation r;
             r.id = "sub_bass_too_wide_" + result.file_id;
             r.type = RecommendationType::Technical;
@@ -44,7 +49,7 @@ class MidSideImbalanceRecommender {
             r.is_taste_decision = false;
             r.what = "Sub-bass is too wide: side/mid energy ratio below 100 Hz is " +
                      std::to_string(ms.side_heavy_ratio).substr(0, 4) +
-                     " (threshold: 0.30). "
+                     " (threshold: 0.70). "
                      "Low-frequency content should be anchored in the mid (mono) channel.";
             r.why_helps = "Sub-bass with a high side/mid ratio cancels when summed to mono, "
                           "reducing bass impact on club systems, phone speakers, and mono playback.";

@@ -35,7 +35,7 @@ inline constexpr IssueCodeInfo kIssueCodes[] = {
     {"under_compressed",             false, IssueOrigin::Engine},
     {"crest_above_genre_target",     true,  IssueOrigin::Engine},
     {"crest_below_genre_target",     true,  IssueOrigin::Legacy},  // replaced by over_compressed
-    {"flat_loudness_arc",            true,  IssueOrigin::Engine},
+    {"flat_loudness_arc",            true,  IssueOrigin::Legacy},  // TUNE-8: the same measure as section_arc_too_flat
     // Signal integrity
     {"clipping_detected",            false, IssueOrigin::Engine},
     {"noise_floor_high",             false, IssueOrigin::Engine},
@@ -62,7 +62,7 @@ inline constexpr IssueCodeInfo kIssueCodes[] = {
     // Masking
     {"masking_collision",            true,  IssueOrigin::Engine},
     {"kick_bass_collision",          false, IssueOrigin::Engine},
-    {"midrange_vocal_masking",       false, IssueOrigin::Engine},
+    {"midrange_vocal_masking",       false, IssueOrigin::Service},  // stems only (multitrack), TUNE-7
     // Song level
     {"hook_strength_low",            true,  IssueOrigin::Engine},
     {"hook_density_low",             true,  IssueOrigin::Engine},

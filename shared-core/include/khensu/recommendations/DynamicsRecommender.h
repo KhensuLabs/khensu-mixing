@@ -30,6 +30,14 @@ class DynamicsRecommender {
     /// under_compressed fires when the gated LRA passes this multiple of the
     /// genre's LRA ceiling. One definition for the recommender, the Mix
     /// Scorecard and the evidence trail.
+    /// TUNE-4: crest_above_genre_target fires above the higher of the hand-set
+    /// target + 3 dB and the genre's measured ceiling (the 90th percentile of
+    /// its released tracks). The target alone fired on 22% of released tracks
+    /// and alarmed on 10%: released music spreads well past it.
+    static float crestCeilingDb(const GenreEntry& genre) noexcept
+    {
+        return std::max(genre.crest_factor_target_db + kCrestToleranceDb, genre.crest_factor_ceiling_db);
+    }
     static constexpr float kUnderCompressedLraRatio = 1.5f;
     static float underCompressedLraThreshold(const GenreEntry& genre) noexcept
     {
@@ -111,12 +119,11 @@ class DynamicsRecommender {
         // wall-of-sound shoegaze mix and a very dynamic ambient mix can both
         // be "correct" at very different crest factors, so the band is
         // per-genre, not absolute.
-        const float crestDiff = d.crest_factor_db - genre.crest_factor_target_db;
-        if (crestDiff > kCrestToleranceDb) {
+        const float crestCeiling = crestCeilingDb(genre);
+        if (d.crest_factor_db > crestCeiling) {
             auto r = make("crest_above_genre_target",
-                          // CORE-05: from the tolerance edge, not the target.
-                          severityFromError(d.crest_factor_db, genre.crest_factor_target_db + kCrestToleranceDb,
-                                            severity_scale::kCrest),
+                          // CORE-05: from the ceiling, not the target.
+                          severityFromError(d.crest_factor_db, crestCeiling, severity_scale::kCrest),
                           ProcessingStage::MixBus, 5, true);
             r.what = "Crest factor is " + f1(d.crest_factor_db) + " dB - the " + genreLabel + " target is " +
                      f1(genre.crest_factor_target_db) + " dB.";

@@ -235,6 +235,7 @@ Result<void> GenreDatabase::parseJson(const std::string& jsonContent)
         const float derivedCrest = std::clamp(14.0f - g.compression_ratio_typical * 1.2f, 5.0f, 16.0f);
         g.spectral_tilt_target_db_per_octave = getFloat(e, "spectral_tilt_target_db_per_octave", derivedTilt);
         g.crest_factor_target_db = getFloat(e, "crest_factor_target_db", derivedCrest);
+        g.crest_factor_ceiling_db = getFloat(e, "crest_factor_ceiling_db", 0.0f);
 
         // Built-in per-genre curve overrides replace only DERIVED values: an
         // explicit JSON (or user custom-file) value always wins - previously

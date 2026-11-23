@@ -22,6 +22,12 @@ namespace khensu {
 /// and an arrangement that never reaches the genre loudness floor.
 class SectionFlowRecommender {
   public:
+    /// TUNE-8: a 2 LU floor flagged 34% of 203 released tracks; at 1 LU, 16%.
+    static constexpr float kFlatArcLu = 1.0f;
+    /// The loudest section must miss the genre floor by more than this. At
+    /// 1 dB, 21% of released tracks; at 3 dB, 13%.
+    static constexpr float kPeakQuietMarginDb = 3.0f;
+
     std::vector<Recommendation> recommend(const AnalysisResult& result, const GenreEntry& genre,
                                           const CreativeTarget& /*target*/) const
     {
@@ -57,11 +63,11 @@ class SectionFlowRecommender {
         const float arc = maxLufs - minLufs; // positive = dynamic contrast (LU)
 
         // --- Rec 1: Too little arc (over-compressed arrangement) ---
-        if (arc < 2.0f && validSections.size() >= 3) {
+        if (arc < kFlatArcLu && validSections.size() >= 3) {
             Recommendation r;
             r.id = "section_arc_too_flat_" + result.file_id;
             r.type = RecommendationType::Technical;
-            r.severity = std::clamp((2.0f - arc) * 20.0f, 0.0f, 100.0f);
+            r.severity = std::clamp(10.0f + (kFlatArcLu - arc) * 30.0f, 10.0f, 100.0f);
             r.confidence = 0.75f;
             r.confidence_reason =
                 "Measured from " + f1(static_cast<float>(validSections.size())) + " sections with valid LUFS.";
@@ -118,7 +124,7 @@ class SectionFlowRecommender {
         }
 
         // --- Rec 3: Even the loudest section is below genre floor ---
-        if (genre.lufs_range_min < -0.1f && maxLufs < genre.lufs_range_min - 1.0f) {
+        if (genre.lufs_range_min < -0.1f && maxLufs < genre.lufs_range_min - kPeakQuietMarginDb) {
             Recommendation r;
             r.id = "section_peak_too_quiet_" + result.file_id;
             r.type = RecommendationType::Technical;

@@ -60,6 +60,21 @@ TEST_CASE("HookRecommender: no_hooks_detected fires when hook_count == 0", "[hoo
     CHECK(findings[0].stem_or_bus == "Hook");
 }
 
+TEST_CASE("HookRecommender: TUNE-8 no_hooks_detected needs a weak structure too", "[hook]")
+{
+    // Without a hook, memorability is 0.3 x structure + 0.2 x tempo alignment:
+    // a recurring section structure at a common tempo reads 0.38 and the
+    // detector's miss stays silent; no recurrence and an odd tempo read 0.11.
+    auto result = makeResult();
+    result.python_data.hooks.hook_count = 0;
+    result.python_data.memorability.score = 0.38f;
+    CHECK(rec.recommend(result, makeGenre(), CreativeTarget{}).empty());
+    result.python_data.memorability.score = 0.11f;
+    const auto findings = rec.recommend(result, makeGenre(), CreativeTarget{});
+    REQUIRE(findings.size() == 1);
+    CHECK(findings[0].id.rfind("no_hooks_detected_", 0) == 0);
+}
+
 TEST_CASE("HookRecommender: hook_density_low fires when density below threshold", "[hook]")
 {
     auto result = makeResult();

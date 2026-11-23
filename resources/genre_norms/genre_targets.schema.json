@@ -163,6 +163,11 @@
           "type": "number",
           "minimum": 0
         },
+        "crest_factor_ceiling_db": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Measured 90th percentile of the genre's released tracks' crest factor (measure_genre_norms.py apply_crest); crest_above_genre_target fires above the higher of this and target + 3 dB."
+        },
         "stem_energy_balance": {
           "$ref": "#/definitions/stemEnergyBalance"
         },

@@ -84,8 +84,12 @@ inline float unitOddsFloor(float target, float ratio) noexcept
 /// A firing threshold for a 0..1 score, kept where a score can sit on either
 /// side of it (a threshold of 1.0 fires on every mix, 0.0 on none).
 inline float reachableUnitThreshold(float t) noexcept { return std::clamp(t, 0.05f, 0.95f); }
-inline constexpr float kHeavinessExtremityOdds = 7.0f / 3.0f; ///< +/-0.20 at 0.50
-inline constexpr float kHeavinessDistortionOdds = 3.0f;       ///< +/-0.25 at 0.50
+/// TUNE-8: the bands are wide because the scores are not yet validated by
+/// listeners. At the old +/-0.20 (extremity) and +/-0.25 (distortion) bands
+/// the notes fired on 65% and 43% of 203 released tracks (80% of them sit
+/// above the hand-set extremity threshold); at odds 10 and 8, on 16% and 12%.
+inline constexpr float kHeavinessExtremityOdds = 10.0f; ///< 0.09..0.91 at 0.50
+inline constexpr float kHeavinessDistortionOdds = 8.0f; ///< 0.11..0.89 at 0.50
 
 /// Fixed-point float formatting used throughout recommendation text.
 inline std::string formatFixed(float v, int decimals)

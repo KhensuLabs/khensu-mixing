@@ -19,6 +19,8 @@
 #include <khensu/analysis/AnalysisInputs.h>
 #include <khensu/ipc/HttpServiceBridge.h>
 #include <khensu/recommendations/RecommendationType.h>
+#include <khensu/recommendations/TargetInterpolator.h>
+#include <khensu/targets/CreativeTarget.h>
 #include <khensu/targets/GenreDatabase.h>
 #include <JuceHeader.h>
 
@@ -147,6 +149,41 @@ TEST_CASE("Full-pipeline corpus measurement", "[.measurefull]")
             m->setProperty("heaviness_extremity", hv.extremity);
             m->setProperty("heaviness_distortion", hv.distortion);
             m->setProperty("heaviness_weight", hv.weight);
+            // TUNE-2: the inputs of every song-level finding, and the
+            // thresholds the default target grades them against.
+            const auto genre = genres.findById(genreId);
+            const CreativeTarget defaultTarget{};
+            if (genre) {
+                m->setProperty("heaviness_extremity_threshold",
+                               TargetInterpolator::heavinessExtremityThreshold(*genre, defaultTarget));
+                m->setProperty("heaviness_distortion_norm", genre->heaviness_distortion_norm);
+                m->setProperty("hook_density_threshold",
+                               TargetInterpolator::hookDensityThreshold(*genre, defaultTarget));
+                m->setProperty("genre_lufs_range_min", genre->lufs_range_min);
+            }
+            const auto& hk = r.python_data.hooks;
+            m->setProperty("hook_count", hk.hook_count);
+            m->setProperty("hook_density", hk.hook_density);
+            m->setProperty("hook_strength", hk.hook_strength);
+            m->setProperty("memorability_score", r.python_data.memorability.score);
+            m->setProperty("earworm_likelihood", r.python_data.memorability.earworm_likelihood);
+            if (r.section_analysis) {
+                const auto& arc = r.section_analysis->loudness_arc;
+                m->setProperty("arc_delta_lu", arc.chorus_verse_delta_lu);
+                m->setProperty("arc_section_count", arc.section_count);
+                juce::Array<juce::var> lufs;
+                for (const auto& s : r.section_analysis->sections) lufs.add(s.lufs_integrated);
+                m->setProperty("section_lufs", lufs);
+            }
+            if (r.drums) {
+                m->setProperty("kick_bass_clash", r.drums->kick_bass_clash);
+                m->setProperty("kick_bass_proximity_hz", r.drums->kick_bass_proximity_hz);
+            }
+            if (r.translation_risk) {
+                juce::DynamicObject::Ptr env = new juce::DynamicObject();
+                for (const auto& [k, v] : r.translation_risk->per_environment) env->setProperty(juce::String(k), v);
+                m->setProperty("translation_per_environment", juce::var(env.get()));
+            }
             o->setProperty("measures", juce::var(m.get()));
             o->setProperty("inputs", juce::String(analysis_inputs::describe(r.inputs_available())));
             o->setProperty("inputs_failed", r.inputs_failed == 0

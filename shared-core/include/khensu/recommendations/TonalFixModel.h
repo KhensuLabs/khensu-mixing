@@ -249,4 +249,45 @@ inline float highShelfGainForTiltFft(const std::vector<float>& binDb, double sam
         aimTilt, minDb, maxDb));
 }
 
+/// TUNE-10: low-shelf gain (dB) that moves the low-end share (balance_low,
+/// the octave bands below ~177 Hz over bands 0-9) from `measuredShare` to
+/// `aimShare`, from the averaged FFT bins. The octave-band model above reads
+/// the 150 Hz shelf's slope at the 125 Hz band's centre only, which is where
+/// that shelf turns over: on the corpus fix check it undershot the large
+/// corrections (every uncleared low_end_light fix still fired, at a median
+/// 12 dB of gain). Predicted as an odds ratio applied to the measured share,
+/// as lowShelfGainForShare. NaN when the bins or the sample rate are missing.
+inline float lowShelfGainForShareFft(const std::vector<float>& binDb, double sampleRate, double measuredShare,
+                                     double aimShare, double cornerHz, double minDb, double maxDb)
+{
+    if (binDb.size() < 64 || sampleRate <= 0.0 || measuredShare <= 0.0 || measuredShare >= 1.0)
+        return std::nanf("");
+    const double binHz = sampleRate * 0.5 / static_cast<double>(binDb.size());
+    const double lowLo = kBandCentersHz[0] / std::sqrt(2.0);
+    const double lowHi = kBandCentersHz[kLowBands - 1] * std::sqrt(2.0);
+    const double top = std::min(kBandCentersHz[9] * std::sqrt(2.0), sampleRate * 0.5);
+    auto share = [&](double g) {
+        double low = 0.0, all = 0.0;
+        for (size_t k = 0; k < binDb.size(); ++k) {
+            const double f = static_cast<double>(k) * binHz;
+            if (f < lowLo || binDb[k] <= -89.9f) continue;
+            if (f >= top) break;
+            const double pw = std::pow(10.0, static_cast<double>(binDb[k]) / 10.0) *
+                              (g == 0.0 ? 1.0 : shelfPowerGain(f, cornerHz, g, false, sampleRate));
+            all += pw;
+            if (f < lowHi) low += pw;
+        }
+        return all > 0.0 ? low / all : std::nan("");
+    };
+    const double base = share(0.0);
+    if (!(base > 0.0 && base < 1.0)) return std::nanf("");
+    const double baseOdds = base / (1.0 - base), measuredOdds = measuredShare / (1.0 - measuredShare);
+    auto predicted = [&](double g) {
+        const double m = share(g);
+        const double odds = measuredOdds * (m / (1.0 - m)) / baseOdds;
+        return odds / (1.0 + odds);
+    };
+    return static_cast<float>(solveGain(predicted, aimShare, minDb, maxDb));
+}
+
 } // namespace khensu::tonal_fix

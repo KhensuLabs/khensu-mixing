@@ -9,7 +9,7 @@ endif()
 
 juce_add_gui_app(KhensuDesktop
     PRODUCT_NAME "Khensu Mixing"
-    VERSION      "1.0.1"
+    VERSION      "1.0.2"
     BUNDLE_ID    "com.khensu.mixing.desktop"
     COMPANY_NAME "Khensu"
     # The app icon from its 4K master (Explorer, taskbar, window; the macOS .icns);

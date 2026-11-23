@@ -21,7 +21,7 @@ TEST_CASE("Explicit genre JSON wins over built-in tilt/crest overrides", "[genre
 {
     GenreDatabase db;
     REQUIRE(db.loadFromString(R"({"genres": [
-        {"id": "shoegaze", "name": "Shoegaze", "spectral_tilt_target_db_per_octave": -6.5, "crest_factor_target_db": 12.0},
+        {"id": "shoegaze", "name": "Shoegaze", "spectral_tilt_target_db_per_octave": -6.5, "crest_factor_target_db": 12.0, "crest_factor_ceiling_db": 17.5},
         {"id": "hyperpop", "name": "Hyperpop"},
         {"id": "broken", "name": "Broken", "lufs_range": [-9.0]}]})")
                 .is_ok());
@@ -29,8 +29,10 @@ TEST_CASE("Explicit genre JSON wins over built-in tilt/crest overrides", "[genre
     REQUIRE(shoegaze.has_value());
     CHECK(shoegaze->spectral_tilt_target_db_per_octave == -6.5f); // user value kept
     CHECK(shoegaze->crest_factor_target_db == 12.0f);
+    CHECK(shoegaze->crest_factor_ceiling_db == 17.5f); // TUNE-4, measured
     const auto hyperpop = db.findById("hyperpop");
     REQUIRE(hyperpop.has_value());
+    CHECK(hyperpop->crest_factor_ceiling_db == 0.0f); // unmeasured
     // override fills the gap (authored in the old density convention, +3.01
     // dB/oct into the octave-band-power convention - AUDIT-009)
     CHECK_THAT(hyperpop->spectral_tilt_target_db_per_octave, Catch::Matchers::WithinAbs(-1.0f + 3.0103f, 1e-4f));

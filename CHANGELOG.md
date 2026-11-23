@@ -3,6 +3,26 @@
 Notable changes, newest first. The service API version (`SERVICE_VERSION`)
 moves separately.
 
+## 1.0.2 - 2026-11-22
+
+Fewer false alarms: every finding re-measured on released tracks through
+the app's full pipeline, and the ones that fired too often retuned.
+
+- Song-level notes (no hooks, memorability, earworm, heaviness, section arc,
+  section peak, kick/bass collision) each fire on about 15% of released
+  tracks or fewer - several fired on a third to two thirds. Memorability and
+  earworm are judged only when a hook was found; "no hooks" also needs a
+  weak structure; the separate flat-loudness-arc note is folded into the
+  section arc.
+- Translation risk has an edge per playback device (phone 0.65, the others
+  0.45), since released masters score high on phones.
+- Mono compatibility, sub-bass width, crest above target, harshness and
+  resonance retuned; the engine's 1-3 kHz vocal-masking guess is retired
+  (the stem-based masking check remains).
+- New injected-defect evidence: bass-heavy and thin tonal balance, limiting,
+  downward expansion, gain and side-gain changes, so more findings show how
+  often they catch a real defect. The low-shelf fix is solved from the FFT.
+
 ## 1.0.1 - 2026-11-22
 
 Findings checked against released music, three new fixes, and the macOS

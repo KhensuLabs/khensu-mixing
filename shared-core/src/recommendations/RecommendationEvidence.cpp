@@ -70,7 +70,7 @@ std::vector<EvidenceItem> evidenceForCode(const std::string& code, const Analysi
                            "below", kGenre));
     else if (code == "crest_above_genre_target")
         out.push_back(item("Crest factor", d.crest_factor_db, "dB",
-                           genre.crest_factor_target_db + DynamicsRecommender::kCrestToleranceDb, "above", kGenre));
+                           DynamicsRecommender::crestCeilingDb(genre), "above", kGenre));
     else if (code == "strength_transient_headroom")
         out.push_back(item("Crest factor", d.crest_factor_db, "dB", DynamicsRecommender::overCompressedFloorDb(genre),
                            "above", kGenre));
