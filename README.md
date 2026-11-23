@@ -14,19 +14,23 @@
 
 <!-- Size -->
 ![Genres](https://img.shields.io/badge/genres-185%20in%2014%20families-00d4aa)
-![Analyzers](https://img.shields.io/badge/analyzer%20modules-76-00d4aa)
-![Routers](https://img.shields.io/badge/API%20routers-56-00d4aa)
+![Analyzers](https://img.shields.io/badge/analyzer%20modules-79-00d4aa)
+![Routers](https://img.shields.io/badge/API%20routers-38-00d4aa)
 ![Screens](https://img.shields.io/badge/screens-11%20%7C%2090%2B%20panels-00d4aa)
-![Service API](https://img.shields.io/badge/service%20API-0.2.88-00d4aa)
-![Migrations](https://img.shields.io/badge/DB%20migrations-001%E2%80%93014-00d4aa)
+![Service API](https://img.shields.io/badge/service%20API-0.2.105-00d4aa)
+![Migrations](https://img.shields.io/badge/DB%20migrations-001%E2%80%93016-00d4aa)
 
-<!-- Verification (local - hosted CI is blocked) -->
-![pytest](https://img.shields.io/badge/pytest-5%2C108%20passed-2ea44f)
-![Catch2](https://img.shields.io/badge/Catch2-952%20cases%20passed-2ea44f)
+<!-- Verification (local runs of scripts/verify_all.ps1) -->
+![pytest](https://img.shields.io/badge/pytest-5%2C398%20passed-2ea44f)
+![Catch2](https://img.shields.io/badge/Catch2-1%2C153%20cases%20passed-2ea44f)
 ![MSVC](https://img.shields.io/badge/MSVC-%2FW4%20%2FWX%20clean-2ea44f)
 ![pluginval](https://img.shields.io/badge/pluginval-strictness%2010-2ea44f)
-![Last verified](https://img.shields.io/badge/last%20verified-2026--11--09-2ea44f)
-![Hosted CI](https://img.shields.io/badge/hosted%20CI-blocked%20%28billing%29-f39c12)
+![Soak](https://img.shields.io/badge/soak-8%20h%2C%20786%20cycles%2C%200%20failed-2ea44f)
+![Last verified](https://img.shields.io/badge/last%20verified-2026--11--23-2ea44f)
+
+<!-- Evidence (resources/calibration/finding_evidence.json) -->
+![Released tracks measured](https://img.shields.io/badge/findings%20measured%20on-1%2C462%20released%20tracks-00d4aa)
+![Alarm rate](https://img.shields.io/badge/alarm%20rate-%E2%89%A4%20~5%25%20per%20finding-00d4aa)
 
 <!-- Project -->
 ![Python deps](https://img.shields.io/badge/python%20deps-16%20base%20%2F%2039%20with%20extras-4299e1)
@@ -42,7 +46,7 @@ Khensu listens to a mix or a master and tells you what is wrong, why it matters 
 
 > 🚀 **v1.0.2, Windows first.** Download it from the public [releases page](https://github.com/KhensuLabs/khensu-mixing/releases/latest). macOS has an installer build (`packaging/macos/`, `release-macos.yml`) that becomes a verified release in v1.1.
 >
-> **How this is verified.** Hosted GitHub Actions have been blocked by an account billing issue since 2026-07-24, so every number in the badges comes from local runs: `scripts/verify_all.ps1` builds everything and runs the three Catch2 suites, the full pytest suite with the analyzer golden gate, pluginval, a Debug run with its debug output captured, and the doc-drift, lint and string-template gates. Last full pass: 2026-11-18, with the AddressSanitizer step passing as well.
+> **How this is verified.** Every number in the badges comes from local runs of `scripts/verify_all.ps1`. It builds everything and runs the three Catch2 suites, the full pytest suite with the analyzer golden gate, pluginval in fixed and random order, a Debug run with its debug output captured, an installer smoke test (silent install, version and secret checks, uninstall) and the doc-drift, lint and string-template gates. Last full pass: 2026-11-22, for v1.0.2. An 8-hour soak (786 analyse / fix / delete cycles) kept memory, handles and GUI objects flat.
 
 ---
 
@@ -51,6 +55,7 @@ Khensu listens to a mix or a master and tells you what is wrong, why it matters 
 - 🔍 **Finds and explains** what's wrong: every finding reads Detected → Cause → Fix → Trade-off → Verify, with its measurement.
 - 🛠️ **Fixes in one click**, stacking renders through pre- and post-render safety gates.
 - ✅ **Proves the fix worked**: re-analysis marks each finding resolved, improved, unchanged, worse or new.
+- 📊 **Checked against released music**: each finding shows how often it fires on released tracks, how often it catches the defect it names and how often its fix clears it. Each one warns on about 5% of released tracks or fewer.
 - 🎧 **Honest A/B** at matched loudness, with Delta and Blind modes.
 - 🌍 **185 genres** with targets measured from released music.
 - 💿 **Masters and delivers**: platform masters, streaming preview, compliance, DDP, album masters.
@@ -98,6 +103,7 @@ Khensu listens to a mix or a master and tells you what is wrong, why it matters 
 - **Music.** Key with a calibrated confidence (key profiles chosen by genre), time signature (4/4, 3/4, 6/8) with the downbeat, beat-synchronous chords with Roman numerals and a real "no chord", Camelot codes, **song structure** (intro, verse, pre-chorus, chorus, bridge, outro and their repeats, found from the audio's self-similarity), hooks, memorability, heaviness, arrangement, and pitch accuracy against the track's own tuning.
 - **Where, not just how much.** Per-window timelines show where loudness, harshness and dynamics go wrong; **Explain this moment** measures any selected region against the whole track and the genre norm.
 - **Perceptual loudness.** Partial loudness (Moore–Glasberg) turns "the vocal is buried" into a number.
+- **Fixes for what used to be advice.** Spectral tilt renders a 1 kHz shelf solved from the track's spectrum, a resonance renders a notch, a raised noise floor renders a spectral denoiser (it clears 95% of injected hiss) and DC offset renders a 20 Hz high-pass. Clipping stays advice, because the app has no way to check a declipper's result.
 - **Evidence you can export.** Every recommendation carries its measurement, threshold, source and confidence basis, as JSON or a client-readable HTML page. A **counterfactual** gives the smallest change that would clear a finding ("−2.1 dB at 250 Hz"), checked by re-measuring a render.
 - **References.** Keep a library of your own reference tracks - tag them and give each a genre, then filter by either - find the ones nearest your mix or search them by description ("warm, wide, slow"), and make one the session's reference - the comparison updates at once. Fit a readable EQ and compressor chain toward a reference or toward your genre, with an amount control and the predicted per-band result before anything renders.
 - **Where you sit in your genre.** The Genre Fit card shows, for loudness, crest, brightness, tilt, low end and width, where your mix falls among released tracks of the genre - measured, with the number of tracks behind it.
@@ -118,7 +124,7 @@ Khensu listens to a mix or a master and tells you what is wrong, why it matters 
 
 - **Vocal workspace**: stem separation (Demucs, or RoFormer when installed; a multitrack session's own tracks fill the stems instead), one session Takes bin shared by comping, take alignment and preflight, edits that stack on one current vocal, vocal macros with live audition, gain riding, de-essing, comping and take alignment, pitch editing with snap-to-key (a learned pitch tracker, CREPE, refined by YIN), harmony MIDI and lyric intelligibility.
 - **Stem rebalance**: turn each stem up or down - or let Khensu suggest it from the genre's stem balance - and render the re-summed mix as a new version. It sums the edited vocal, so it is how vocal edits are committed to the mix.
-- **Copilot**: a chat assistant, a mixer-chain generator, a mastering agent, and an **agentic mixing loop** that renders a step, re-measures it at matched loudness, and keeps or reverts it, with every step in the render tree. It understands typed or spoken instructions ("make the chorus 1 dB louder than the verse"). Every part works offline; a language model is optional.
+- **Copilot**: a chat assistant, a mixer-chain generator, a mastering agent, and an **agentic mixing loop** that renders a step, re-measures it at matched loudness, and keeps or reverts it, with every step in the render tree. It understands typed or spoken instructions ("make the chorus 1 dB louder than the verse"): 95% of spoken commands parse the same as typed ones (94% with room noise). Every part works offline; a language model is optional. A local 7B model (Ollama) returns valid structured output in about 0.8 s.
 - **Personal ranking**: learns from the renders you keep, revert and dismiss, and reorders recommendations with the reason shown.
 - **AI-generation detection**: metadata and byte signatures, spectral and codec-residual tells, per-stem tells, and optional learned and watermark detectors, fused with a per-window timeline. Provenance evidence is kept apart from production-style evidence.
 - **Analog Feel**: a creative render (tape drift, a slow fader ride, room tone) with an amount control. **Metadata clean** removes workflow and personal tags and keeps identity, rights and AI-disclosure tags.
@@ -145,6 +151,7 @@ The **Copilot plugin** builds as **VST3**, **CLAP** and an **ARA2** VST3 (AU on 
 - **MCP server** (`khensu-mcp`) so Claude or another MCP client can analyse, explain, fit chains and run the agent.
 - **Headless CLI** (`khensu analyze`) for folders and catalogues, with CI-friendly exit codes.
 - **GPU acceleration** through ONNX Runtime (DirectML / CUDA / CoreML) and torch when available.
+- **Long and hi-res files**: stereo songs up to about 25 minutes, and 192 kHz or 7.1 songs up to about 5.8 minutes, within a fixed memory budget.
 - **Analysis cache**: a content-addressed cache makes reopening a session instant, and after a render only the changed regions are re-measured.
 - **Local crash reports**: minidumps and Python fault logs stay on your machine; Settings exports a diagnostics bundle (including where the engine's memory is).
 - **Components**: Settings lists every optional component and installs the pip-installable ones from their reviewed, hash-pinned package lists.
@@ -169,6 +176,7 @@ Khensu never says "this sounds bad". Every verdict traces back to a named measur
 | **Genre position** | Your value's rank inside the genre's reference distribution. | "78th percentile for loudness in this genre" |
 
 - **Severity** uses a fixed full scale per metric (12 dB LUFS, 10 LU LRA, 6 dB crest, 4 dB/octave tilt, 0.5 width), so being 1 dB over a −11 LUFS ceiling is as severe as 1 dB over a −23 LUFS one.
+- **Thresholds are measured.** A finding counts as an alarm when it reaches moderate severity or worse. Each threshold is set so the finding alarms on about 5% of released tracks or fewer while still catching the defect it names, which is injected into those same tracks. Song-level notes (hooks, memorability, heaviness, section arc) stay minor notes on about 15% of tracks or fewer until a listener study checks them. Delivery-spec checks such as true peak over −1 dBTP are reported as "released tracks that miss the spec" rather than as false alarms: 82% of released masters miss it.
 - **Evidence fusion** for AI detection is noisy-OR, `P = 1 − Π(1 − pᵢ)`, so one strong tell counts and scattered weak ones don't overclaim.
 - **Learned probabilities** are shown as numbers only when the model is both intervention-validated and well calibrated (low expected calibration error); otherwise you see a qualitative band.
 - **Renders are gated twice**: a pre-render validator fails closed on unsupported layouts or risky widening, and a post-render guardrail re-measures at matched loudness and blocks a change that adds clipping, collapses mono bass or crushes dynamics.
@@ -179,7 +187,7 @@ The whole rule-based tier lives in the C++ `shared-core/`, which has no ML depen
 
 ## Genres
 
-Each of the 185 genres has its own target profile in `resources/genre_norms/genre_targets.json` (loudness and LRA ranges, true-peak ceiling, tone, low-end weight, width, compression, heaviness and hook norms, notated tempo range, vocal presence). For the 113 genres with enough tracks in the on-disk corpus, the tone, tilt, crest, low-end and width targets are **measured** from released music by the app's own analyzer (`genre_corpus_stats.json`); loudness stays hand-set. Genre-relative recommendations run only after you confirm the genre; until then Khensu says it is abstaining and why. Each finding also says how often it fired on released tracks of their own genre, how reliably it catches the defect it names, and how often the app's own Fix cleared that defect (`resources/calibration/finding_evidence.json`, measured by `scripts/measure_genre_norms.py`). Those measurements set the LRA windows and the true-peak, clipping, noise-floor and DC-offset thresholds, grade a master that is quieter than its genre but at or above -16 LUFS as a minor note, and sized the tonal fixes: a fix's EQ is solved from your track's own spectrum.
+Each of the 185 genres has its own target profile in `resources/genre_norms/genre_targets.json` (loudness and LRA ranges, true-peak ceiling, tone, low-end weight, width, compression, heaviness and hook norms, notated tempo range, vocal presence). For the 113 genres with enough tracks in the on-disk corpus, the tone, tilt, crest, low-end and width targets are **measured** from released music by the app's own analyzer (`genre_corpus_stats.json`); loudness stays hand-set. Genre-relative recommendations run only after you confirm the genre; until then Khensu says it is abstaining and why. Each finding also says how often it fired on released tracks of their own genre, how often it alarmed (moderate or worse), how reliably it catches the defect it names, and how often the app's own Fix cleared that defect (`resources/calibration/finding_evidence.json`, measured by `scripts/measure_genre_norms.py`). The evidence covers 1,462 released tracks through the native pass and 209 lossless ones through the app's full pipeline, including the deep-pass findings (harshness, resonance, mid/side brightness, translation risk and the song-level notes). Defects are injected into those tracks: EQ bells, resonances, comb filtering, wide sub, bright sides, limiting, downward expansion, gain and side-gain changes, and bass-heavy or thin tonal balance. Those measurements set the LRA windows and the thresholds, grade a master that is quieter than its genre but at or above -16 LUFS as a minor note, and sized the tonal fixes: a fix's EQ is solved from your track's own spectrum, and the tonal fixes clear 75-80% of the defects they target.
 
 <details>
 <summary><strong>All 185 genres, by family</strong></summary>
@@ -225,7 +233,8 @@ Three tiers, and the UI always says which one produced a number:
 | basic-pitch (ONNX) | Polyphonic transcription | the separate Python 3.11 profile; falls back to the vocal tracker |
 | CREPE-tiny (`vocal_pitch.onnx`) | Monophonic vocal pitch | exported by `scripts/export_crepe_onnx.py` (MIT weights); `pyin` without it |
 | Beat This! (`beat_tracker.onnx`) | Beats and downbeats for song structure | `scripts/export_beat_this_onnx.py`; the librosa tracker without it |
-| CLAP | Audio embeddings and text search | `[ai_detect]`; a built-in embedding otherwise |
+| CLAP | Audio embeddings and text search; the nearest reference shares the genre family 59% of the time (chance is 23%) | `[ai_detect]`; a built-in embedding otherwise |
+| `clap_ai_probe.json` | AI-generation likelihood on CLAP embeddings, shown beside the verdict | trained on seven generators; AUC 0.92-0.98 on a generator it never saw, 3.8% of lossless human releases called AI; not intervention-validated |
 
 Calibrated per-finding confidence (CE-TRU-1) is built but needs a labelled corpus; until then every finding says "heuristic". See [`docs/ml-models.md`](docs/ml-models.md).
 
@@ -427,6 +436,8 @@ pwsh scripts/verify_all.ps1          # -Fast for the pre-push subset
 - **Golden gate.** `local-services/tests/golden/` pins analyzer outputs; a refactor that shifts a number fails. Regenerate only for an intended change (`KHENSU_REGEN_GOLDEN=1`).
 - **Doc and code gates.** `scripts/check_doc_drift.py` checks counts, the version handshake, theme-only colours, UTF-8 string safety, generated-client freshness and hidden-control mistakes; `scripts/extract_strings.py --check` keeps the translation template current. Both run in the versioned pre-push hook (`pwsh scripts/install-hooks.ps1`).
 - **Seeing the UI without a person.** `"Khensu Mixing.exe" --screenshot=<dir>` writes every screen (add `--screenshot-audio=<wav>` to analyse a file first), `--a11y-audit=<file>` checks every control has a spoken name, `--ui-bench=<file>` fails on a mis-laid-out screen.
+- **Evidence on released music.** `scripts/measure_genre_norms.py` runs the app's own analysis over the genre corpus (`measure` / `dynamics` for the native pass, `full` for the full pipeline against the running service, `fixcheck` for the app's fixes) and writes `resources/calibration/finding_evidence.json` with `report`. Re-run it when a finding's threshold or fix changes.
+- **Soak and stress.** `"Khensu Mixing.exe" --soak-audio=<folder> --soak-minutes=N` repeats analyse / fix / delete and logs memory and handles; `scripts/stress_long_files.py` drives every route with long, hi-res and surround files.
 - **Each pytest run needs its own `--basetemp`** when two run at once; pytest wipes it on start.
 
 ---
@@ -439,8 +450,8 @@ desktop-app/      JUCE desktop app (Source/ui: one folder per screen, shared wid
 plugin-copilot/   VST3 / CLAP / ARA2 copilot plugin
 local-services/   Python FastAPI analysis and render service, its tests and the CLI
 tests/            Catch2 suites: shared-core/, ui/, plugin/
-storage/schema/   SQLite migrations 001-014 (one khensu.db)
-resources/        Genre norms, system-brain data, the OpenAPI schema, the string template
+storage/schema/   SQLite migrations 001-016 (one khensu.db)
+resources/        Genre norms, finding evidence (calibration/), system-brain data, the OpenAPI schema, the string template
 packaging/        Installer, optional-stack installs, macOS scripts, signing
 scripts/          verify_all, doc-drift, generators, benchmarks
 docs/             Architecture, DSP and math, ML models, and the user manual
@@ -454,9 +465,10 @@ docs/             Architecture, DSP and math, ML models, and the user manual
 
 - **On-hardware checks**: the plugin in real DAWs (hosted VST3s, ARA, CLAP, automation write-back), high-DPI and 120 Hz displays, real MIDI 2.0 devices, screen readers.
 - **macOS v1.1**: a verified universal build, AU validation, signing and notarisation.
+- **Listener studies** for the song-level notes (hooks, memorability, heaviness, section arc), which stay minor until checked, and hand-marked sections for song structure.
 - **Validated models**: a labelled, expert-reviewed corpus to calibrate findings and to clear the `intervention_validated` gate on the learned detectors.
 - **Signed installers** so Windows SmartScreen and macOS Gatekeeper don't warn.
-- **AI detection without provenance**: a detector trained on many generators and human sources, with low false alarms.
+- **AI detection without provenance**: the CLAP probe now generalises across seven generators; next is checking it on AI music from sources outside its training sets before it can inform the verdict.
 
 ---
 

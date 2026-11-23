@@ -143,4 +143,5 @@ tracks, and still catches the defect it names.
       62%, tilt too bright 65%.
 - [x] TUNE-10 Weak fixes: tilt too bright clears 62%, low end light 68%.
 - [x] TUNE-11 Final pass on the shipped code -> finding_evidence.json, docs.
-- [ ] TUNE-12 Release 1.0.2 (app + plugin), public snapshot.
+- [x] TUNE-12 Release 1.0.2 (app + plugin), public snapshot ceb1b9f1, GitHub
+      release v1.0.2 (khensu-setup-1.0.2.exe), offered to 1.0.0 / 1.0.1.
