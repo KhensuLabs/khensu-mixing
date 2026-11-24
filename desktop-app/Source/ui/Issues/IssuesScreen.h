@@ -27,6 +27,8 @@ class IssuesScreen final : public juce::Component {
     /// "Fix top issue" (header button, F key, palette): fixes the most
     /// severe open issue that has a one-click fix, here in the queue.
     void fixTopIssue();
+    /// UX2-1: selects (and scrolls to) the finding with this key.
+    void selectIssue(const std::string& key) { queue_.select(key, true); }
 
   private:
     void updateEmptyState();

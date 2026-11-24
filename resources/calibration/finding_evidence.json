@@ -4,6 +4,7 @@
  "tracks": 1462,
  "lossless_tracks": 209,
  "alarm_severity": 40.0,
+ "loudness_regraded": 1657,
  "findings": {
   "centroid_too_bright": {
    "false_alarm_rate": 0.2086,
@@ -19,7 +20,57 @@
    "fix": {
     "tried": 100,
     "advice_only": false,
-    "clears_rate": 0.75
+    "clears_rate": 0.75,
+    "side_effects": [
+     {
+      "code": "lufs_too_quiet",
+      "rate": 0.38,
+      "tracks": 38,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "over_compressed",
+      "rate": 0.1,
+      "tracks": 10,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "lra_too_compressed",
+      "rate": 0.09,
+      "tracks": 9,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "stereo_too_narrow",
+      "rate": 0.05,
+      "tracks": 5,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "low_end_heavy",
+      "rate": 0.03,
+      "tracks": 3,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "noise_floor_high",
+      "rate": 0.02,
+      "tracks": 2,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "lra_too_dynamic",
+      "rate": 0.01,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "stereo_too_wide",
+      "rate": 0.01,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     }
+    ]
    }
   },
   "centroid_too_dark": {
@@ -36,7 +87,39 @@
    "fix": {
     "tried": 101,
     "advice_only": false,
-    "clears_rate": 0.7525
+    "clears_rate": 0.7525,
+    "side_effects": [
+     {
+      "code": "lufs_too_quiet",
+      "rate": 0.0792,
+      "tracks": 8,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "tilt_too_bright",
+      "rate": 0.0297,
+      "tracks": 3,
+      "peak_guard_share": 0.6667
+     },
+     {
+      "code": "true_peak_over",
+      "rate": 0.0297,
+      "tracks": 3,
+      "peak_guard_share": 0.0
+     },
+     {
+      "code": "low_end_light",
+      "rate": 0.0099,
+      "tracks": 1,
+      "peak_guard_share": 0.0
+     },
+     {
+      "code": "noise_floor_high",
+      "rate": 0.0099,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     }
+    ]
    }
   },
   "clipping_detected": {
@@ -85,7 +168,45 @@
    "fix": {
     "tried": 122,
     "advice_only": false,
-    "clears_rate": 1.0
+    "clears_rate": 1.0,
+    "side_effects": [
+     {
+      "code": "lufs_too_quiet",
+      "rate": 0.2787,
+      "tracks": 34,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "crest_above_genre_target",
+      "rate": 0.041,
+      "tracks": 5,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "centroid_too_bright",
+      "rate": 0.0246,
+      "tracks": 3,
+      "peak_guard_share": 0.3333
+     },
+     {
+      "code": "noise_floor_high",
+      "rate": 0.0082,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "tilt_too_bright",
+      "rate": 0.0082,
+      "tracks": 1,
+      "peak_guard_share": 0.0
+     },
+     {
+      "code": "true_peak_over",
+      "rate": 0.0082,
+      "tracks": 1,
+      "peak_guard_share": 0.0
+     }
+    ]
    }
   },
   "earworm_likelihood_low": {
@@ -165,7 +286,63 @@
    "fix": {
     "tried": 90,
     "advice_only": false,
-    "clears_rate": 0.8
+    "clears_rate": 0.8,
+    "side_effects": [
+     {
+      "code": "lufs_too_quiet",
+      "rate": 0.5667,
+      "tracks": 51,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "lra_too_compressed",
+      "rate": 0.0778,
+      "tracks": 7,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "centroid_too_bright",
+      "rate": 0.0667,
+      "tracks": 6,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "noise_floor_high",
+      "rate": 0.0667,
+      "tracks": 6,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "over_compressed",
+      "rate": 0.0333,
+      "tracks": 3,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "stereo_too_wide",
+      "rate": 0.0333,
+      "tracks": 3,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "tilt_too_bright",
+      "rate": 0.0222,
+      "tracks": 2,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "crest_above_genre_target",
+      "rate": 0.0111,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "lra_too_dynamic",
+      "rate": 0.0111,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     }
+    ]
    }
   },
   "low_end_light": {
@@ -182,7 +359,69 @@
    "fix": {
     "tried": 119,
     "advice_only": false,
-    "clears_rate": 0.7815
+    "clears_rate": 0.7815,
+    "side_effects": [
+     {
+      "code": "lufs_too_quiet",
+      "rate": 0.1345,
+      "tracks": 16,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "lra_too_compressed",
+      "rate": 0.0756,
+      "tracks": 9,
+      "peak_guard_share": 0.6667
+     },
+     {
+      "code": "dc_offset",
+      "rate": 0.042,
+      "tracks": 5,
+      "peak_guard_share": 0.6
+     },
+     {
+      "code": "noise_floor_high",
+      "rate": 0.0252,
+      "tracks": 3,
+      "peak_guard_share": 0.3333
+     },
+     {
+      "code": "stereo_too_narrow",
+      "rate": 0.0252,
+      "tracks": 3,
+      "peak_guard_share": 0.6667
+     },
+     {
+      "code": "over_compressed",
+      "rate": 0.0168,
+      "tracks": 2,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "tilt_too_dark",
+      "rate": 0.0168,
+      "tracks": 2,
+      "peak_guard_share": 0.5
+     },
+     {
+      "code": "true_peak_over",
+      "rate": 0.0168,
+      "tracks": 2,
+      "peak_guard_share": 0.0
+     },
+     {
+      "code": "centroid_too_dark",
+      "rate": 0.0084,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "stereo_too_wide",
+      "rate": 0.0084,
+      "tracks": 1,
+      "peak_guard_share": 0.0
+     }
+    ]
    }
   },
   "lra_too_compressed": {
@@ -192,7 +431,7 @@
    "detects": [
     {
      "defect": "limit_+8",
-     "rate": 0.6507,
+     "rate": 0.6533,
      "tracks": 343
     }
    ],
@@ -218,37 +457,59 @@
    }
   },
   "lufs_too_loud": {
-   "false_alarm_rate": 0.1525,
-   "fired_on": 223,
-   "alarm_rate": 0.013,
+   "false_alarm_rate": 0.1019,
+   "fired_on": 149,
+   "alarm_rate": 0.0089,
    "detects": [
     {
      "defect": "limit_+8",
-     "rate": 0.6507,
+     "rate": 0.6533,
      "tracks": 343
     }
    ],
    "fix": {
     "tried": 15,
     "advice_only": false,
-    "clears_rate": 0.0667
+    "clears_rate": 0.0667,
+    "side_effects": [
+     {
+      "code": "noise_floor_high",
+      "rate": 0.0667,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     }
+    ]
    }
   },
   "lufs_too_quiet": {
-   "false_alarm_rate": 0.3837,
-   "fired_on": 561,
-   "alarm_rate": 0.0718,
+   "false_alarm_rate": 0.2086,
+   "fired_on": 305,
+   "alarm_rate": 0.054,
    "detects": [
     {
      "defect": "gain_-10",
-     "rate": 0.9491,
+     "rate": 0.903,
      "tracks": 343
     }
    ],
    "fix": {
     "tried": 129,
     "advice_only": false,
-    "clears_rate": 0.3488
+    "clears_rate": 0.3488,
+    "side_effects": [
+     {
+      "code": "noise_floor_high",
+      "rate": 0.062,
+      "tracks": 8,
+      "peak_guard_share": 0.0
+     },
+     {
+      "code": "dc_offset",
+      "rate": 0.0388,
+      "tracks": 5,
+      "peak_guard_share": 0.0
+     }
+    ]
    }
   },
   "masking_collision": {
@@ -314,7 +575,33 @@
    "fix": {
     "tried": 41,
     "advice_only": false,
-    "clears_rate": 0.9512
+    "clears_rate": 0.9512,
+    "side_effects": [
+     {
+      "code": "lufs_too_quiet",
+      "rate": 0.122,
+      "tracks": 5,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "stereo_too_narrow",
+      "rate": 0.122,
+      "tracks": 5,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "centroid_too_dark",
+      "rate": 0.0244,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "low_end_heavy",
+      "rate": 0.0244,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     }
+    ]
    }
   },
   "over_compressed": {
@@ -324,14 +611,46 @@
    "detects": [
     {
      "defect": "limit_+8",
-     "rate": 0.6507,
+     "rate": 0.6533,
      "tracks": 343
     }
    ],
    "fix": {
     "tried": 71,
     "advice_only": false,
-    "clears_rate": 0.1127
+    "clears_rate": 0.1127,
+    "side_effects": [
+     {
+      "code": "lra_too_compressed",
+      "rate": 0.0563,
+      "tracks": 4,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "lufs_too_quiet",
+      "rate": 0.0563,
+      "tracks": 4,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "centroid_too_bright",
+      "rate": 0.0141,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "low_end_light",
+      "rate": 0.0141,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "noise_floor_high",
+      "rate": 0.0141,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     }
+    ]
    }
   },
   "phase_issue": {
@@ -448,7 +767,27 @@
    "fix": {
     "tried": 8,
     "advice_only": false,
-    "clears_rate": 0.625
+    "clears_rate": 0.625,
+    "side_effects": [
+     {
+      "code": "centroid_too_dark",
+      "rate": 0.375,
+      "tracks": 3,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "lufs_too_quiet",
+      "rate": 0.125,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "stereo_too_narrow",
+      "rate": 0.125,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     }
+    ]
    }
   },
   "tilt_too_dark": {
@@ -465,7 +804,45 @@
    "fix": {
     "tried": 3,
     "advice_only": false,
-    "clears_rate": 1.0
+    "clears_rate": 1.0,
+    "side_effects": [
+     {
+      "code": "crest_above_genre_target",
+      "rate": 0.6667,
+      "tracks": 2,
+      "peak_guard_share": 0.0
+     },
+     {
+      "code": "true_peak_over",
+      "rate": 0.6667,
+      "tracks": 2,
+      "peak_guard_share": 0.0
+     },
+     {
+      "code": "centroid_too_bright",
+      "rate": 0.3333,
+      "tracks": 1,
+      "peak_guard_share": 0.0
+     },
+     {
+      "code": "low_end_light",
+      "rate": 0.3333,
+      "tracks": 1,
+      "peak_guard_share": 0.0
+     },
+     {
+      "code": "lufs_too_quiet",
+      "rate": 0.3333,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "stereo_too_wide",
+      "rate": 0.3333,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     }
+    ]
    }
   },
   "translation_risk_high": {
@@ -502,7 +879,27 @@
    "fix": {
     "tried": 134,
     "advice_only": false,
-    "clears_rate": 1.0
+    "clears_rate": 1.0,
+    "side_effects": [
+     {
+      "code": "over_compressed",
+      "rate": 0.0373,
+      "tracks": 5,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "lra_too_compressed",
+      "rate": 0.0149,
+      "tracks": 2,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "lufs_too_quiet",
+      "rate": 0.0075,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     }
+    ]
    }
   },
   "under_compressed": {
@@ -519,7 +916,27 @@
    "fix": {
     "tried": 14,
     "advice_only": false,
-    "clears_rate": 0.0714
+    "clears_rate": 0.0714,
+    "side_effects": [
+     {
+      "code": "lufs_too_quiet",
+      "rate": 0.2857,
+      "tracks": 4,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "centroid_too_bright",
+      "rate": 0.0714,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "stereo_too_wide",
+      "rate": 0.0714,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     }
+    ]
    }
   }
  },
@@ -605,8 +1022,8 @@
     "lufs_too_loud"
    ],
    "tracks": 343,
-   "already_flagged": 134,
-   "detected_rate": 0.6507
+   "already_flagged": 118,
+   "detected_rate": 0.6533
   },
   "expand_3": {
    "findings": [
@@ -623,8 +1040,8 @@
     "lufs_too_quiet"
    ],
    "tracks": 343,
-   "already_flagged": 127,
-   "detected_rate": 0.9491
+   "already_flagged": 75,
+   "detected_rate": 0.903
   },
   "side_x2": {
    "findings": [

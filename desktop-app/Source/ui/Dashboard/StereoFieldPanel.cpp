@@ -24,6 +24,16 @@ void StereoFieldTimelineStrip::paint(juce::Graphics& g)
 
     auto b = getLocalBounds().toFloat().withTrimmedTop(12.0f);
     if (b.getHeight() < 6.0f || b.getWidth() < 4.0f) return;
+    hover_.clear();
+    for (size_t i = 0; i < points_.size(); ++i) {
+        const float x = b.getX() + points_[i].progress_fraction * b.getWidth();
+        const float next = i + 1 < points_.size() ? b.getX() + points_[i + 1].progress_fraction * b.getWidth() : b.getRight();
+        hover_.addColumn(x, next, b,
+                         juce::String(juce::roundToInt(points_[i].progress_fraction * 100.0f)) + " % " + TRANS("through")
+                             + ": " + TRANS("width") + " " + juce::String(juce::roundToInt(points_[i].width * 100.0f)) + " %, "
+                             + TRANS("correlation") + " " + juce::String(points_[i].correlation, 2) + ", "
+                             + TRANS("sub-bass mono") + " " + juce::String(juce::roundToInt(points_[i].sub_bass_mono_pct)) + " %");
+    }
 
     auto plot = [&](auto valueOf, juce::Colour colour, float rangeLo, float rangeHi) {
         juce::Path path;

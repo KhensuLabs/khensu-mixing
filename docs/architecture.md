@@ -175,7 +175,20 @@ having started it (see "Service lifecycle" below).
    set — so a shaky number never ranks as if it were solid.
    Findings and grades show once this main pipeline has finished (the
    results gate, PERF-1); the fast local pass shows at once as provisional
-   numbers, and the Dashboard's other scans fill in afterwards. Decoded audio
+   numbers, and the Dashboard's other scans fill in afterwards.
+   **Before the engine (FN2-2b).** While the service lifecycle says the
+   engine is Starting or Down (a first launch's cold start), the deep pass
+   does not wait for it: the native pass is the main pipeline's final
+   result - a complete `AnalysisResult` (`is_partial` false) whose engine
+   inputs are marked unanswered in `inputs_failed` - and it is published at
+   once, worded "Fast check - deeper checks run when the analysis engine is
+   ready". When the engine is Running, `AnalysisService` re-runs the analysis
+   in place: the gate stays open and the native result stays on screen until
+   the full result supersedes it, published the same way. A partial result
+   still never reaches the listeners; the in-place re-run repeats after each
+   new engine-up edge while inputs stay unanswered, at most three times per
+   analysis, and a session switch drops it like any run. With the engine up
+   (or not yet judged) nothing changes: the gate waits for the main pipeline. Decoded audio
    and scan results are cached - in memory per process and on disk by the
    file's content hash - so a reopened session reads them back (PERF-2/3,
    `backend.md`). The findings land in one issue queue (CON-1), where each
@@ -192,6 +205,19 @@ having started it (see "Service lifecycle" below).
      every render path, including the iterative Mastering Agent loop (see
      `mastering_agent.py` — every iteration is guardrail-checked, and the
      agent proposes a best-safe candidate rather than silently promoting one).
+   - **Without the service (OVH-9)** — while the service is not Running, a
+     chain made only of effects the native renderer covers (high/low-pass,
+     shelves, peaks and notches, compressor, de-esser, gain, true-peak
+     limiter, and since FN2-2a spectral denoise, transient shaper, tape
+     saturation and stereo width - every effect a one-click fix emits) renders in the app
+     (`shared-core/.../dsp/OfflineChainRenderer.h`, in `KhensuDsp`) on the
+     render queue's pool: listed, cancellable, session-checked and registered
+     exactly like a service render (`RenderService::startNativeChain`). It
+     repeats the service's processors (parity fixtures from
+     `scripts/gen_render_parity_fixtures.py`), its output stage and the
+     guardrail's true-peak and mono-bass checks. A chain with an engine-only
+     effect (reverbs, multiband, ... - nothing a one-click fix builds) still
+     waits for the service; when the service is up it renders everything.
 4. **Version tree** — renders aren't overwritten; they form a branching render
    tree so any two versions can be diffed (What Changed) or A/B'd, loudness-matched.
    Every desktop render gets a unique timestamped filename
@@ -203,6 +229,9 @@ having started it (see "Service lifecycle" below).
    original's findings: resolved, improved, unchanged, worse or new, with the
    metric deltas (FEAT-1, `desktop-app/Source/analysis/FixVerification.h`).
    The issue queue shows the outcome per finding.
+   Without the service the check grades the render with the native pass
+   alone; a finding built on an engine input reads "could not check", never
+   "resolved" (FIX-1).
 
 ## Concurrency model
 

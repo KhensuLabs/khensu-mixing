@@ -33,8 +33,19 @@ class IIssues {
         State state = State::Open;
         Check check = Check::None;
         bool renderable = false; ///< Fix renders it (it has concrete parameters)
+        /// UI-1: the share of this finding's fix (1 = the full move) the
+        /// current version is built on - fix renders of this run that are
+        /// ancestors of the current version, summed. 0 when none is.
+        float fixedAmount = 0.0f;
         /// Done, dismissed or resolved: listed after the open issues.
         bool settled() const noexcept { return state != State::Open || check == Check::Resolved; }
+        /// What Fix top issue may pick: open, rendered by Fix, and not a fix
+        /// that needs listening (RUN-6: the denoise of a bounced master took
+        /// music with the noise - it stays one Fix press away on its row).
+        bool topFixCandidate() const noexcept
+        {
+            return !settled() && renderable && !recId.empty() && code != "noise_floor_high";
+        }
     };
 
     using Done = std::function<void(bool ok, juce::String message)>;
@@ -50,8 +61,15 @@ class IIssues {
     /// Renders the fix (from the current version, WF-1), marks the issue done
     /// and lets the check (FEAT-1) say whether it worked.
     virtual void fix(const std::string& recId, Done onDone = {}) = 0;
+    /// OVH-6: Fix at `amount` of the suggested move (0..1; 1 = fix()), as
+    /// scaledRecommendation() sizes it - the Issues screen's Fix amount.
+    virtual void fixScaled(const std::string& recId, float amount, Done onDone = {}) = 0;
     /// Fixes the most severe open, renderable issue; false when there is none.
     virtual bool fixTopIssue(Done onDone = {}) = 0;
+    /// VIZ-N3: the fix in one time region only ("fix the chorus only") - the
+    /// rest of the track is copied from the current version, crossfaded.
+    virtual void fixInRegion(const std::string& recId, double startSec, double endSec, const juce::String& label,
+                             Done onDone = {}) = 0;
     /// True while a fix is rendering. One at a time (FIX-4): a fix asked for
     /// in that time renders nothing and says why through its onDone.
     virtual bool fixInProgress() const = 0;

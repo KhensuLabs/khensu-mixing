@@ -26,11 +26,15 @@
                      fails on a crash, a non-zero exit or a screen over its
                      layout budget (ENG-2's construct/destroy check)
       app-loop       the built app with --screenshot-audio on -LoopAudio
-                     (default scratch_audio/sample.wav; KHENSU_LOOP_AUDIO):
-                     analyse, fix the top issue, the fix check, an Intake
-                     drop; scripts/check_gate_log.py asserts the log (VER-3).
-                     WARN when only stem separation is unavailable; SKIP
-                     without an audio file. The app starts the service itself.
+                     (default: the full-length demo song the app writes with
+                     --write-demo-song, VIZ-F3; KHENSU_LOOP_AUDIO): analyse,
+                     fix the top issue, the fix check, an Intake drop;
+                     scripts/check_gate_log.py asserts the log (VER-3). On the
+                     demo song the screenshots are then compared image by
+                     image with tests/visual_baseline/
+                     (scripts/compare_screenshots.py; -UpdateVisualBaseline
+                     rewrites them). WARN when only stem separation is
+                     unavailable. The app starts the service itself.
       pytest         full local-services suite, own --basetemp
       clap-e2e       scripts/check_clap_end_to_end.py: the pinned CLAP model
                      built, tokenised and run on the venv's NumPy (PKG-5:
@@ -98,7 +102,8 @@ param(
     [string]$LogDir = "",
     [double]$TimeoutScale = 1.0,
     [double]$LockWaitMinutes = 90,
-    [string]$LoopAudio = ""
+    [string]$LoopAudio = "",
+    [switch]$UpdateVisualBaseline
 )
 
 $ErrorActionPreference = "Stop"
@@ -531,14 +536,23 @@ $Steps = [ordered]@{
     "app-loop" = @{ Blocking = $true; Minutes = 30; Run = {
         $app = Join-Path $BuildDir "desktop-app\KhensuDesktop_artefacts\Release\Khensu Mixing.exe"
         if (-not $DryRun -and -not (Test-Path -LiteralPath $app)) { throw "$app not built (run cpp-build)" }
-        $audio = if ($LoopAudio) { $LoopAudio } elseif ($env:KHENSU_LOOP_AUDIO) { $env:KHENSU_LOOP_AUDIO } else { Join-Path $Root "scratch_audio\sample.wav" }
+        $audio = if ($LoopAudio) { $LoopAudio } elseif ($env:KHENSU_LOOP_AUDIO) { $env:KHENSU_LOOP_AUDIO } else { "" }
+        $demo = -not $audio
+        Require-Python
+        $shots = Join-Path $LogDir "app-loop"
+        if ($DryRun) { Write-Host "    [dry-run] `"$app`" --screenshot=$shots --screenshot-audio=$(if ($demo) { '<demo song>' } else { $audio })"; return }
+        New-Item -ItemType Directory -Force -Path $shots | Out-Null
+        if ($demo) {
+            # VIZ-F3 / VIZ-P8: a real-length track (3:44, sections, findings),
+            # written by the app itself - a 3 s clip left every chart empty.
+            $audio = Join-Path $LogDir "demo-song.wav"
+            $wrote = Invoke-WithDeadline -Exe $app -RawArguments "--write-demo-song=`"$audio`"" -WorkDir $Root `
+                -TimeoutSec 120 -What "app-loop: --write-demo-song"
+            if ($wrote -ne 0 -or -not (Test-Path -LiteralPath $audio -PathType Leaf)) { throw "--write-demo-song exited $wrote" }
+        }
         if (-not (Test-Path -LiteralPath $audio -PathType Leaf)) {
             Skip-Step "no audio for the loop ($audio); pass -LoopAudio <wav> or set KHENSU_LOOP_AUDIO"
         }
-        Require-Python
-        $shots = Join-Path $LogDir "app-loop"
-        if ($DryRun) { Write-Host "    [dry-run] `"$app`" --screenshot=$shots --screenshot-audio=$audio"; return }
-        New-Item -ItemType Directory -Force -Path $shots | Out-Null
         # A GUI exe (see app-smoke). It exits 1 when stems are unavailable,
         # so the log, not the exit code, decides.
         $code = Invoke-WithDeadline -Exe $app -RawArguments "--screenshot=`"$shots`" --screenshot-audio=`"$audio`"" `
@@ -546,8 +560,19 @@ $Steps = [ordered]@{
         $verdict = Invoke-NativeCapture $Python @("scripts/check_gate_log.py", (Join-Path $shots "analysis-gate-log.txt"))
         $verdict.Output | ForEach-Object { Write-Host "    $_" }
         $summary = ($verdict.Output | Where-Object { $_ -match '^(FAIL|WARN):' }) -join "; "
-        if ($verdict.ExitCode -eq 2) { Warn-Step $summary }
-        if ($verdict.ExitCode -ne 0) { throw "loop failed (app exit $code): $summary - see $shots" }
+        if ($verdict.ExitCode -ne 0 -and $verdict.ExitCode -ne 2) { throw "loop failed (app exit $code): $summary - see $shots" }
+        # VIZ-F3: the design screenshots against the baselines (demo song only:
+        # the baselines are of that track).
+        if ($demo) {
+            $cmp = @("scripts/compare_screenshots.py", $shots)
+            if ($UpdateVisualBaseline) { $cmp += "--update" }
+            $visual = Invoke-NativeCapture $Python $cmp
+            $visual.Output | ForEach-Object { Write-Host "    $_" }
+            $visual.Output | Set-Content -LiteralPath (Join-Path $LogDir "visual-compare.txt") -Encoding utf8
+            if ($visual.ExitCode -eq 1) { throw "visual regression - see $shots\visual-diff" }
+            if ($visual.ExitCode -eq 2) { $summary = (@($summary, "visual: screens moved slightly (see visual-compare.txt)") | Where-Object { $_ }) -join "; " }
+        }
+        if ($verdict.ExitCode -eq 2 -or ($summary -and $summary -match "visual")) { Warn-Step $summary }
     } }
     "pytest" = @{ Blocking = $true; Minutes = 60; Run = {
         Require-Python

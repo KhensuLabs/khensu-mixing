@@ -6,8 +6,8 @@ TEST_CASE("Version constants are defined and correct", "[version]")
 {
     REQUIRE(KHENSU_VERSION_MAJOR == 1);
     REQUIRE(KHENSU_VERSION_MINOR == 0);
-    REQUIRE(KHENSU_VERSION_PATCH == 2);
-    REQUIRE(std::string(KHENSU_VERSION_STRING) == "1.0.2");
+    REQUIRE(KHENSU_VERSION_PATCH == 4);
+    REQUIRE(std::string(KHENSU_VERSION_STRING) == "1.0.4");
 }
 
 TEST_CASE("Version string matches major.minor.patch", "[version]")

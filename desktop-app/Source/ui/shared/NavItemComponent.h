@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <functional>
 #include "KhensuTheme.h"
+#include "NavIcons.h"
 
 namespace khensu {
 
@@ -11,6 +12,9 @@ class NavItemComponent final : public juce::Component {
     NavItemComponent();
 
     void setLabel(const juce::String& label);
+    /// UX2-4: the line icon drawn left of the label (NavIcons.h).
+    void setIcon(nav_icons::Icon icon);
+    nav_icons::Icon icon() const noexcept { return icon_; }
     void setActive(bool active);
     bool isActive() const { return active_; }
 
@@ -37,6 +41,7 @@ class NavItemComponent final : public juce::Component {
 
   private:
     juce::String label_;
+    nav_icons::Icon icon_ = nav_icons::Icon::None;
     bool active_ = false;
     bool hovered_ = false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(NavItemComponent)

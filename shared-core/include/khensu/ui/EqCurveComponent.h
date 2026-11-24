@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <khensu/analysis/AnalysisResult.h>
 #include <functional>
+#include <optional>
 #include <vector>
 
 namespace khensu {
@@ -146,6 +147,9 @@ class EqCurveComponent final : public juce::Component {
     int dragBandIndex_ = -1;
     int hoveredBand_ = -1;
     int hoveredAnnotation_ = -1;
+    /// VIZ-U3: the pointer over the plot (off a handle / chip) - a crosshair
+    /// with the frequency and the EQ's combined change there.
+    std::optional<juce::Point<float>> hoverPoint_;
     juce::Point<float> dragStartPos_;
     float dragStartGain_ = 0.0f;
     float dragStartHz_ = 0.0f;

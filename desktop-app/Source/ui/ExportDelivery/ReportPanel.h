@@ -27,6 +27,10 @@ class ReportPanel final : public PanelCard {
     juce::Label statusLabel_;
     juce::TextButton openButton_{TRANS("Open in Browser")};
     juce::TextButton savePdfButton_{TRANS("Save as PDF")};
+    /// VIZ-N5: one self-contained HTML page with the key charts.
+    juce::TextButton visualButton_{TRANS("Save visual report...")};
+    void onSaveVisual();
+    void writeVisual(const juce::File& file);
     juce::Label pdfStatusLabel_;
 
     juce::String reportOutputPath_;

@@ -214,6 +214,29 @@ def test_transcription_uses_vad_and_keeps_word_probability(monkeypatch):
     assert words == [{"word": "hello", "start_sec": 0.1, "end_sec": 0.4, "probability": 0.91}]
 
 
+
+def test_transcription_falls_back_without_vad_for_sung_vocals(monkeypatch):
+    """Silero VAD hears no speech in many full mixes; the fallback keeps the
+    confident segments and still drops ones Whisper rates as non-speech."""
+    from khensu_services.analysis import lyric_analyzer as la
+    calls = []
+
+    def seg(word, no_speech, logprob):
+        w = types.SimpleNamespace(word=" " + word, start=0.1, end=0.4, probability=0.8)
+        return types.SimpleNamespace(words=[w], no_speech_prob=no_speech, avg_logprob=logprob)
+
+    class _Model:
+        def transcribe(self, path, **kw):
+            calls.append(kw["vad_filter"])
+            if kw["vad_filter"]:
+                return [], None
+            return [seg("sung", 0.1, -0.3), seg("phantom", 0.9, -0.3), seg("mumble", 0.1, -1.6)], None
+
+    monkeypatch.setattr(la, "_get_model", lambda size="base": _Model())
+    words = la.transcribe_lyrics("x.wav")
+    assert calls == [True, False]
+    assert [w["word"] for w in words] == ["sung"]
+
 def test_low_confidence_words_are_never_flagged_masked():
     from khensu_services.analysis import lyric_analyzer as la
     sr = 16000

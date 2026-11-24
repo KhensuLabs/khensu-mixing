@@ -85,18 +85,27 @@ void PlaybackService::seekDaw(float seconds)
 
 void PlaybackService::loadAudioFileForPlayback(const juce::File& file)
 {
-    const auto waveformGeneration = waveformGeneration_.fetch_add(1) + 1;
-    const std::string waveformSourcePath = file.getFullPathName().toStdString();
-    loadedPath_ = waveformSourcePath;
-    const BackgroundReadKey readKey{sessionIdOf(sessions_), waveformSourcePath, "waveform", waveformGeneration};
+    // One file on one deck: any A/B pair is let go (UI-6).
+    pairA_.clear();
+    pairB_.clear();
+    loadedPath_ = file.getFullPathName().toStdString();
     engine_.clearSource();
+    if (file.existsAsFile() && engine_.loadFile(file) > 0.0)
+        startWaveformScan(file);
+    else
+        startWaveformScan({}); // clears the peaks
+    updatePlaybackGain();
+}
 
+void PlaybackService::startWaveformScan(const juce::File& file)
+{
+    const auto waveformGeneration = waveformGeneration_.fetch_add(1) + 1;
+    const BackgroundReadKey readKey{sessionIdOf(sessions_), loadedPath_, "waveform", waveformGeneration};
     {
         const juce::ScopedLock sl(waveformLock_);
         waveformPeaks_.clear();
     }
-
-    if (file.existsAsFile() && engine_.loadFile(file) > 0.0) {
+    if (file.existsAsFile()) {
         // Downsampled waveform peaks, off the message thread. `this` is safe
         // on the worker: the owner drains the pool before destroying us.
         juce::WeakReference<PlaybackService> self(this);
@@ -159,7 +168,6 @@ void PlaybackService::loadAudioFileForPlayback(const juce::File& file)
             });
         });
     }
-    updatePlaybackGain();
 }
 
 std::vector<float> PlaybackService::getWaveformPeaks() const
@@ -183,9 +191,42 @@ void PlaybackService::updatePlaybackGain() noexcept
     // genre-target guess (AUDIT-038).
     PlaybackSourceController::GainContext ctx;
     if (analysis_.hasAnalysis()) ctx.originalLufs = analysis_.currentAnalysis().loudness.lufs_integrated;
-    ctx.loadedPath = juce::String(loadedPath_);
     ctx.originalPath = sessions_.activeSourcePath();
+    if (abPairLoaded()) {
+        // UI-6: both decks are live - each gets its own matched gain, so
+        // the crossfade moves between two levelled signals.
+        ctx.loadedPath = pairA_;
+        engine_.setGain(source_.gainFor(ctx));
+        ctx.loadedPath = pairB_;
+        engine_.setAlternateGain(source_.gainFor(ctx));
+        return;
+    }
+    ctx.loadedPath = juce::String(loadedPath_);
     engine_.setGain(source_.gainFor(ctx));
+}
+
+AbLevelOffset PlaybackService::abLevelOffset() const
+{
+    std::optional<float> originalLufs;
+    if (analysis_.hasAnalysis()) originalLufs = analysis_.currentAnalysis().loudness.lufs_integrated;
+    return source_.levelOffset(originalLufs);
+}
+
+bool PlaybackService::abPairLoaded() const
+{
+    return engine_.hasAlternate() && pairB_.isNotEmpty() && pairB_ == source_.processedPath
+           && pairA_ == sessions_.activeSourcePath();
+}
+
+bool PlaybackService::loadAbPair()
+{
+    const juce::String original = sessions_.activeSourcePath();
+    const juce::String processed = source_.processedPath;
+    loadAudioFileForPlayback(juce::File(original)); // main deck = A (clears any old pair)
+    if (processed.isEmpty() || engine_.loadAlternate(juce::File(processed)) <= 0.0) return false;
+    pairA_ = original;
+    pairB_ = processed;
+    return true;
 }
 
 void PlaybackService::setStreamingPreviewGainDb(float offsetDb) noexcept
@@ -384,10 +425,27 @@ void PlaybackService::measureAbProcessedLufs(const juce::String& path)
 void PlaybackService::setAbProcessedPath(const juce::String& path) noexcept
 {
     const bool exists = path.isNotEmpty() && juce::File(path).existsAsFile();
+    const bool pairWasLoaded = abPairLoaded();
     const auto todo = source_.assignProcessed(path, juce::String(loadedPath_), lufsCache_.find(path), exists);
     if (todo.measure) measureAbProcessedLufs(path);
 
-    if (todo.reloadTransport) {
+    if (pairWasLoaded) {
+        // The alternate deck holds the old B - or this same path, rendered
+        // again in place (AUDIT-018): it is stale either way.
+        pairB_.clear();
+        if (source_.showingProcessed && exists) {
+            setAbSide(true); // reload the pair with the new B, still on B
+        } else {
+            engine_.clearAlternate(); // crossfades back to A if B was audible
+            const juce::String a = pairA_;
+            pairA_.clear();
+            if (juce::String(loadedPath_) != a) {
+                loadedPath_ = a.toStdString();
+                startWaveformScan(juce::File(a));
+            }
+            updatePlaybackGain();
+        }
+    } else if (todo.reloadTransport) {
         // B is what the transport is playing: a new B - or the SAME path
         // re-rendered in place (vocal macro preview, re-applied fix) - must
         // be reloaded, or the user keeps hearing stale / torn audio
@@ -411,8 +469,36 @@ void PlaybackService::setAbSide(bool showProcessed)
     const bool playing = engine_.isPlaying();
 
     source_.showingProcessed = wantB;
-    const juce::String target = wantB ? source_.processedPath : sessions_.activeSourcePath();
 
+    // UI-6: with a B to compare, A and B play together and the switch is an
+    // equal-power crossfade (~50 ms) - no fade-out, reload and fade-in.
+    if (hasAbComparison()) {
+        if (!abPairLoaded()) {
+            if (loadAbPair()) {
+                engine_.setPosition(pos);
+                engine_.crossfadeTo(wantB); // not playing yet: immediate
+                updatePlaybackGain();
+                if (playing) engine_.play();
+            } else {
+                // B would not load beside A: the single-deck switch.
+                loadAudioFileForPlayback(juce::File(wantB ? source_.processedPath : sessions_.activeSourcePath()));
+                engine_.setPosition(pos);
+                if (playing) engine_.play();
+                return;
+            }
+        } else {
+            engine_.crossfadeTo(wantB);
+        }
+        const juce::String target = wantB ? pairB_ : pairA_;
+        if (juce::String(loadedPath_) != target) {
+            loadedPath_ = target.toStdString();
+            startWaveformScan(juce::File(target));
+        }
+        updatePlaybackGain();
+        return;
+    }
+
+    const juce::String target = wantB ? source_.processedPath : sessions_.activeSourcePath();
     loadAudioFileForPlayback(juce::File(target));
     updatePlaybackGain();
     engine_.setPosition(pos); // seamless - same position
@@ -471,6 +557,8 @@ void PlaybackService::invalidateReads() noexcept
 void PlaybackService::resetForSession()
 {
     source_.resetForSession();
+    pairA_.clear();
+    pairB_.clear();
     unloadAudioFileForPlayback();
     waveformGeneration_.fetch_add(1); // an in-flight peak scan of the old file is dropped
     loadedPath_.clear();

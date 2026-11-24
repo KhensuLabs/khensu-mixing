@@ -187,12 +187,14 @@ TEST_CASE("Apply reports inline with Undo instead of a dialog in the host (UX-10
 
     khensu::Recommendation rec;
     rec.id = "r1";
+    rec.safe_to_auto_apply = true; // OVH-8: only safe fixes auto-apply
+    rec.suggested_parameters["eq_freq_hz"] = 2500.0f;
     rec.suggested_parameters["eq_gain_db"] = -3.0f;
     rec.suggested_parameters["some_unmapped_knob"] = 1.0f;
-    ed.applySuggestion(rec);
+    CHECK(ed.applySuggestion(rec));
 
     const auto text = ed.applyStripTextForTesting();
-    CHECK(text.startsWith("Applied 1 parameter"));
+    CHECK(text.startsWith("Applied 2 parameters"));
     CHECK(text.contains("1 to dial in by hand"));
     CHECK(gain->getValue() != before);
 

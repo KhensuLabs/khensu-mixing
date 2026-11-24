@@ -1,4 +1,5 @@
 // desktop-app/Source/ui/VocalWorkspace/TakeAlignmentPanel.cpp
+#include "../shared/ServiceErrorHint.h"
 #include "TakeAlignmentPanel.h"
 #include "../shared/PanelRunState.h"
 #include "../../IAppController.h"
@@ -158,7 +159,7 @@ void TakeAlignmentPanel::run()
         auto result = bridge.postAnalyzeJson("/analyze/align_takes", body);
         postIfCurrent(self, work, [result, sessionId](TakeAlignmentPanel& panel) {
             if (result.is_err()) {
-                panel.statusLabel_.setText(TRANS("Alignment failed: ") + juce::String(result.error().message),
+                panel.statusLabel_.setText(TRANS("Alignment failed: ") + serviceErrorLine(result.error()),
                                            juce::dontSendNotification);
                 return;
             }

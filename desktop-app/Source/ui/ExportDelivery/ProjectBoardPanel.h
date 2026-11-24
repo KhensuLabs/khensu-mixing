@@ -5,6 +5,7 @@
 // (or makes one), and opens another track's session with a click.
 // THREAD_CONTEXT(UIThread)
 #pragma once
+#include "AlbumConsistencyView.h"
 #include <JuceHeader.h>
 #include "../../session/ProjectTracks.h"
 #include "../shared/KhensuTheme.h" // ThemeListener
@@ -54,6 +55,10 @@ class ProjectBoardPanel final : public PanelCard {
     juce::Label statusLabel_;
 
     project_tracks::Snapshot snapshot_;
+    /// VIZ-N2: the project's tracks on one chart (loudness and tone).
+    AlbumConsistencyView album_;
+    int albumRequest_ = 0;
+    void refreshAlbum();
     int request_ = 0; ///< latest-wins
     int hoverRow_ = -1;
     std::unique_ptr<juce::AlertWindow> dialog_;

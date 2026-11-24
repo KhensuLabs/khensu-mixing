@@ -87,3 +87,14 @@ def test_main_exit_codes(tmp_path: Path) -> None:
     log.write_text("FAIL: still withheld after 10 minutes\n", encoding="utf-8")
     assert module.main([str(log)]) == 1
     assert module.main([str(tmp_path / "missing.txt")]) == 1
+
+
+def test_nothing_to_fix_warns_without_the_fix_milestones() -> None:
+    """RUN-6: a track whose only findings need listening has no one-click fix."""
+    log = "\n".join(
+        line for line in GOOD.splitlines()
+        if not line.strip().startswith(("fix top issue", "fix check"))
+    ) + "\nfix top issue: nothing to fix - No open issue has a one-click fix.\n"
+    verdict = module.check(log)
+    assert verdict.status == "WARN"
+    assert any("one-click" in w for w in verdict.warnings)

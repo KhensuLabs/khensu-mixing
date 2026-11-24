@@ -17,6 +17,8 @@
 #include "ui/MixHubPanel.h"
 #include "ui/IssueTimelinePanel.h"
 #include "ui/PluginSubTabs.h"
+#include "ui/PresetBar.h"
+#include "ui/TopFixControl.h"
 
 namespace khensu {
 
@@ -31,10 +33,17 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     explicit KhensuCopilotEditor(KhensuCopilotProcessor&);
     ~KhensuCopilotEditor() override;
 
-    /// Resize limits (PLG-20): the editor is resizable; below the minimum the
-    /// Chain tab's knobs stop being legible.
+    /// Full-view resize limits (PLG-20): below the minimum the Chain tab's
+    /// knobs stop being legible. The minimum is the Small size.
     static constexpr int kMinWidth = 720, kMinHeight = 540, kMaxWidth = 1800, kMaxHeight = 1300;
-    static constexpr int kDefaultWidth = 800, kDefaultHeight = 600;
+    /// UI-8: the Small / Medium / Large full sizes and the Compact view, which
+    /// fits a DAW insert slot.
+    static constexpr int kSmallWidth = 720, kSmallHeight = 540;
+    static constexpr int kMediumWidth = 960, kMediumHeight = 720;
+    static constexpr int kLargeWidth = 1280, kLargeHeight = 960;
+    static constexpr int kCompactWidth = 560, kCompactHeight = 380;
+    static constexpr int kDefaultWidth = kMediumWidth, kDefaultHeight = kMediumHeight;
+    static juce::Point<int> sizeFor(KhensuCopilotProcessor::ViewSize size) noexcept;
 
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -45,7 +54,26 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     bool selectTabByShortcut(int index);
     int getCurrentTabIndex() const { return tabs_.getCurrentTabIndex(); }
 
+    /// UI-8: switches between Compact and a full size; saved per instance in
+    /// the plugin state (with the current tab).
+    void setView(bool compact, KhensuCopilotProcessor::ViewSize size);
+    bool isCompactView() const noexcept { return compact_; }
+    TopFixControl& topFixControl() noexcept { return suggestionsPage_.topFix_; }
+    TopFixControl& compactTopFixControl() noexcept { return compactTopFix_; }
+    TopFindingsList& compactFindings() noexcept { return compactFindings_; }
+    PresetBar& presetBar() noexcept { return presetBar_; }
+
   private:
+    /// The tab component, reporting tab changes so the tab is saved (UI-8).
+    struct CopilotTabs final : public juce::TabbedComponent {
+        CopilotTabs() : juce::TabbedComponent(juce::TabbedButtonBar::TabsAtTop) {}
+        std::function<void(int)> onTabChanged;
+        void currentTabChanged(int index, const juce::String&) override
+        {
+            if (onTabChanged) onTabChanged(index);
+        }
+    };
+
     /// "Hooks / Brain" tab page: lays out two existing panels side-by-side
     /// under one tab instead of adding a 6th top-level tab. Does not own
     /// hooks/brain - they're KhensuCopilotEditor members, laid out here.
@@ -66,51 +94,19 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
         SystemBrainMiniPanel& brain_;
     };
 
-    /// "AI Suggestions" tab page: the timed Issues list (CE-DAW-3) above the
-    /// suggestion feed, plus a footer deep-link pointing engineers to the full
-    /// Chain Reasoning View, which only the desktop app has room to render
-    /// (Detected -> Cause -> Fix -> Trade-off -> Alternative Strategies -> How
-    /// to Verify). The issues live here rather than in a 9th tab (UX-18).
+    /// "AI Suggestions" tab page: Apply top fix (OVH-8) over the timed Issues
+    /// list (CE-DAW-3) and the suggestion feed, plus a footer deep-link
+    /// pointing engineers to the full Chain Reasoning View, which only the
+    /// desktop app has room to render. The issues live here rather than in a
+    /// 9th tab (UX-18).
     struct SuggestionsTabPage final : public juce::Component {
-        SuggestionsTabPage(IssueTimelinePanel& issues, SuggestionFeedPanel& feed, KhensuCopilotProcessor& processor)
-            : issues_(issues), feed_(feed), processor_(processor)
-        {
-            addAndMakeVisible(issues_);
-            addAndMakeVisible(feed_);
-            desktopLinkButton_.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-            desktopLinkButton_.setColour(juce::TextButton::textColourOffId, PluginLookAndFeel::accentTeal);
-            desktopLinkButton_.setTooltip("Ask Khensu Mixing on the desktop to show the full reasoning for this session.");
-            desktopLinkButton_.onClick = [this] {
-                juce::String sessionId = processor_.getSessionId();
-                if (sessionId.isNotEmpty()) {
-                    processor_.runShortInBackground([sessionId]() {
-                        auto bridge = copilot::ServiceClient::bridge();
-                        bridge.postEvent(sessionId, "show_reasoning", "View full reasoning request from plugin");
-                    });
-                } else {
-                    juce::NativeMessageBox::showMessageBoxAsync(
-                        juce::MessageBoxIconType::InfoIcon, "Full Reasoning on Desktop",
-                        "Open Khensu Mixing on the desktop and select this session's "
-                        "Mix/Master screen to see the full Chain Reasoning View for each "
-                        "recommendation (Detected -> Cause -> Fix -> Trade-off -> "
-                        "Alternative Strategies -> How to Verify) - there's more room "
-                        "for it there than the plugin window allows.");
-                }
-            };
-            addAndMakeVisible(desktopLinkButton_);
-        }
-        void resized() override
-        {
-            auto b = getLocalBounds();
-            desktopLinkButton_.setBounds(b.removeFromBottom(22));
-            issues_.setBounds(b.removeFromTop(juce::jmax(200, b.getHeight() * 11 / 20)));
-            b.removeFromTop(4);
-            feed_.setBounds(b);
-        }
+        SuggestionsTabPage(IssueTimelinePanel& issues, SuggestionFeedPanel& feed, KhensuCopilotProcessor& processor);
+        void resized() override;
         IssueTimelinePanel& issues_;
         SuggestionFeedPanel& feed_;
         KhensuCopilotProcessor& processor_;
-        juce::TextButton desktopLinkButton_{juce::CharPointer_UTF8("View full reasoning on Desktop \xe2\x86\x92")};
+        TopFixControl topFix_;
+        juce::TextButton desktopLinkButton_;
     };
 
     KhensuCopilotProcessor& processor_;
@@ -121,10 +117,10 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     /// VER-8: the ARA and CLAP builds are experimental (CE-DAW-1 / CE-DAW-2):
     /// built and tested, not yet checked in those hosts.
     khensu::ui::ExperimentalTag formatTag_;
-    juce::TextButton loadButton_{"Load Session..."};
+    juce::TextButton loadButton_;
     /// FEAT-7: record the next bars (or the loop) and hand them to the
     /// desktop app as a new session.
-    juce::TextButton captureButton_{"Capture..."};
+    juce::TextButton captureButton_;
     void onCaptureClicked();
     /// Timer: the capture's progress, and writing it once done.
     void updateCapture();
@@ -133,11 +129,15 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     int captureNoteTicks_ = 0;
     /// Loads the bound (or newest) session - after the picker (WF-8).
     void startLoad();
-    juce::TextButton bypassButton_{"Bypass"};
+    juce::TextButton bypassButton_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment_;
+    /// UI-8: Compact / Small / Medium / Large.
+    juce::TextButton viewButton_;
+    void showViewMenu();
+    PresetBar presetBar_;
     juce::Label statusLabel_;
 
-    MeterSection meterSection_; // persistent top meter strip, spans all tabs
+    MeterSection meterSection_; // persistent meter strip, spans all tabs
     HookIndicatorPanel hookPanel_;
     SuggestionFeedPanel suggestionPanel_;
     SystemBrainMiniPanel systemBrainPanel_;
@@ -149,12 +149,17 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     MixHubPanel mixHubPanel_;
     IssueTimelinePanel issuePanel_;
 
-    juce::TabbedComponent tabs_{juce::TabbedButtonBar::TabsAtTop};
+    CopilotTabs tabs_;
     HooksBrainTabPage hooksBrainPage_{hookPanel_, systemBrainPanel_};
     SuggestionsTabPage suggestionsPage_{issuePanel_, suggestionPanel_, processor_};
     // UX-18: five tabs - Suggest (suggestions, hooks/brain), DSP (chain, EQ
     // curve), Plugins (mixer chain, hosted), Mix, Chat.
     PluginSubTabs suggestTab_, dspTab_, pluginsTab_;
+
+    // UI-8 Compact view: meters, top three findings, Apply top fix, A/B.
+    bool compact_ = false;
+    TopFindingsList compactFindings_;
+    TopFixControl compactTopFix_;
 
     void timerCallback() override;
 
@@ -167,6 +172,11 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     void configureKeyboardAccess();
     void onLoadClicked();
     void onAnalysisLoaded();
+    /// Re-reads the findings into the top-fix controls and the compact list.
+    void refreshFindings();
+    void layoutFull(juce::Rectangle<int> b);
+    void layoutCompact(juce::Rectangle<int> b);
+    void layoutApplyStrip(juce::Rectangle<int>& b);
 
     juce::Label mappingHudLabel_;
     juce::Label serviceHealthLabel_;
@@ -174,17 +184,27 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     // UX-10: what Apply did, inline - never a modal dialog inside the DAW.
     // Undo puts back every parameter the apply changed (as host gestures).
     juce::Label applyStripLabel_;
-    juce::TextButton applyUndoButton_{"Undo"};
+    juce::TextButton applyUndoButton_;
+    juce::TextButton applyOverrideButton_; ///< OVH-8: "Apply anyway" when not safe to auto-apply
     juce::TextButton applyDismissButton_{"x"};
     std::vector<float> applyUndoSnapshot_; ///< normalised values before the last apply
-    void showApplyStrip(const juce::String& summary, const juce::String& details, bool canUndo);
+    std::optional<Recommendation> pendingOverride_;
+    void showApplyStrip(const juce::String& summary, const juce::String& details, bool canUndo, bool canOverride = false);
     void undoLastApply();
   public:
     /// Routes a recommendation's suggested parameters into the built-in DSP
-    /// chain (the Suggestions tab's Apply); the rest is listed to dial in.
-    void applySuggestion(const Recommendation& rec);
+    /// chain through the shared mapper (OVH-8) and keeps it live under the
+    /// Amount knob; the rest is listed to dial in. With `requireSafe`, a
+    /// finding not marked safe_to_auto_apply is not applied (the strip says
+    /// why and offers Apply anyway). Returns true when anything was applied.
+    bool applySuggestion(const Recommendation& rec, bool requireSafe = true);
     /// UX-10 (tests): presses the strip's Undo.
     void undoLastApplyForTesting() { undoLastApply(); }
+    /// OVH-8 (tests): presses the strip's Apply anyway.
+    void applyAnywayForTesting()
+    {
+        if (applyOverrideButton_.isVisible()) applyOverrideButton_.onClick();
+    }
     /// UX-10 (tests): the inline apply strip's text, empty when hidden.
     juce::String applyStripTextForTesting() const
     {

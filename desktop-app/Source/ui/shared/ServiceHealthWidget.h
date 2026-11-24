@@ -52,27 +52,43 @@ class ServiceHealthWidget final : public juce::Button, private juce::Timer {
         // Draw dot
         const auto status = getStatus ? getStatus() : SidebarComponent::PythonStatus::Stopped;
         juce::Colour dotCol = KhensuTheme::textTertiary;
-        // UX-7: the sidebar's wording, not a fifth variant of it.
-        const juce::String labelText = service_status::stateLine(status);
+        // UX-7: the sidebar's wording, shortened so a header never
+        // ellipsizes it (UX2-3); the full line is the tooltip.
+        const juce::String labelText = service_status::shortStateLine(status);
+        if (const auto tip = service_status::stateLine(status); getTooltip() != tip) setTooltip(tip);
 
         if (status == SidebarComponent::PythonStatus::Running)
             dotCol = KhensuTheme::accentTeal;
         else if (status == SidebarComponent::PythonStatus::Starting)
-            dotCol = KhensuTheme::accentAmber;
+            dotCol = KhensuTheme::textSecondary; // on its way: a hollow ring, not a warning
         else if (status == SidebarComponent::PythonStatus::GaveUp)
             dotCol = KhensuTheme::accentRed;
 
-        auto dotArea = b.removeFromLeft(14).withSizeKeepingCentre(6, 6);
+        auto dotArea = b.removeFromLeft(16).withSizeKeepingCentre(6, 6);
         g.setColour(dotCol);
-        g.fillEllipse(dotArea);
+        if (status == SidebarComponent::PythonStatus::Starting)
+            g.drawEllipse(dotArea.reduced(0.5f), 1.0f);
+        else
+            g.fillEllipse(dotArea);
 
         // Draw label
-        g.setColour(KhensuTheme::textTertiary);
-        g.setFont(khensu::KhensuTheme::uiFont(10.5f, juce::Font::plain));
-        g.drawText(labelText, b, juce::Justification::centredLeft, true);
+        g.setColour(KhensuTheme::textSecondary);
+        g.setFont(labelFont());
+        g.drawText(labelText, b, juce::Justification::centredLeft, false);
+    }
+
+    /// The width the widest state needs, for the host's layout.
+    static int preferredWidth()
+    {
+        int w = 0;
+        for (auto s : {SidebarComponent::PythonStatus::Running, SidebarComponent::PythonStatus::Starting,
+                       SidebarComponent::PythonStatus::GaveUp, SidebarComponent::PythonStatus::Stopped})
+            w = juce::jmax(w, juce::GlyphArrangement::getStringWidthInt(labelFont(), service_status::shortStateLine(s)));
+        return w + 16 + 8;
     }
 
   private:
+    static juce::Font labelFont() { return KhensuTheme::labelFont(KhensuTheme::kFontLabel); }
     void timerCallback() override { repaint(); }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ServiceHealthWidget)

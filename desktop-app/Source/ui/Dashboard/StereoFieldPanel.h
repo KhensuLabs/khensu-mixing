@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/Dashboard/StereoFieldPanel.h
 #pragma once
+#include "../shared/HoverCells.h"
 #include "../shared/PanelCard.h"
 #include "../shared/ListenerHandle.h"
 #include "../shared/ZoneMeterComponent.h"
@@ -16,8 +17,11 @@ namespace khensu {
 // (extended_analyzer.analyze_stereo_field_over_time). Hidden (zero rows)
 // until that data is present, matching CorrelationStripComponent's pattern
 // on PhasePanel.
-class StereoFieldTimelineStrip : public juce::Component {
+class StereoFieldTimelineStrip : public juce::Component, public juce::SettableTooltipClient {
   public:
+    /// VIZ-U3: the readout under the pointer.
+    void mouseMove(const juce::MouseEvent& e) override { hover_.update(*this, e.position); }
+    void mouseExit(const juce::MouseEvent&) override { setTooltip({}); }
     StereoFieldTimelineStrip() = default;
     void setTimeline(std::vector<AnalysisResult::StereoFieldPoint> points)
     {
@@ -29,6 +33,7 @@ class StereoFieldTimelineStrip : public juce::Component {
 
   private:
     std::vector<AnalysisResult::StereoFieldPoint> points_;
+    HoverCells hover_; ///< VIZ-U3, filled in paint()
     JUCE_DECLARE_NON_COPYABLE(StereoFieldTimelineStrip)
 };
 

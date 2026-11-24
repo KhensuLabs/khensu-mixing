@@ -38,12 +38,16 @@ static void applyDeepResponse(AnalysisResult& result, const ipc::DeepAnalysisRes
     result.stereo_field_timeline = deep.stereo_field_timeline;
 }
 
-AnalysisServiceCalls AnalysisServiceCalls::localService()
+AnalysisServiceCalls AnalysisServiceCalls::localService(std::shared_ptr<const service_ready::EngineGate> engine)
 {
     AnalysisServiceCalls calls;
-    // The readiness probe keeps one bridge; every other request builds its
-    // own, so the five that run together share nothing.
-    calls.available = [bridge = std::make_shared<ipc::HttpServiceBridge>()] { return bridge->is_service_available(); };
+    // The lifecycle's verdict when it has one (OVH-1); otherwise the probe,
+    // which keeps one bridge. Every other request builds its own, so the
+    // five that run together share nothing.
+    calls.available = [engine, bridge = std::make_shared<ipc::HttpServiceBridge>()] {
+        return service_ready::engineAvailable(engine.get(), [&bridge] { return bridge->is_service_available(); });
+    };
+    calls.knownNotReady = [engine] { return service_ready::engineKnownNotReady(engine.get()); };
     calls.deep = [](const std::string& path, const DeepAnalysisJobHooks& hooks) {
         ipc::HttpServiceBridge bridge;
         return runDeepAnalysisJob(bridge, path, hooks);
@@ -58,9 +62,9 @@ AnalysisServiceCalls AnalysisServiceCalls::localService()
     return calls;
 }
 
-AnalysisServiceCalls AnalysisServiceCalls::fixCheck()
+AnalysisServiceCalls AnalysisServiceCalls::fixCheck(std::shared_ptr<const service_ready::EngineGate> engine)
 {
-    auto calls = localService();
+    auto calls = localService(std::move(engine));
     calls.deep = [](const std::string& path, const DeepAnalysisJobHooks& hooks) {
         ipc::HttpServiceBridge bridge;
         DeepAnalysisJobHooks fixCheckHooks = hooks;
@@ -133,7 +137,7 @@ void AnalysisController::clear()
 }
 
 void AnalysisController::analyzeSession(const Session& session, ResultCallback onUpdate, ProgressCallback onProgress,
-                                       bool forceRerun)
+                                       bool forceRerun, bool keepCurrentResult)
 {
     if (session.files.empty()) return;
 
@@ -166,9 +170,13 @@ void AnalysisController::analyzeSession(const Session& session, ResultCallback o
     // A fresh run: forget the previous result. currentResult() is read by pull
     // (Copilot chat, System Brain, screens on visibility); leaving the old
     // value would show the previous session's numbers until this run lands.
-    current_ = AnalysisResult{};
-    hasResult_ = false;
-    cachedSessionId_.clear();
+    // An in-place re-run of the same session (FN2-2b: the native result on
+    // screen gains its deep half) keeps it until the new one replaces it.
+    if (!keepCurrentResult) {
+        current_ = AnalysisResult{};
+        hasResult_ = false;
+        cachedSessionId_.clear();
+    }
 
     // This single increment both cancels any in-flight run and claims the new generation.
     const int myGen = sharedState_->generation.fetch_add(1) + 1; // claim a new generation
@@ -306,7 +314,18 @@ void AnalysisController::analyzeSession(const Session& session, ResultCallback o
                 // start missed it and silently skipped the deep pass
                 // (ServiceReadyWait.h). Cancelled with the analysis.
                 bool engineReady = false;
-                if (target.run_deep_analysis) {
+                if (target.run_deep_analysis && service->knownNotReady && service->knownNotReady()) {
+                    // FN2-2b: the lifecycle says the engine is starting (a
+                    // first launch's cold start) or down. Waiting would only
+                    // hold the native findings back: this result is complete
+                    // without the engine's inputs, which are marked
+                    // unanswered, and AnalysisService re-runs it in place
+                    // once the engine is Running.
+                    juce::Logger::writeToLog("AnalysisController: analysis engine not running yet - the native "
+                                             "result now, the deep pass when it is (" + juce::String(file.path) + ")");
+                    result.inputs_failed |= analysis_inputs::serviceInputs(!localRefPath.empty());
+                }
+                else if (target.run_deep_analysis) {
                     const auto t0 = juce::Time::getMillisecondCounter();
                     const auto wait = service_ready::waitForService(
                         [&service] { return service->available(); }, superseded,
@@ -365,6 +384,10 @@ void AnalysisController::analyzeSession(const Session& session, ResultCallback o
                     scans.emplace(std::move(s));
                 };
 
+                // OVH-1: a deep pass that does not run (switched off, or no
+                // engine) is reported as skipped, so the progress strips show
+                // its stages as skipped rather than done.
+                if (!engineReady && singleFile) reportProgress("deep_analysis:skipped", 2, 6);
                 if (engineReady) {
                     if (singleFile) reportProgress("deep_analysis", 2, 6);
                     // The fix check sends them with the deep job rather than

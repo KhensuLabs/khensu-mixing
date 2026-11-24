@@ -241,6 +241,11 @@ class _BasicPitchServer:
         # worker. Both ends speak UTF-8: here explicitly, in the child via
         # PYTHONIOENCODING/PYTHONUTF8 plus the worker's own stdio reconfigure.
         env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+        # The worker's numba (another Python, another numba) caches beside
+        # the service's, not in the same files: a cache two processes write
+        # at once can be left with variants that crash on load (FN2-3).
+        if env.get("NUMBA_CACHE_DIR"):
+            env["NUMBA_CACHE_DIR"] = str(Path(env["NUMBA_CACHE_DIR"]) / "basic-pitch")
         self._proc = subprocess.Popen(
             [py, *self._worker_args],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,

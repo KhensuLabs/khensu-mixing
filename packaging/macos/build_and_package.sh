@@ -230,7 +230,7 @@ cat > "$PKGWORK/distribution.xml" <<XML
 XML
 pkg_sign=()
 [[ -n "${KHENSU_INSTALLER_IDENTITY:-}" ]] && pkg_sign=(--sign "$KHENSU_INSTALLER_IDENTITY" --timestamp)
-productbuild --distribution "$PKGWORK/distribution.xml" --package-path "$PKGWORK" "${pkg_sign[@]}" "$PKG"
+productbuild --distribution "$PKGWORK/distribution.xml" --package-path "$PKGWORK" ${pkg_sign[@]+"${pkg_sign[@]}"} "$PKG"
 rm -rf "$PKGWORK"
 
 # Drag-and-drop alternative: the app and the plug-ins, with shortcuts to the

@@ -4,6 +4,7 @@
 #include <khensu/analysis/AnalysisResult.h>
 #include "../shared/PanelCard.h"
 #include "../shared/Camera3D.h"
+#include "../shared/HiResSpectrogramView.h"
 #include <vector>
 
 namespace khensu {
@@ -55,6 +56,7 @@ class SpectrogramPanel final : public PanelCard {
     std::vector<float> bandEdgesHz_;
     float durationSec_ = 0.0f;
     juce::String lastFetchedPath_;
+    enum class FetchState { Idle, Measuring, Ready, Failed } fetchState_ = FetchState::Idle; ///< VIZ-P7
 
     std::vector<Recommendation> recommendations_;
     std::optional<AnalysisResult::ResonanceData> resonanceData_;
@@ -63,13 +65,15 @@ class SpectrogramPanel final : public PanelCard {
     bool imageDirty_ = true;
 
     // View options
-    bool is3DMode_ = true;
+    bool is3DMode_ = false; ///< VIZ-S1: the detailed 2D view is the default
     bool showEqTerrain_ = false;
 
     juce::TextButton toggle3DButton_;
     juce::TextButton toggleEqTerrainButton_;
     juce::TextButton resetZoomButton_{TRANS("Reset Zoom")};
 
+    HiResSpectrogramView hires_;
+    void updateModeVisibility();
     Camera3D camera3D_;
     float hoverX_ = -1.0f, hoverY_ = -1.0f; // local coords; -1 = not hovering
     float viewStartSec_ = 0.0f, viewEndSec_ = 0.0f;

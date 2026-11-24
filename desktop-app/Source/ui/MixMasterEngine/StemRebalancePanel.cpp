@@ -48,6 +48,14 @@ StemRebalancePanel::StemRebalancePanel(IAppController& c) : PanelCard(c, TRANS("
     refreshAvailability();
     vocalListener_ = listen(controller_.stems(), this, &IStems::addCurrentVocalListener,
                             &IStems::removeCurrentVocalListener, [this] { refreshAvailability(); });
+    separationListener_ = listen(controller_.stems(), this, &IStems::addVocalAnalysisListener,
+                                 &IStems::removeVocalAnalysisListener, [this] { refreshAvailability(); });
+}
+
+void StemRebalancePanel::visibilityChanged()
+{
+    PanelCard::visibilityChanged();
+    if (isShowing()) refreshAvailability();
 }
 
 std::map<std::string, std::string> StemRebalancePanel::stemPaths() const
@@ -69,6 +77,8 @@ void StemRebalancePanel::refreshAvailability()
     const bool has = stemPaths().size() >= 2;
     run_.setCanRun(has);
     suggestButton_.setEnabled(has);
+    suggestButton_.setTooltip(has ? TRANS("Gains that move each stem's share of the mix toward the genre's balance")
+                                  : TRANS("Needs separated stems - run Isolate Stems first."));
     if (!has && !run_.isBusy()) run_.setIdle(TRANS("Needs separated stems - run Isolate Stems first."));
     else if (!run_.isBusy() && !run_.showsResult() && !run_.hasError())
         run_.setIdle(controller_.currentVocalStem().isNotEmpty()

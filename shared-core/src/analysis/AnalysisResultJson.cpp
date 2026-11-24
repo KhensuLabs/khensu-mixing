@@ -73,6 +73,7 @@ juce::var measuredToVar(const AnalysisResult& r)
                                           {"tilt_db_per_octave", s.tilt_db_per_octave}}));
     root->setProperty("dynamics", object({{"crest_factor_db", r.dynamics.crest_factor_db},
                                           {"dynamic_range_db", r.dynamics.dynamic_range_db},
+                                          {"dynamic_range_measured", r.dynamics.dynamic_range_measured},
                                           {"peak_to_rms_db", r.dynamics.peak_to_rms_db}}));
     root->setProperty("stereo", object({{"width", r.stereo.width},
                                         {"correlation", r.stereo.correlation},
@@ -129,6 +130,7 @@ bool measuredFromVar(const juce::var& v, AnalysisResult& out)
     const auto d = v["dynamics"];
     r.dynamics.crest_factor_db = f(d, "crest_factor_db", 0.0f);
     r.dynamics.dynamic_range_db = f(d, "dynamic_range_db", 0.0f);
+    r.dynamics.dynamic_range_measured = b(d, "dynamic_range_measured", true);
     r.dynamics.peak_to_rms_db = f(d, "peak_to_rms_db", 0.0f);
     const auto st = v["stereo"];
     r.stereo.width = f(st, "width", 0.0f);

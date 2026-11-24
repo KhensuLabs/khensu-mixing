@@ -401,3 +401,141 @@ TEST_CASE("RenderService: the Done entry points word every outcome (REF-3)", "[s
     CHECK_FALSE(done[1].first);
     CHECK(done[1].second == "Session changed - the render was not loaded.");
 }
+
+// ---- OVH-9: renders without the service ------------------------------------
+
+namespace {
+/// Pumps the message loop (RenderJobManager posts its results with callAsync).
+template <typename Pred> bool pumpUntil(Pred pred, int timeoutMs = 20000)
+{
+    auto* mm = juce::MessageManager::getInstance();
+    const auto deadline = juce::Time::getMillisecondCounter() + static_cast<juce::uint32>(timeoutMs);
+    while (!pred() && juce::Time::getMillisecondCounter() < deadline) mm->runDispatchLoopUntil(20);
+    return pred();
+}
+
+khensu::IRenders::ChainRender shelfChain()
+{
+    khensu::IRenders::ChainRender render;
+    render.description = "Low shelf";
+    render.chain.push_back({"LowShelfFilter", {{"cutoff_frequency_hz", 120.0f}, {"gain_db", -3.0f}, {"q", 0.707f}}});
+    render.chain.push_back({"Limiter", {{"threshold_db", -1.0f}}});
+    return render;
+}
+} // namespace
+
+TEST_CASE("RenderService: the native fallback decision (OVH-9)", "[split][renders][ovh9]")
+{
+    using Spec = khensu::ipc::HttpServiceBridge::EffectSpec;
+    const std::vector<Spec> native = {{"HighpassFilter", {{"cutoff_frequency_hz", 30.0f}}},
+                                      {"LowShelfFilter", {{"gain_db", -3.0f}}},
+                                      {"PeakFilter", {{"gain_db", -6.0f}, {"q", 6.0f}}},
+                                      {"Compressor", {{"ratio", 2.0f}}},
+                                      {"DeEsser", {{"threshold_db", -22.0f}}},
+                                      {"Gain", {{"gain_db", 2.0f}}},
+                                      {"Limiter", {{"threshold_db", -1.0f}}}};
+    CHECK(RenderService::shouldRenderNatively(false, native));
+    CHECK_FALSE(RenderService::shouldRenderNatively(true, native)); // the service is the reference when up
+    // FN2-2a: every effect a fix emits renders natively now.
+    for (const char* nowNative : {"SpectralDenoise", "TransientShaper", "TapeSaturation", "StereoWidener"}) {
+        auto chain = native;
+        chain.push_back({nowNative, {}});
+        INFO(nowNative);
+        CHECK(RenderService::shouldRenderNatively(false, chain));
+    }
+    for (const char* engineOnly : {"Reverb", "MultibandCompressor", "GlueCompressor"}) {
+        auto chain = native;
+        chain.push_back({engineOnly, {}});
+        INFO(engineOnly);
+        CHECK_FALSE(RenderService::shouldRenderNatively(false, chain));
+    }
+    CHECK_FALSE(RenderService::shouldRenderNatively(false, {}));
+    const auto converted = RenderService::nativeChain(native);
+    REQUIRE(converted.size() == native.size());
+    CHECK(converted[2].effect == "PeakFilter");
+    CHECK(converted[2].parameters.at("q") == 6.0f);
+}
+
+TEST_CASE("RenderService renders a fix natively while the engine is down (OVH-9)", "[split][renders][ovh9]")
+{
+    Fixture f;
+    const auto sessionId = f.openSession();
+    bool serviceUp = false;
+    f.renders->serviceAvailable = [&serviceUp] { return serviceUp; };
+
+    SECTION("it becomes a version, exactly like a service render")
+    {
+        Reported r;
+        juce::var result;
+        const auto out = f.renders->renderVersion(shelfChain(), "_fix",
+                                                  [&](Outcome o, const juce::String& text, const juce::var& full) {
+                                                      ++r.calls;
+                                                      r.outcome = o;
+                                                      r.text = text;
+                                                      result = full;
+                                                  });
+        REQUIRE(f.renders->renderJobs().activeJobs().size() == 1);
+        CHECK(f.renders->renderJobs().activeJobs().front().status == "running locally");
+        REQUIRE(pumpUntil([&] { return r.calls > 0; }));
+        INFO(r.text);
+        REQUIRE(r.outcome == Outcome::Rendered);
+        CHECK(r.text == out.getFullPathName());
+        CHECK(out.existsAsFile());
+        CHECK(f.renders->currentRenderPath() == out.getFullPathName());
+        CHECK(f.renders->renderTree()[0].parent == -1);
+        CHECK(f.playback->abProcessedPath() == out.getFullPathName());
+        CHECK(result["renderer"].toString() == "native");
+        CHECK(static_cast<bool>(result["guardrail"]["ok"]));
+        CHECK(result["applied_effects"].size() == 2);
+        CHECK(f.renders->renderJobs().lastChain().size() == 2); // the preset library's "last applied chain"
+        CHECK(f.renders->renderJobs().activeJobs().empty());
+
+        // The next fix stacks on it (WF-1), still natively.
+        Reported second;
+        f.renders->renderVersion(shelfChain(), "_fix", recordInto(second));
+        REQUIRE(pumpUntil([&] { return second.calls > 0; }));
+        REQUIRE(second.outcome == Outcome::Rendered);
+        REQUIRE(f.renders->renderTree().size() == 2);
+        CHECK(f.renders->renderTree()[1].parent == 0);
+    }
+    SECTION("a cancelled native render reports Cancelled and leaves no file")
+    {
+        Reported r;
+        const auto out = f.renders->renderVersion(shelfChain(), "_fix", recordInto(r));
+        f.renders->renderJobs().cancelAll();
+        CHECK(r.outcome == Outcome::Cancelled);
+        pumpUntil([] { return false; }, 1500); // the worker finishes; its late result is discarded
+        CHECK_FALSE(out.existsAsFile());
+        CHECK(f.renders->renderTree().empty());
+    }
+    SECTION("a native render finishing after the session changed is not registered (AUDIT-002)")
+    {
+        Reported r;
+        f.renders->renderVersion(shelfChain(), "_fix", recordInto(r));
+        f.openSession(); // another session is active when it lands
+        REQUIRE(pumpUntil([&] { return r.calls > 0; }));
+        CHECK(r.outcome == Outcome::SessionChanged);
+        CHECK(f.renders->renderTree().empty());
+    }
+    SECTION("an engine-only chain still goes to the service")
+    {
+        auto render = shelfChain();
+        render.chain.push_back({"MultibandCompressor", {}});
+        Reported r;
+        f.renders->renderVersion(render, "_fix", recordInto(r));
+        REQUIRE(f.renders->renderJobs().activeJobs().size() == 1);
+        CHECK(f.renders->renderJobs().activeJobs().front().status != "running locally");
+        f.renders->renderJobs().cancelAll();
+        CHECK(r.outcome == Outcome::Cancelled);
+    }
+    SECTION("with the engine up the service renders")
+    {
+        serviceUp = true;
+        Reported r;
+        f.renders->renderVersion(shelfChain(), "_fix", recordInto(r));
+        REQUIRE(f.renders->renderJobs().activeJobs().size() == 1);
+        CHECK(f.renders->renderJobs().activeJobs().front().status == "starting");
+        f.renders->renderJobs().cancelAll();
+    }
+    juce::ignoreUnused(sessionId);
+}

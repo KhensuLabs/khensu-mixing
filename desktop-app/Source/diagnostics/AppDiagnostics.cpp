@@ -17,6 +17,7 @@
 //
 // `--a11y-audit`, `--screenshot` and `--screenshot-audio`: see AppDiagnostics.h.
 #include "AppDiagnostics.h"
+#include "../ui/shared/TimelineCache.h"
 #include "../ui/Dashboard/CardGroup.h"
 #include "../ui/shared/AccessibilityCoverage.h"
 #include "../ui/shared/KhensuLookAndFeel.h"
@@ -296,6 +297,111 @@ int writeUiBenchmark(IDiagnosticsHost& host, const juce::File& report)
 
 namespace {
 
+/// --exercise-all: after the analysis, stems and fix check, press every
+/// analysis button on every screen, card tab, Mix / Master view and Export
+/// step, ask the Copilot a question and play the song, so the full pass shows
+/// every feature's result rather than its "press to run" state.
+bool gExerciseAll = false;
+
+bool isExerciseButton(const juce::String& text)
+{
+    static const char* const kRun[] = {
+        "Analyze Arrangement", "Analyze Collisions", "Analyze Groove", "Analyze M/S", "Analyze Pan Balance",
+        "Analyze Phase", "Analyze Source", "Analyze Stem Energy", "Analyze Stems", "Check Mono", "Check Stem Phase",
+        "Compute Gain Ride", "Detect Notes", "Detect Tuning", "Find Mono Culprits", "Find Words", "Find similar",
+        "Map Depth", "Map Harmony", "Measure Tail", "Scan Signal Integrity", "Scan Source Quality",
+        "Scan for AI / Artifacts", "Scan for AI Artifacts", "X-Ray Current Render", "Suggest", "Master it",
+        "Run Mastering Agent", "Run verified auto-mix", "Generate Chain", "Mapping Report"};
+    for (const auto* r : kRun)
+        if (text == r) return true;
+    return false;
+}
+
+void collectButtons(juce::Component& c, std::vector<juce::Button*>& out)
+{
+    for (auto* child : c.getChildren()) {
+        if (auto* b = dynamic_cast<juce::TextButton*>(child)) out.push_back(b);
+        collectButtons(*child, out);
+    }
+}
+
+void collectEditors(juce::Component& c, std::vector<juce::TextEditor*>& out)
+{
+    for (auto* child : c.getChildren()) {
+        if (auto* e = dynamic_cast<juce::TextEditor*>(child)) out.push_back(e);
+        collectEditors(*child, out);
+    }
+}
+
+using PressedList = std::vector<std::pair<juce::String, juce::Component::SafePointer<juce::Button>>>;
+
+/// Collects the run buttons under `root` (not yet pressed) in tree order.
+void pressIn(juce::Component& root, const juce::String& where, PressedList& found, juce::String& log)
+{
+    std::vector<juce::Button*> buttons;
+    collectButtons(root, buttons);
+    for (auto* b : buttons) {
+        const auto text = b->getButtonText();
+        if (!isExerciseButton(text)) continue;
+        const bool seen = std::any_of(found.begin(), found.end(),
+                                      [b](const auto& p) { return p.second.getComponent() == b; });
+        if (seen) continue;
+        log << "  exercise: found " << where << " / " << text << (b->isEnabled() ? "" : " (disabled now)") << "\n";
+        found.push_back({where + " / " + text, juce::Component::SafePointer<juce::Button>(b)});
+    }
+}
+
+PressedList exerciseEverything(IDiagnosticsHost& host, juce::String& log)
+{
+    PressedList pressed;
+    for (const auto& sc : host.diagnosticScreens()) {
+        host.showScreen(sc.type);
+        host.finishScreenTransition();
+        pressIn(host.contentArea(), sc.shotName, pressed, log);
+        if (sc.type == ScreenType::Copilot) {
+            // Ask the copilot something real about this mix.
+            std::vector<juce::TextEditor*> editors;
+            collectEditors(host.contentArea(), editors);
+            for (auto* e : editors)
+                if (e->isShowing() && !e->isReadOnly() && e->isEnabled()) {
+                    e->setText("What is the biggest problem with this mix, and how do I fix it?", true); // i18n-exempt(diagnostic prompt)
+                    std::vector<juce::Button*> buttons;
+                    collectButtons(host.contentArea(), buttons);
+                    for (auto* b : buttons)
+                        if (b->getButtonText() == "Send" && b->isEnabled()) {
+                            log << "  exercise: copilot / Send\n";
+                            b->triggerClick();
+                            break;
+                        }
+                    break;
+                }
+        }
+    }
+    host.showScreen(ScreenType::Dashboard);
+    for (auto& [groupId, card] : host.dashboardCardsForDiagnostics()) {
+        if (auto* group = dynamic_cast<CardGroup*>(card)) {
+            for (const auto& m : group->members()) {
+                group->selectMember(m.id);
+                pressIn(*group, "card " + groupId + "/" + juce::String(m.id), pressed, log);
+            }
+        } else if (card != nullptr) {
+            pressIn(*card, "card " + groupId, pressed, log);
+        }
+    }
+    for (int v = 0, n = 1; v < n; ++v) {
+        n = host.showMixMasterViewForDiagnostics(v);
+        pressIn(host.contentArea(), "mix-master view " + juce::String(v), pressed, log);
+    }
+    host.showMixMasterViewForDiagnostics(0);
+    for (int step = 0, n = 1; step < n; ++step) {
+        n = host.showExportStepForDiagnostics(step);
+        pressIn(host.contentArea(), "export step " + juce::String(step), pressed, log);
+    }
+    host.showExportStepForDiagnostics(0);
+    host.showScreen(ScreenType::Dashboard);
+    return pressed;
+}
+
 /// One line per component: depth, class, title/name, bounds, visibility.
 void dumpTree(juce::Component& c, int depth, juce::String& out)
 {
@@ -312,12 +418,20 @@ void dumpTree(juce::Component& c, int depth, juce::String& out)
             dumpTree(*child, depth + 1, out);
 }
 
+/// UX2-7: --render-scale=1.5|2 paints every screenshot at that display
+/// scale (the same logical layout, f times the pixels - what a 150 % / 200 %
+/// Windows display does), so a stretched bitmap or a hairline that snaps
+/// badly shows up without a high-DPI monitor.
+float gRenderScale = 1.0f;
+
 bool writePng(juce::Component& c, const juce::File& file)
 {
-    juce::Image img(juce::Image::ARGB, juce::jmax(1, c.getWidth()), juce::jmax(1, c.getHeight()), true,
-                    juce::SoftwareImageType());
+    const float s = gRenderScale;
+    juce::Image img(juce::Image::ARGB, juce::jmax(1, juce::roundToInt((float)c.getWidth() * s)),
+                    juce::jmax(1, juce::roundToInt((float)c.getHeight() * s)), true, juce::SoftwareImageType());
     {
         juce::Graphics g(img);
+        g.addTransform(juce::AffineTransform::scale(s));
         c.paintEntireComponent(g, true);
     }
     file.deleteFile();
@@ -326,8 +440,17 @@ bool writePng(juce::Component& c, const juce::File& file)
     return out.openedOk() && png.writeImageToStream(img, out);
 }
 
+/// The screenshot run's copy of the app log (juce::Logger): the service
+/// manager and health monitor write there, so a run that loses the engine
+/// says why (RUN-14).
+std::unique_ptr<juce::FileLogger> gRunLog;
+
 void quitWith(int code)
 {
+    if (gRunLog != nullptr) {
+        juce::Logger::setCurrentLogger(nullptr);
+        gRunLog.reset();
+    }
     juce::JUCEApplicationBase::getInstance()->setApplicationReturnValue(code);
     juce::JUCEApplicationBase::quit();
 }
@@ -403,17 +526,26 @@ void runAnalysisScreenshots(IDiagnosticsHost& host, const juce::File& dir, const
     auto intakeStage = std::make_shared<int>(0); // 0 not started, 1 dropped
     auto intakeAt = std::make_shared<double>(0.0);
     auto exitCode = std::make_shared<int>(0);
-    auto fixResult = std::make_shared<int>(0); // 0 pending, 1 rendered, -1 failed
+    auto fixResult = std::make_shared<int>(0); // 0 pending, 1 rendered, 2 nothing to fix, -1 failed
     auto shotReleased = std::make_shared<bool>(false);
     auto releasedAt = std::make_shared<double>(0.0);
-    *poll = [hostPtr, safe, poll, log, capture, finish, dir, started, shotPending, shotReleased, releasedAt, shotChecked, fixResult, intakeStage, intakeAt, exitCode, audio] {
+    auto openSeenAt = std::make_shared<double>(-1.0); // VIZ-F3: when the results first opened
+    auto exStage = std::make_shared<int>(gExerciseAll ? 0 : 3); // 0 start, 1 running, 2 playing, 3 done
+    auto exAt = std::make_shared<double>(0.0);
+    auto exPressed = std::make_shared<PressedList>();
+    auto exIndex = std::make_shared<int>(-1); // the feature running now
+    auto exPressAt = std::make_shared<double>(0.0);
+    auto exSkipped = std::make_shared<PressedList>(); // disabled on the first pass: tried once more at the end
+    auto exRetried = std::make_shared<bool>(false);
+    *poll = [hostPtr, safe, poll, log, capture, finish, dir, started, shotPending, shotReleased, releasedAt, shotChecked, fixResult, intakeStage, intakeAt, exitCode, audio, openSeenAt, exStage, exAt, exPressed, exIndex, exPressAt, exSkipped, exRetried] {
         if (safe.getComponent() == nullptr) return;
         const auto t = (juce::Time::getMillisecondCounter() - started) / 1000.0;
         const auto g = hostPtr->gateSnapshot();
         *log << juce::String(t, 1) << "s pending=" << (g.pending ? 1 : 0) << " overlay=" << (g.overlayCovers ? 1 : 0)
              << " gate=" << g.gate << " pendingScans=" << g.pendingScans << " inFlight=" << (g.inFlight ? 1 : 0)
              << " hasResult=" << (g.hasResult ? 1 : 0) << " deep=" << (g.deep ? 1 : 0)
-             << " serviceUp=" << (hostPtr->serviceSeenHealthy() ? 1 : 0) << "\n";
+             << " serviceUp=" << (hostPtr->serviceSeenHealthy() ? 1 : 0)
+             << " engine=" << hostPtr->serviceStatusForDiagnostics() << "\n";
         if (g.pending && !g.overlayCovers) {
             *log << "FAIL: results withheld but the Dashboard is not covered\n";
             finish(1);
@@ -429,7 +561,14 @@ void runAnalysisScreenshots(IDiagnosticsHost& host, const juce::File& dir, const
             capture("20-dashboard-while-analyzing");
             *shotPending = true;
         }
-        if (!g.pending && g.open && !*shotReleased) {
+        // VIZ-F3: the results screens are compared image by image, so they are
+        // captured once the song timeline (measured in the background) is in
+        // - never half-filled - or after 20 s at the most.
+        if (!g.pending && g.open && *openSeenAt < 0.0) *openSeenAt = t;
+        // In for two polls in a row: the card has had a turn to draw it.
+        static int timelinePolls = 0;
+        timelinePolls = timeline_cache::find(audio.getFullPathName()) != nullptr ? timelinePolls + 1 : 0;
+        if (!g.pending && g.open && !*shotReleased && (timelinePolls >= 2 || t - *openSeenAt > 20.0)) {
             capture("21-dashboard-results");
             // CON-2..8: each group card, one image per tab.
             for (auto& [groupId, card] : hostPtr->dashboardCardsForDiagnostics())
@@ -453,8 +592,12 @@ void runAnalysisScreenshots(IDiagnosticsHost& host, const juce::File& dir, const
             // WF-1 + FEAT-1 end to end: fix the top issue from the queue,
             // then wait for the check of the fixed version.
             hostPtr->fixTopIssueForDiagnostics([log, fixResult](bool ok, juce::String message) {
-                *fixResult = ok ? 1 : -1;
-                *log << "fix top issue: " << (ok ? "rendered " : "FAILED ") << message << "\n";
+                // Nothing with a one-click fix (a clean track, or only fixes
+                // that need listening, RUN-6) is a pass, as in the soak.
+                const bool nothing = !ok && message.containsIgnoreCase("no open issue");
+                *fixResult = ok ? 1 : (nothing ? 2 : -1);
+                *log << "fix top issue: " << (ok ? "rendered " : nothing ? "nothing to fix - " : "FAILED ") << message
+                     << "\n";
             });
             *log << "released after " << juce::String(t, 1) << "s\n";
             *shotReleased = true;
@@ -467,10 +610,11 @@ void runAnalysisScreenshots(IDiagnosticsHost& host, const juce::File& dir, const
                  << " msg=" << g.stemMessage << " render=" << juce::File(g.currentRender).getFileName()
                  << " verifying=" << (g.verifying ? 1 : 0) << " check=" << g.verification << "\n";
             // The fix check (FEAT-1) has to land before the run ends.
-            const bool fixSettled = *fixResult < 0 || (*fixResult > 0 && g.verification.isNotEmpty());
+            const bool fixSettled =
+                *fixResult < 0 || *fixResult == 2 || (*fixResult == 1 && g.verification.isNotEmpty());
             if (fixSettled && !*shotChecked) {
                 *shotChecked = true;
-                if (*fixResult > 0) {
+                if (*fixResult == 1) {
                     *log << "fix check: " << g.verification << "\n";
                     hostPtr->showScreen(ScreenType::Issues);
                     capture("23-issues-after-fix");
@@ -483,12 +627,93 @@ void runAnalysisScreenshots(IDiagnosticsHost& host, const juce::File& dir, const
                 return;
             }
             if (fixSettled && !g.stemsRunning && (g.stemMessage.isNotEmpty() || t - *releasedAt > 5.0)) {
-                if (*intakeStage == 0) {
+                if (*intakeStage == 0 && *exStage < 3) {
+                    // --exercise-all: run every feature in turn, then play the song
+                    // so the full pass captures the meters live.
+                    if (*exStage == 0) {
+                        *exPressed = exerciseEverything(*hostPtr, *log);
+                        *log << "exercise: " << (int)exPressed->size() << " features to run, one at a time, from "
+                             << juce::String(t, 1) << "s\n";
+                        *exStage = 1;
+                        *exAt = t;
+                        *exIndex = -1;
+                    } else if (*exStage == 1) {
+                        // One at a time, as a person would: press the next once the
+                        // current one has finished (its button enabled again, 3 s at
+                        // the least) or after 6 minutes.
+                        auto* cur = *exIndex >= 0 && *exIndex < (int)exPressed->size()
+                                        ? (*exPressed)[(size_t)*exIndex].second.getComponent()
+                                        : nullptr;
+                        const double ran = t - *exPressAt;
+                        const bool done = *exIndex < 0 || cur == nullptr || (cur->isEnabled() && ran > 3.0) || ran > 360.0;
+                        if (done) {
+                            if (*exIndex >= 0)
+                                *log << "  exercise: " << (*exPressed)[(size_t)*exIndex].first << " finished in "
+                                     << juce::String(ran, 1) << "s" << (ran > 360.0 ? " (TIMED OUT)" : "") << "\n";
+                            // The next one that can run now.
+                            for (++*exIndex; *exIndex < (int)exPressed->size(); ++*exIndex) {
+                                auto* b = (*exPressed)[(size_t)*exIndex].second.getComponent();
+                                if (b != nullptr && b->isEnabled()) {
+                                    *log << "  exercise: pressing " << (*exPressed)[(size_t)*exIndex].first << "\n";
+                                    b->triggerClick();
+                                    *exPressAt = t;
+                                    break;
+                                }
+                                *log << "  exercise: skipped " << (*exPressed)[(size_t)*exIndex].first
+                                     << " (disabled)\n";
+                                if (!*exRetried) exSkipped->push_back((*exPressed)[(size_t)*exIndex]);
+                            }
+                            if (*exIndex >= (int)exPressed->size() && !*exRetried && !exSkipped->empty()) {
+                                *log << "exercise: retrying " << (int)exSkipped->size() << " that were disabled\n";
+                                *exPressed = *exSkipped;
+                                *exRetried = true;
+                                *exIndex = -1;
+                            } else if (*exIndex >= (int)exPressed->size()) {
+                                *log << "exercise: all done after " << juce::String(t - *exAt, 1) << "s\n";
+                                hostPtr->playForDiagnostics(60.0, true);
+                                // The scopes draw on vblank: show Mix / Master
+                                // while it plays, so the capture has a trace.
+                                hostPtr->showScreen(ScreenType::MixMaster);
+                                *exStage = 2;
+                                *exAt = t;
+                            }
+                        }
+                    } else if (t - *exAt > 6.0) {
+                        *exStage = 3; // playing for 6 s: the full pass captures with the meters live
+                    }
+                } else if (*intakeStage == 0) {
                     *log << "stems: " << (g.stemsAvailable ? "available" : "NOT available") << " - "
                          << g.stemMessage << "\n";
+                    // The full pass: every screen, every card tab, each Mix /
+                    // Master view and Export step, after the analysis, the
+                    // stems and the fix check have all finished (30-39).
+                    for (const auto& sc : hostPtr->diagnosticScreens()) {
+                        hostPtr->showScreen(sc.type);
+                        hostPtr->finishScreenTransition();
+                        capture("30-full-" + juce::String(sc.shotName));
+                    }
+                    hostPtr->showScreen(ScreenType::Dashboard);
+                    for (auto& [groupId, card] : hostPtr->dashboardCardsForDiagnostics())
+                        if (auto* group = dynamic_cast<CardGroup*>(card))
+                            for (const auto& m : group->members()) {
+                                group->selectMember(m.id);
+                                writePng(*group, dir.getChildFile("31-card-" + groupId + "-" + juce::String(m.id) + ".png"));
+                            }
+                    for (int v = 0, n = 1; v < n; ++v) {
+                        n = hostPtr->showMixMasterViewForDiagnostics(v);
+                        hostPtr->finishScreenTransition();
+                        if (n > 0) capture("32-mixmaster-" + juce::String(v));
+                    }
+                    hostPtr->showMixMasterViewForDiagnostics(0);
+                    for (int step = 0, n = 1; step < n; ++step) {
+                        n = hostPtr->showExportStepForDiagnostics(step);
+                        if (n > 0) capture("33-export-" + juce::String(step));
+                    }
+                    hostPtr->showExportStepForDiagnostics(0);
                     // A fix that did not render fails the run too (VER-3): its log
                     // line used to be the only trace, with exit code 0.
                     *exitCode = (g.stemsAvailable && *fixResult > 0) ? 0 : 1;
+                    if (gExerciseAll) hostPtr->playForDiagnostics(0.0, false);
                     // UX-12: Intake after a drop - detected context, Confirm, Create Session.
                     hostPtr->showScreen(ScreenType::Intake);
                     hostPtr->dropIntoIntakeForDiagnostics(audio);
@@ -736,6 +961,9 @@ bool scheduleFromCommandLine(IDiagnosticsHost& host)
         KhensuTheme::setTheme(theme);
         host.window().repaint();
     }
+    for (const auto& arg : args)
+        if (arg.startsWith("--render-scale="))
+            gRenderScale = juce::jlimit(0.5f, 4.0f, arg.fromFirstOccurrenceOf("=", false, false).getFloatValue());
     // Each run starts 3 s after launch, once the window is laid out.
     for (const auto& arg : args) {
         if (arg.startsWith("--soak-audio=")) {
@@ -777,8 +1005,15 @@ bool scheduleFromCommandLine(IDiagnosticsHost& host)
             // session and capture the Dashboard during and after the
             // analysis (the results gate), then delete that session.
             juce::File audio;
+            juce::File(valueOf(arg)).createDirectory();
+            gRunLog = std::make_unique<juce::FileLogger>(juce::File(valueOf(arg)).getChildFile("app-log.txt"),
+                                                         "Khensu screenshot run", 0);
+            juce::Logger::setCurrentLogger(gRunLog.get());
             for (const auto& other : args)
+            {
                 if (other.startsWith("--screenshot-audio=")) audio = valueOf(other);
+                if (other == "--exercise-all") gExerciseAll = true;
+            }
             juce::Timer::callAfterDelay(3000, [safe, hostPtr, dir = valueOf(arg), audio] {
                 if (safe.getComponent() == nullptr) return;
                 const int written = writeScreenshots(*hostPtr, dir);

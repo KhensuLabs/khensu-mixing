@@ -108,13 +108,17 @@ void SpatialAudioPanel::drawScoreColumn(juce::Graphics& g, juce::Rectangle<int> 
     g.drawText(toString(assessment_.band), area.removeFromTop(18), juce::Justification::centredLeft, false);
     area.removeFromTop(8);
 
-    drawScoreBar(g, area.removeFromTop(24), "Stereo width", assessment_.stereoWidthScore);
-    area.removeFromTop(6);
-    drawScoreBar(g, area.removeFromTop(24), "Bass/LFE centring", assessment_.monoCompatScore);
-    area.removeFromTop(6);
-    drawScoreBar(g, area.removeFromTop(24), "Phase safety", assessment_.phaseSafetyScore);
-    area.removeFromTop(6);
-    drawScoreBar(g, area.removeFromTop(24), "Dynamic headroom", assessment_.dynamicHeadroomScore);
+    hover_.clear();
+    auto bar = [&](const char* name, float score) {
+        const auto r = area.removeFromTop(24);
+        hover_.add(r.toFloat(), juce::translate(name) + ": " + juce::String(juce::roundToInt(score)) + " / 100");
+        drawScoreBar(g, r, name, score);
+        area.removeFromTop(6);
+    };
+    bar(NEEDS_TRANS("Stereo width"), assessment_.stereoWidthScore);
+    bar(NEEDS_TRANS("Bass/LFE centring"), assessment_.monoCompatScore);
+    bar(NEEDS_TRANS("Phase safety"), assessment_.phaseSafetyScore);
+    bar(NEEDS_TRANS("Dynamic headroom"), assessment_.dynamicHeadroomScore);
     area.removeFromTop(10);
 
     g.setColour(KhensuTheme::textTertiary);

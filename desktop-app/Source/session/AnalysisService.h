@@ -10,6 +10,8 @@
 #include <khensu/systembrain/SystemBrainDatabase.h>
 #include "../services/IAnalysisHub.h"
 #include "../analysis/FixVerification.h"
+#include "../analysis/ServiceReadyWait.h"
+#include "../ui/shared/PythonStatus.h"
 #include "AnalysisResultModel.h"
 
 namespace khensu {
@@ -17,6 +19,7 @@ namespace khensu {
 class IBackgroundWork;
 class SessionService;
 class AnalysisController;
+struct AnalysisServiceCalls;
 
 /// The session's analysis and the results gate (ENG-1 stage C5, extracted
 /// from AppController.cpp / AppController_Playback.cpp / _Session.cpp). Owns
@@ -29,7 +32,14 @@ class AnalysisController;
 /// The gate rules (CLAUDE.md "Results gate"): a partial result is never
 /// published; the final result is published once, the Dashboard registers
 /// its follow-up scans inside that broadcast, and the batch token is read
-/// AFTER the broadcast. Everything on screen (overlay, sidebar status, intake
+/// AFTER the broadcast.
+///
+/// FN2-2b: with the engine not running yet (a first launch) the main
+/// pipeline's final result is the native one - complete, with the engine's
+/// inputs marked unanswered (inputs_failed) - and it is published at once.
+/// When the engine is Running the analysis is re-run IN PLACE: the gate
+/// stays open and the native result stays on screen until the full result
+/// supersedes it (docs/architecture.md, "Results gate"). Everything on screen (overlay, sidebar status, intake
 /// HUD, health strip, failure box) goes through the hooks below, which the
 /// owner wires.
 ///
@@ -106,6 +116,9 @@ class AnalysisService final : public IAnalysisHub {
     /// into the current result and rebroadcasts it, so the recommendations
     /// regenerate with MaskingRecommender's output included.
     void setStemMaskingResult(const MaskingSummary& masking) override;
+    void setScoreWeightProfile(const std::string& profileId) override { scoreWeightProfile_ = profileId; }
+    std::string scoreWeightProfile() const override { return scoreWeightProfile_; }
+    DeepPassState deepPassState() const override;
 
     /// True while results are withheld (the main analysis is running).
     bool resultsPending() const noexcept override { return resultsGate_ != ResultsGate::Open; }
@@ -154,6 +167,7 @@ class AnalysisService final : public IAnalysisHub {
     void cacheIntakeAnalysis(const juce::String& path, ipc::DeepAnalysisResponse response) override;
 
     const GenreDatabase& genreDatabase() const noexcept override { return genreDb_; }
+    const GenreSpread& genreSpread() const noexcept override { return genreSpread_; }
     const SystemBrainDatabase& systemBrainDatabase() const noexcept override { return systemBrainDb_; }
     FeedbackManager* getFeedbackManager() const noexcept override { return feedback_.get(); }
 
@@ -163,13 +177,30 @@ class AnalysisService final : public IAnalysisHub {
     void beginAnalysis(bool forceRerun = false);
     /// The service's unhealthy->healthy edge (FIX-2). Re-runs the analysis
     /// only when its result records an input the engine was asked for and
-    /// did not answer (AnalysisResult::inputs_failed), and only once per
-    /// beginAnalysis(): a busy engine misses probes and "recovers" again, and
-    /// each re-run hides the results. A fix check that went unanswered is
-    /// repeated once per render the same way. A cancelled or failed
-    /// analysis, and one whose deep pass was switched off, are left alone.
-    /// Otherwise tells the service-recovered listeners to repeat their scans.
+    /// did not answer (AnalysisResult::inputs_failed). The re-run is in place
+    /// (FN2-2b): the results stay on screen and the gate open until the new
+    /// final result replaces them. Not one-shot, but bounded: the first
+    /// re-run after a beginAnalysis() comes whenever the engine is there,
+    /// each later one only after the engine came up again (a new
+    /// unhealthy -> healthy edge), and at most kMaxRecoveryReruns per
+    /// beginAnalysis() - a flapping engine must not re-analyse forever. A
+    /// fix check that went unanswered is repeated once per render. A
+    /// cancelled or failed analysis, and one whose deep pass was switched
+    /// off, are left alone. Otherwise tells the service-recovered listeners
+    /// to repeat their scans.
     void reanalyzeIfServiceRecovered();
+    static constexpr int kMaxRecoveryReruns = 3;
+    /// OVH-1: the lifecycle's status, the one source for "is the engine
+    /// there". The deep pass reads it (EngineGate) instead of its own
+    /// probe - and does not wait while it says Starting or Down (FN2-2b);
+    /// and whenever the engine is Running, a result whose engine inputs went
+    /// unanswered is re-run in place (the rule above) - not only on an
+    /// unhealthy -> healthy edge, which a busy-but-running engine never
+    /// produced.
+    void setEngineStatus(PythonStatus status);
+    /// True while an in-place re-run (FN2-2b) is upgrading the result on screen.
+    bool upgradeInFlight() const noexcept { return upgradeInFlight_; }
+    std::shared_ptr<const service_ready::EngineGate> engineGate() const noexcept { return engineGate_; }
     /// Sets the gate and fires onGateChanged (the missing-file / no-files
     /// paths of loading a session).
     void setResultsGate(ResultsGate gate);
@@ -208,6 +239,9 @@ class AnalysisService final : public IAnalysisHub {
     /// not; results come through deliverResultForTesting(). Not for
     /// production code.
     void skipPipelineForTesting() noexcept { skipPipelineForTesting_ = true; }
+    /// Test seam: the main analysis talks to `calls` instead of the local
+    /// service (after attachFeedbackManager()). Not for production code.
+    void setServiceCallsForTesting(const AnalysisServiceCalls& calls);
     /// Feeds a stage through the running analysis's progress handler.
     void deliverStageForTesting(const std::string& stage, int idx, int total);
     /// Feeds the analysis of the render being verified, as its controller would.
@@ -225,6 +259,7 @@ class AnalysisService final : public IAnalysisHub {
     SessionService& sessions_;
     std::shared_ptr<FeedbackManager> feedback_;
     GenreDatabase genreDb_;
+    GenreSpread genreSpread_; ///< VIZ-1, beside genre_targets.json
     SystemBrainDatabase systemBrainDb_;
     // Holds references to genreDb_ and feedback_; declared after them so it
     // is destroyed first.
@@ -243,10 +278,25 @@ class AnalysisService final : public IAnalysisHub {
     juce::String verifiedPath_;  ///< the version whose check is current ("" = none)
     juce::String verifyingPath_; ///< the render being re-analysed ("" = idle)
 
-    void startAnalysis(bool forceRerun); // beginAnalysis() without resetting the recovery allowance
-    // FIX-2: what service recovery has already repeated since the last
-    // beginAnalysis() - the analysis itself, and each render's fix check.
-    bool recoveryRerunUsed_ = false;
+    /// beginAnalysis() without resetting the recovery allowance; `inPlace`
+    /// (FN2-2b) keeps the gate open and the current result on screen.
+    void startAnalysis(bool forceRerun, bool inPlace = false);
+    // FIX-2 / FN2-2b: what service recovery has already repeated since the
+    // last beginAnalysis() - the analysis itself (how often, and at which
+    // engine-up edge the last time), and each render's fix check.
+    int recoveryReruns_ = 0;
+    int engineUpEpoch_ = 0; ///< bumped on every not-running -> Running edge
+    int rerunEpoch_ = -1;   ///< engineUpEpoch_ at the last recovery re-run
+    bool engineRunning_ = false;
+    bool upgradeInFlight_ = false; ///< the running analysis is an in-place re-run
+    /// Re-runs once when the result records engine inputs that went
+    /// unanswered; true when it started a run.
+    bool rerunIfEngineInputsUnanswered();
+    std::shared_ptr<service_ready::EngineGate> engineGate_ = std::make_shared<service_ready::EngineGate>();
+    std::string scoreWeightProfile_; ///< OVH-1: "" = the session genre's profile
+    bool deepFailedThisRun_ = false; ///< the engine answered "deep job failed"
+    bool deepSkippedByUser_ = false; ///< cancelled after the fast pass
+    bool provisionalShownThisRun_ = false;
     std::set<juce::String> verificationRetried_;
 
     bool analysisInFlight_ = false; // true between beginAnalysis() and its final/failed result

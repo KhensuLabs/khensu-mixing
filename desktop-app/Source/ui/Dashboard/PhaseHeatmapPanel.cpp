@@ -1,4 +1,6 @@
 // desktop-app/Source/ui/Dashboard/PhaseHeatmapPanel.cpp
+#include <functional>
+#include <limits>
 #include "PhaseHeatmapPanel.h"
 #include "../shared/SessionEpoch.h"
 #include "../shared/KhensuTheme.h"
@@ -10,6 +12,56 @@
 #include <limits>
 
 namespace khensu {
+
+namespace {
+/// VIZ-U3: the value under `pos` in a [frame][band] grid drawn over `area`
+/// (band 0 at the bottom), with its time and frequency.
+juce::String gridReadout(const std::vector<std::vector<float>>& grid, const std::vector<float>& edgesHz, float durationSec,
+                         juce::Rectangle<float> area, juce::Point<float> pos, const std::function<juce::String(float)>& value)
+{
+    if (grid.empty() || grid[0].empty() || !area.contains(pos)) return {};
+    const auto f = (size_t)juce::jlimit(0, (int)grid.size() - 1, (int)((pos.x - area.getX()) / area.getWidth() * (float)grid.size()));
+    const int bands = (int)grid[f].size();
+    if (bands == 0) return {};
+    const auto b = (size_t)juce::jlimit(0, bands - 1, (int)((area.getBottom() - pos.y) / area.getHeight() * (float)bands));
+    juce::String where;
+    if (durationSec > 0.0f) {
+        const int t = juce::roundToInt(durationSec * ((float)f + 0.5f) / (float)grid.size());
+        where << t / 60 << ":" << juce::String(t % 60).paddedLeft('0', 2);
+    }
+    if (b + 1 < edgesHz.size()) {
+        const float hz = std::sqrt(edgesHz[b] * edgesHz[b + 1]);
+        where << (where.isEmpty() ? "" : ", ")
+              << (hz >= 1000.0f ? juce::String(hz / 1000.0f, 1) + " kHz" : juce::String(juce::roundToInt(hz)) + " Hz");
+    }
+    const float v = grid[f][b];
+    return where + ": " + (std::isfinite(v) ? value(v) : TRANS("no data"));
+}
+
+std::vector<std::vector<float>> gridOf(const juce::var& rows)
+{
+    std::vector<std::vector<float>> grid;
+    if (auto* arr = rows.getArray())
+        for (const auto& row : *arr) {
+            std::vector<float> r;
+            if (auto* cells = row.getArray())
+                for (const auto& c : *cells)
+                    r.push_back(c.isVoid() ? std::numeric_limits<float>::quiet_NaN() : (float)(double)c);
+            grid.push_back(std::move(r));
+        }
+    return grid;
+}
+
+std::vector<float> floatsOf(const juce::var& v)
+{
+    std::vector<float> out;
+    if (auto* arr = v.getArray())
+        for (const auto& x : *arr)
+            out.push_back((float)(double)x);
+    return out;
+}
+} // namespace
+
 
 namespace af = api::fields; // generated service field names (ApiSchema.h)
 
@@ -28,8 +80,6 @@ static juce::Colour corrColour(float v)
 // Every cached palette colour on this component, in one place (UI-01).
 void PhaseHeatmapPanel::applyThemeColours()
 {
-    analyzeButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.2f));
-    analyzeButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
 }
 
 PhaseHeatmapPanel::PhaseHeatmapPanel(IAppController& c) : PanelCard(c, "Phase Correlation Heatmap")
@@ -77,6 +127,9 @@ void PhaseHeatmapPanel::runAnalysis()
                     grid.push_back(std::move(r));
                 }
             self.img_ = buildGridImage(grid, corrColour);
+            self.grid_ = grid;
+            self.edgesHz_ = floatsOf(v[af::PhaseHeatmapResponse::band_edges_hz]);
+            self.durationSec_ = (float)(double)v[af::PhaseHeatmapResponse::duration_sec];
             return self.stereo_ ? TRANS("Teal = mono-safe, red = anti-phase, grey = no data.")
                                 : TRANS("Mono file - perfectly correlated.");
         },
@@ -102,6 +155,7 @@ void PhaseHeatmapPanel::paint(juce::Graphics& g)
         return;
     }
     g.drawImage(img_, b.toFloat(), juce::RectanglePlacement::stretchToFit);
+    gridArea_ = (b.toFloat()).toFloat();
     // Freq axis hint: low at bottom, high at top.
     g.setColour(KhensuTheme::textTertiary.withAlpha(0.7f));
     g.setFont(KhensuTheme::labelFont(8.0f));
@@ -120,6 +174,14 @@ void PhaseHeatmapPanel::resized()
     auto errArea = bodyArea();
     errArea.removeFromTop(28);
     run_.errorState().setBounds(errArea);
+}
+
+void PhaseHeatmapPanel::mouseMove(const juce::MouseEvent& e)
+{
+    setTooltip(gridReadout(grid_, edgesHz_, durationSec_, gridArea_, e.position, [](float v) {
+        return TRANS("correlation") + " " + juce::String(v, 2)
+               + (v < 0.0f ? " - " + TRANS("cancels in mono") : v > 0.7f ? " - " + TRANS("mono-safe") : juce::String());
+    }));
 }
 
 } // namespace khensu

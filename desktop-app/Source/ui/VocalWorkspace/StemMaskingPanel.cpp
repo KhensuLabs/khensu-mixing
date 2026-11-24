@@ -242,7 +242,7 @@ void StemMaskingPanel::runAnalysis()
 
         postIfCurrent(self, work, [result = std::move(result)](StemMaskingPanel& panel) {
             if (!result.is_ok()) {
-                panel.statusLabel_.setText(TRANS("Analysis failed: ") + juce::String(result.error().message),
+                panel.statusLabel_.setText(TRANS("Analysis failed: ") + serviceErrorLine(result.error()),
                                            juce::dontSendNotification);
                 return;
             }

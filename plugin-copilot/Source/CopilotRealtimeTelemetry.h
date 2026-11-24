@@ -1,7 +1,10 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <khensu/analysis/TruePeakFilter.h>
+#include <khensu/ui/StereoSampleRing.h>
 #include <atomic>
+#include <cstdint>
 #include <algorithm>
 #include <array>
 
@@ -92,6 +95,17 @@ class AudioRingBuffer {
 /// last 4 bins (400 ms) and short-term of the last 30 (3 s), both updated
 /// every 100 ms - not the one-pole averages it used before. Correlation and
 /// width keep a 400 ms one-pole average (they are not BS.1770 quantities).
+///
+/// UI-5 additions, all lock-free and allocation-free on the audio thread:
+///  - integrated loudness: every 400 ms momentary block (100 ms hop) above
+///    the -70 LUFS absolute gate goes into a 0.1 LU histogram (counts and
+///    energy sums), and the BS.1770 relative gate (-10 LU) is evaluated over
+///    it each 100 ms - no block list grows. requestIntegratedReset() restarts it.
+///  - true peak per channel with the shared 4x interpolator (TruePeakFilter.h,
+///    MEAS-5), evaluated only around samples within 6 dB of the block's
+///    sample peak (an inter-sample peak needs a large neighbour); the
+///    highest value is accumulated until the UI takes it.
+///  - a StereoSampleRing of the output for the vectorscope.
 class CopilotRealtimeTelemetry {
   public:
     struct Snapshot {
@@ -103,6 +117,7 @@ class CopilotRealtimeTelemetry {
         float short_term_lufs = -96.0f;
         float correlation = 0.0f;
         float width = 1.0f;
+        float integrated_lufs = -96.0f; ///< -96 until a block passes the gates
     };
 
     /// The host position of the current block (CE-DAW-3 time stamps).
@@ -126,6 +141,14 @@ class CopilotRealtimeTelemetry {
     bool isLooping() const noexcept { return looping_.load(std::memory_order_relaxed); }
 
     int readRingBuffer(juce::AudioBuffer<float>& dest) { return ringBuffer_.read(dest); }
+
+    /// UI thread: the highest true peak (dBTP) per channel since the previous
+    /// call (or prepare), then starts a new interval. -240 when silent.
+    void takeTruePeaks(float& leftDbtp, float& rightDbtp) noexcept;
+    /// Any thread: the integrated loudness restarts with the next block.
+    void requestIntegratedReset() noexcept { resetIntegrated_.store(true, std::memory_order_release); }
+    /// The output for the vectorscope (audio thread produces, UI consumes).
+    ui::StereoSampleRing& scopeRing() noexcept { return scopeRing_; }
     int getRingBufferAvailable() const noexcept { return ringBuffer_.getNumReady(); }
 
   private:
@@ -159,6 +182,38 @@ class CopilotRealtimeTelemetry {
     };
 
     AudioRingBuffer ringBuffer_;
+    ui::StereoSampleRing scopeRing_{8192};
+
+    /// Streaming 4x true-peak interpolator for one channel.
+    struct TruePeakDetector {
+        static constexpr int kWindow = analysis::kTruePeakPhaseTaps; // 65
+        std::array<float, 256> history{};
+        int pos = 0;
+        void reset() noexcept
+        {
+            history.fill(0.0f);
+            pos = 0;
+        }
+        /// Pushes `x`; returns the largest |interpolated| value around the
+        /// window's centre when that centre is at least `threshold`, else 0.
+        float push(float x, float threshold, const float* coeffs) noexcept;
+    };
+    TruePeakDetector truePeak_[2];
+    /// TruePeakPhases as float, phase-major (4 x 65), filled in prepareToPlay.
+    std::array<float, analysis::kTruePeakOversample * analysis::kTruePeakPhaseTaps> truePeakCoeffs_{};
+    std::atomic<float> truePeakAccum_[2]{}; ///< linear, highest since the last take
+    float lastBlockPeak_[2] = {0.0f, 0.0f};
+    static void accumulateMax(std::atomic<float>& target, float value) noexcept;
+
+    // Integrated loudness: gated-block histogram (see the class comment).
+    static constexpr int kGateBins = 800; ///< -70 .. +10 LUFS in 0.1 LU
+    std::array<std::uint32_t, kGateBins> gateCount_{};
+    std::array<double, kGateBins> gateEnergy_{};
+    int binsSinceReset_ = 0;
+    std::atomic<float> integratedLufs_{-96.0f};
+    std::atomic<bool> resetIntegrated_{false};
+    void resetIntegrated() noexcept;
+    void addGatedBlock(double meanPower) noexcept;
     double currentSampleRate_ = 44100.0;
     KWeightBiquad kPre_[2], kRlb_[2];
 

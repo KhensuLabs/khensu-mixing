@@ -1,0 +1,2526 @@
+{
+  "generator": "scripts/gen_render_parity_fixtures.py",
+  "loudness_tolerance": 0.05,
+  "band_tolerance_db": 0.1,
+  "true_peak_tolerance_db": 0.1,
+  "noise_floor_tolerance_db": 0.1,
+  "signals": [
+    {
+      "name": "noise_tones_stereo_44k1",
+      "sample_rate": 44100,
+      "duration_sec": 4.0,
+      "channels": [
+        {
+          "tones": [
+            {
+              "freq": 60.0,
+              "amp": 0.2
+            },
+            {
+              "freq": 440.0,
+              "amp": 0.1
+            }
+          ],
+          "noise_seed": 11,
+          "noise_amp": 0.15,
+          "gain_steps": [
+            [
+              0.0,
+              0.4
+            ],
+            [
+              1.0,
+              1.0
+            ],
+            [
+              2.5,
+              0.6
+            ]
+          ]
+        },
+        {
+          "tones": [
+            {
+              "freq": 60.0,
+              "amp": 0.2
+            },
+            {
+              "freq": 3300.0,
+              "amp": 0.05
+            }
+          ],
+          "noise_seed": 12,
+          "noise_amp": 0.15,
+          "gain_steps": [
+            [
+              0.0,
+              0.4
+            ],
+            [
+              1.0,
+              1.0
+            ],
+            [
+              2.5,
+              0.6
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "noise_mono_48k",
+      "sample_rate": 48000,
+      "duration_sec": 3.0,
+      "channels": [
+        {
+          "tones": [
+            {
+              "freq": 7000.0,
+              "amp": 0.08
+            }
+          ],
+          "noise_seed": 5,
+          "noise_amp": 0.3,
+          "gain_steps": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              1.5,
+              1.0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "hiss_tones_stereo_44k1",
+      "sample_rate": 44100,
+      "duration_sec": 5.0,
+      "channels": [
+        {
+          "tones": [
+            {
+              "freq": 220.0,
+              "amp": 0.25
+            },
+            {
+              "freq": 1000.0,
+              "amp": 0.08
+            }
+          ],
+          "noise_seed": 21,
+          "noise_amp": 0.004,
+          "gain_steps": [
+            [
+              0.0,
+              1.0
+            ],
+            [
+              2.0,
+              0.5
+            ],
+            [
+              3.5,
+              1.0
+            ]
+          ]
+        },
+        {
+          "tones": [
+            {
+              "freq": 330.0,
+              "amp": 0.2
+            },
+            {
+              "freq": 1000.0,
+              "amp": 0.08
+            }
+          ],
+          "noise_seed": 22,
+          "noise_amp": 0.004,
+          "gain_steps": [
+            [
+              0.0,
+              1.0
+            ],
+            [
+              2.0,
+              0.5
+            ],
+            [
+              3.5,
+              1.0
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "highpass_80",
+      "chain": [
+        {
+          "effect": "HighpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 80.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -16.20333275369992,
+        "true_peak_dbtp": -7.453124313503548,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -61.76263140062977,
+          -23.9488788048987,
+          -49.030044936032226,
+          -45.84315274058905,
+          -29.55788874162886,
+          -39.98764091525991,
+          -36.9858254775875,
+          -31.775647899796205,
+          -30.958895172810532,
+          -28.256333422566783
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "highpass_150_24db",
+      "chain": [
+        {
+          "effect": "HighpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 150.0,
+            "slope_db_per_oct": 24.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -16.66656631897568,
+        "true_peak_dbtp": -8.930691186753648,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -92.57710825750851,
+          -49.575730278570596,
+          -53.307914326790964,
+          -45.9509101304329,
+          -29.55398771949385,
+          -39.98748469770429,
+          -36.98581808514441,
+          -31.77564138879798,
+          -30.958895376326367,
+          -28.25633339194026
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "lowpass_5k",
+      "chain": [
+        {
+          "effect": "LowpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 5000.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -17.60481590062971,
+        "true_peak_dbtp": -7.474649154721121,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -49.52692875474949,
+          -17.758132123069128,
+          -48.28763102723718,
+          -45.78805318789669,
+          -29.553456818037183,
+          -39.99636973015778,
+          -37.12905379203187,
+          -33.09925955753029,
+          -40.38289056864397,
+          -53.396233924963454
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "low_shelf_cut",
+      "chain": [
+        {
+          "effect": "LowShelfFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 120.0,
+            "gain_db": -6.0,
+            "q": 0.707
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -16.148126445117274,
+        "true_peak_dbtp": -6.664449639742223,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -55.49707547714852,
+          -23.38420256423944,
+          -50.81131670859109,
+          -46.15173585726504,
+          -29.588127911698045,
+          -39.98898403978957,
+          -36.9858994856557,
+          -31.775653155421306,
+          -30.958895479628424,
+          -28.256334015668394
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "high_shelf_boost",
+      "chain": [
+        {
+          "effect": "HighShelfFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 4000.0,
+            "gain_db": 4.0,
+            "q": 0.707
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -12.673062708588484,
+        "true_peak_dbtp": -3.428906214478486,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -49.52999131058316,
+          -17.75812418668397,
+          -48.28803234438881,
+          -45.78788354106787,
+          -29.55263219907094,
+          -39.96532096452316,
+          -36.65868044239825,
+          -29.9175031638002,
+          -27.16082405607053,
+          -24.261257254286953
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "peak_and_notch",
+      "chain": [
+        {
+          "effect": "PeakFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 1000.0,
+            "gain_db": 6.0,
+            "q": 1.0
+          }
+        },
+        {
+          "effect": "PeakFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 3150.0,
+            "gain_db": -9.0,
+            "q": 6.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -14.936667196553671,
+        "true_peak_dbtp": -4.878544545964657,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -49.52524275006966,
+          -17.73483331543055,
+          -48.17170366321178,
+          -45.2976990394761,
+          -28.096339548205137,
+          -34.79106004266873,
+          -35.562428049777346,
+          -34.26074493116451,
+          -30.9313627381816,
+          -28.251069620041743
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "compressor",
+      "chain": [
+        {
+          "effect": "Compressor",
+          "parameters": {
+            "threshold_db": -24.0,
+            "ratio": 4.0,
+            "attack_ms": 5.0,
+            "release_ms": 100.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -22.776698169957353,
+        "true_peak_dbtp": -14.697151642092019,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -60.00250857095313,
+          -25.489984381131073,
+          -56.37711443433143,
+          -52.106317512409596,
+          -37.50953173038954,
+          -47.67977677561829,
+          -44.68878713560869,
+          -39.35038218079289,
+          -38.63459314177524,
+          -35.91202028780272
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "deesser",
+      "chain": [
+        {
+          "effect": "DeEsser",
+          "parameters": {
+            "threshold_db": -36.0,
+            "frequency_hz": 7000.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -15.527478551077964,
+        "true_peak_dbtp": -5.727743050262612,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -49.529242600908546,
+          -17.75812036307336,
+          -48.28790671829829,
+          -45.787923278122804,
+          -29.553255181527447,
+          -39.98730629644562,
+          -36.98773218343852,
+          -32.637640845498524,
+          -34.55342427603134,
+          -28.36140802612624
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "gain_into_clip_guard",
+      "chain": [
+        {
+          "effect": "Gain",
+          "parameters": {
+            "gain_db": 8.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -10.543374691729852,
+        "true_peak_dbtp": -0.9999999999902575,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -45.0723223954694,
+          -13.301152500169579,
+          -43.83097195157096,
+          -41.3310096236473,
+          -25.096254127228693,
+          -35.53043643315952,
+          -32.5288401693772,
+          -27.318678968870884,
+          -26.50192487933754,
+          -23.799363271491522
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "gain_into_limiter",
+      "chain": [
+        {
+          "effect": "Gain",
+          "parameters": {
+            "gain_db": 9.0
+          }
+        },
+        {
+          "effect": "Limiter",
+          "parameters": {
+            "threshold_db": -1.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -8.108955412885472,
+        "true_peak_dbtp": -1.0500019576932957,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -42.7472310819931,
+          -10.818625781026473,
+          -40.76971725281521,
+          -38.6245404785245,
+          -22.61482199648227,
+          -33.033835052622365,
+          -30.048177674686638,
+          -24.81613654086192,
+          -24.012190804201566,
+          -21.286619264731186
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "fix_chain",
+      "chain": [
+        {
+          "effect": "HighpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 30.0
+          }
+        },
+        {
+          "effect": "LowShelfFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 150.0,
+            "gain_db": -4.0,
+            "q": 0.707
+          }
+        },
+        {
+          "effect": "PeakFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 2500.0,
+            "gain_db": -3.0,
+            "q": 2.0
+          }
+        },
+        {
+          "effect": "Compressor",
+          "parameters": {
+            "threshold_db": -20.0,
+            "ratio": 2.0,
+            "attack_ms": 10.0,
+            "release_ms": 150.0
+          }
+        },
+        {
+          "effect": "Gain",
+          "parameters": {
+            "gain_db": 4.0
+          }
+        },
+        {
+          "effect": "Limiter",
+          "parameters": {
+            "threshold_db": -1.5
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -14.308767677632252,
+        "true_peak_dbtp": -5.897634129946905,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -54.40815275038062,
+          -20.01720888878468,
+          -48.94761306811583,
+          -44.362427527304924,
+          -27.966584751846458,
+          -38.28328448745704,
+          -36.86144456175811,
+          -30.69154284903703,
+          -29.12631098977972,
+          -26.345765872194015
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "spectral_denoise",
+      "chain": [
+        {
+          "effect": "SpectralDenoise",
+          "parameters": {
+            "reduction_db": 12.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -20.901650443846943,
+        "true_peak_dbtp": -12.308742771039967,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -55.26367743547483,
+          -29.376989607580917,
+          -53.32465981620849,
+          -50.68716346383792,
+          -40.66512514609375,
+          -44.62216397285032,
+          -41.46337628928147,
+          -38.05558104359516,
+          -35.861457457714344,
+          -33.06233174649166
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "spectral_denoise_gentle",
+      "chain": [
+        {
+          "effect": "SpectralDenoise",
+          "parameters": {
+            "reduction_db": 6.0,
+            "sensitivity": 2.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -18.99668362949165,
+        "true_peak_dbtp": -9.528284196300458,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -53.24703557907356,
+          -23.649901712800766,
+          -51.44608677054364,
+          -48.802467910731394,
+          -35.316650529544845,
+          -42.86838530227121,
+          -39.7785701979829,
+          -35.59780574450962,
+          -33.9782188526202,
+          -31.225881101475498
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "transient_shaper",
+      "chain": [
+        {
+          "effect": "TransientShaper",
+          "parameters": {
+            "attack_gain_db": 6.0,
+            "sustain_gain_db": -3.0,
+            "attack_ms": 5.0,
+            "release_ms": 150.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -17.9382017060219,
+        "true_peak_dbtp": -3.587864676135503,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -47.70811178140886,
+          -20.694874912288004,
+          -48.20997989368035,
+          -48.48536086894363,
+          -32.485267289181216,
+          -42.913822256738634,
+          -39.93078466014778,
+          -34.72596441251296,
+          -33.89795973037127,
+          -31.192764326159846
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "tape_saturation",
+      "chain": [
+        {
+          "effect": "TapeSaturation",
+          "parameters": {
+            "drive_db": 9.0,
+            "warmth": 0.7,
+            "mix": 0.8,
+            "output_trim_db": -2.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -10.40032412016566,
+        "true_peak_dbtp": -2.295865747864182,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -45.29114066614264,
+          -12.888570860872912,
+          -40.93021899736691,
+          -40.44790663763624,
+          -24.935206068388943,
+          -35.22311113716515,
+          -32.297923760079726,
+          -27.081107113122414,
+          -26.24381447784533,
+          -23.620926745172156
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "stereo_widener",
+      "chain": [
+        {
+          "effect": "StereoWidener",
+          "parameters": {
+            "width": 1.5
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -13.457502876295015,
+        "true_peak_dbtp": -3.8424995138837437,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -49.529292557935406,
+          -17.758122662635586,
+          -48.287942114036966,
+          -45.787979786113304,
+          -29.553224289694697,
+          -39.98740659562553,
+          -36.985810331843204,
+          -31.77564913133689,
+          -30.958895041803544,
+          -28.256333433957522
+        ]
+      }
+    },
+    {
+      "signal": "noise_tones_stereo_44k1",
+      "chain_name": "restoration_chain",
+      "chain": [
+        {
+          "effect": "HighpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 30.0
+          }
+        },
+        {
+          "effect": "SpectralDenoise",
+          "parameters": {
+            "reduction_db": 12.0
+          }
+        },
+        {
+          "effect": "TransientShaper",
+          "parameters": {
+            "attack_gain_db": 3.0
+          }
+        },
+        {
+          "effect": "TapeSaturation",
+          "parameters": {
+            "drive_db": 6.0
+          }
+        },
+        {
+          "effect": "StereoWidener",
+          "parameters": {
+            "width": 0.8
+          }
+        },
+        {
+          "effect": "Gain",
+          "parameters": {
+            "gain_db": 2.0
+          }
+        },
+        {
+          "effect": "Limiter",
+          "parameters": {
+            "threshold_db": -1.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -14.328440067752831,
+        "true_peak_dbtp": -5.090065123063089,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -50.338947480179954,
+          -22.101856116006175,
+          -45.69154882191765,
+          -43.22119500917381,
+          -33.012443178051825,
+          -36.97045224684908,
+          -33.80327591132431,
+          -30.406340837074282,
+          -28.207059188985056,
+          -25.503609578315256
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "highpass_80",
+      "chain": [
+        {
+          "effect": "HighpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 80.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -12.090814301972822,
+        "true_peak_dbtp": -4.483452842285233,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -60.49517344665554,
+          -49.2888154312415,
+          -40.94997601168363,
+          -37.73405859512434,
+          -34.63030580292714,
+          -31.456956545489714,
+          -28.688845930407517,
+          -25.63163815635705,
+          -20.977810373564957,
+          -19.885283186399178
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "highpass_150_24db",
+      "chain": [
+        {
+          "effect": "HighpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 150.0,
+            "slope_db_per_oct": 24.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -12.094242481114048,
+        "true_peak_dbtp": -3.9544050041300305,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -94.68009926073655,
+          -69.1558838104583,
+          -44.9789059091121,
+          -37.82396833517986,
+          -34.62733890567344,
+          -31.456891637863855,
+          -28.688814002695988,
+          -25.631642804037767,
+          -20.9778122348828,
+          -19.885283733689313
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "lowpass_5k",
+      "chain": [
+        {
+          "effect": "LowpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 5000.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -19.422360100210295,
+        "true_peak_dbtp": -10.859485263591765,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -45.5146200204571,
+          -44.2172661908785,
+          -40.30676223980498,
+          -37.68349473875498,
+          -34.627700401941176,
+          -31.46630373816827,
+          -28.836556218833252,
+          -27.448416547583182,
+          -29.558236330598962,
+          -43.892354441890866
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "low_shelf_cut",
+      "chain": [
+        {
+          "effect": "LowShelfFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 120.0,
+            "gain_db": -6.0,
+            "q": 0.707
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -12.093170679178492,
+        "true_peak_dbtp": -4.484864683307204,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -51.473433117861234,
+          -49.610168257170514,
+          -42.69083247316615,
+          -38.013845534514104,
+          -34.652152657755494,
+          -31.458362547915584,
+          -28.68895234327286,
+          -25.631647225478652,
+          -20.977812028468918,
+          -19.88528388835688
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "high_shelf_boost",
+      "chain": [
+        {
+          "effect": "HighShelfFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 4000.0,
+            "gain_db": 4.0,
+            "q": 0.707
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -9.108236998413501,
+        "true_peak_dbtp": -0.9999999999902563,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -46.10244476734892,
+          -44.80488905104556,
+          -40.89468130364694,
+          -38.270512004957496,
+          -35.213122278946855,
+          -32.020833948645354,
+          -28.942682047101776,
+          -23.998347754287273,
+          -17.813467304442465,
+          -16.479189868689883
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "peak_and_notch",
+      "chain": [
+        {
+          "effect": "PeakFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 1000.0,
+            "gain_db": 6.0,
+            "q": 1.0
+          }
+        },
+        {
+          "effect": "PeakFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 3150.0,
+            "gain_db": -9.0,
+            "q": 6.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -11.964739215999845,
+        "true_peak_dbtp": -3.879056265318157,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -45.508727758591135,
+          -44.18923418890623,
+          -40.18580280591409,
+          -37.167366189486295,
+          -32.320992510532896,
+          -26.281461997278708,
+          -27.29392137873557,
+          -26.777592274973202,
+          -20.946509258387742,
+          -19.87888509037843
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "compressor",
+      "chain": [
+        {
+          "effect": "Compressor",
+          "parameters": {
+            "threshold_db": -24.0,
+            "ratio": 4.0,
+            "attack_ms": 5.0,
+            "release_ms": 100.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -22.792083517236865,
+        "true_peak_dbtp": -8.503326018263861,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -53.94257801722638,
+          -52.24154058504019,
+          -48.61386671819929,
+          -46.0593417974761,
+          -42.97668598810687,
+          -39.83447588508402,
+          -36.95952725927789,
+          -33.95077818978861,
+          -29.29470135564539,
+          -28.183760970347183
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "deesser",
+      "chain": [
+        {
+          "effect": "DeEsser",
+          "parameters": {
+            "threshold_db": -36.0,
+            "frequency_hz": 7000.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -16.328539930572195,
+        "true_peak_dbtp": -5.516035216360996,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -45.51503899180578,
+          -44.21744125211487,
+          -40.307032376577496,
+          -37.683143459287386,
+          -34.62707101989657,
+          -31.456711233549054,
+          -28.69242010068353,
+          -28.255208879652184,
+          -29.54819549339991,
+          -20.090767679727254
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "gain_into_clip_guard",
+      "chain": [
+        {
+          "effect": "Gain",
+          "parameters": {
+            "gain_db": 8.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -8.57787664780693,
+        "true_peak_dbtp": -0.9999999999902586,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -42.00413176176757,
+          -40.70662156482551,
+          -36.79635130345306,
+          -34.17244957967488,
+          -31.116331855920546,
+          -27.945919006415416,
+          -25.178066517156218,
+          -22.120860722405364,
+          -17.467035074011534,
+          -16.37450847843568
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "gain_into_limiter",
+      "chain": [
+        {
+          "effect": "Gain",
+          "parameters": {
+            "gain_db": 9.0
+          }
+        },
+        {
+          "effect": "Limiter",
+          "parameters": {
+            "threshold_db": -1.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -9.175867801806854,
+        "true_peak_dbtp": -1.0500019576932946,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -40.29323395958688,
+          -38.947830186149346,
+          -35.01421939068504,
+          -32.38021206013188,
+          -29.308069754233564,
+          -26.181118542992987,
+          -23.372114348987004,
+          -20.332730309322883,
+          -15.67937324235723,
+          -14.579005670997345
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "fix_chain",
+      "chain": [
+        {
+          "effect": "HighpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 30.0
+          }
+        },
+        {
+          "effect": "LowShelfFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 150.0,
+            "gain_db": -4.0,
+            "q": 0.707
+          }
+        },
+        {
+          "effect": "PeakFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 2500.0,
+            "gain_db": -3.0,
+            "q": 2.0
+          }
+        },
+        {
+          "effect": "Compressor",
+          "parameters": {
+            "threshold_db": -20.0,
+            "ratio": 2.0,
+            "attack_ms": 10.0,
+            "release_ms": 150.0
+          }
+        },
+        {
+          "effect": "Gain",
+          "parameters": {
+            "gain_db": 4.0
+          }
+        },
+        {
+          "effect": "Limiter",
+          "parameters": {
+            "threshold_db": -1.5
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -14.462230308280768,
+        "true_peak_dbtp": -3.7737156021434135,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -52.08374910598336,
+          -48.02160575698376,
+          -42.50168371872821,
+          -37.97749938787534,
+          -34.520176609891436,
+          -31.485537163324835,
+          -30.276304844728763,
+          -26.11692147623846,
+          -20.863162112394686,
+          -19.692186649151132
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "spectral_denoise",
+      "chain": [
+        {
+          "effect": "SpectralDenoise",
+          "parameters": {
+            "reduction_db": 12.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -13.529938215212935,
+        "true_peak_dbtp": -6.041652727767711,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -46.808480572097565,
+          -45.61652873931979,
+          -41.678333042751035,
+          -38.854617620496164,
+          -35.89069634273942,
+          -32.78501910408707,
+          -30.023326822525643,
+          -26.93548574775165,
+          -23.14844336668914,
+          -21.1975489422342
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "spectral_denoise_gentle",
+      "chain": [
+        {
+          "effect": "SpectralDenoise",
+          "parameters": {
+            "reduction_db": 6.0,
+            "sensitivity": 2.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -13.02950107119966,
+        "true_peak_dbtp": -5.50094489981174,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -46.411792473686184,
+          -45.160747003928144,
+          -41.2229784741229,
+          -38.474615714918215,
+          -35.472210643657874,
+          -32.34512357915107,
+          -29.58351859477876,
+          -26.505073882239213,
+          -22.368362070398696,
+          -20.764471430157556
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "transient_shaper",
+      "chain": [
+        {
+          "effect": "TransientShaper",
+          "parameters": {
+            "attack_gain_db": 6.0,
+            "sustain_gain_db": -3.0,
+            "attack_ms": 5.0,
+            "release_ms": 150.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -14.927375103366249,
+        "true_peak_dbtp": -2.747534162167538,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -48.160279616471655,
+          -47.07775700153384,
+          -43.20234324672538,
+          -40.62641971844173,
+          -37.524154330956286,
+          -34.32673656642931,
+          -31.56048171472815,
+          -28.50451659463065,
+          -23.84305920704356,
+          -22.776948898470735
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "tape_saturation",
+      "chain": [
+        {
+          "effect": "TapeSaturation",
+          "parameters": {
+            "drive_db": 9.0,
+            "warmth": 0.7,
+            "mix": 0.8,
+            "output_trim_db": -2.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -7.76595086312514,
+        "true_peak_dbtp": -1.1917004230057253,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -41.016532432279035,
+          -39.592764354113406,
+          -35.601078810790725,
+          -33.00239897308688,
+          -29.966439345899477,
+          -26.83122588494208,
+          -24.010512559426974,
+          -20.98081656282748,
+          -16.42714687189709,
+          -15.27131604420282
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "stereo_widener",
+      "chain": [
+        {
+          "effect": "StereoWidener",
+          "parameters": {
+            "width": 1.5
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -12.08865113232793,
+        "true_peak_dbtp": -4.510774484506405,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -45.51490624628856,
+          -44.217396049346505,
+          -40.30712578797406,
+          -37.683224064195876,
+          -34.62710634044154,
+          -31.456693490936413,
+          -28.68884100167722,
+          -25.63163520692636,
+          -20.977809558532535,
+          -19.88528296295668
+        ]
+      }
+    },
+    {
+      "signal": "noise_mono_48k",
+      "chain_name": "restoration_chain",
+      "chain": [
+        {
+          "effect": "HighpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 30.0
+          }
+        },
+        {
+          "effect": "SpectralDenoise",
+          "parameters": {
+            "reduction_db": 12.0
+          }
+        },
+        {
+          "effect": "TransientShaper",
+          "parameters": {
+            "attack_gain_db": 3.0
+          }
+        },
+        {
+          "effect": "TapeSaturation",
+          "parameters": {
+            "drive_db": 6.0
+          }
+        },
+        {
+          "effect": "StereoWidener",
+          "parameters": {
+            "width": 0.8
+          }
+        },
+        {
+          "effect": "Gain",
+          "parameters": {
+            "gain_db": 2.0
+          }
+        },
+        {
+          "effect": "Limiter",
+          "parameters": {
+            "threshold_db": -1.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -7.092175407398992,
+        "true_peak_dbtp": -1.0500019576932969,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -43.15974015187162,
+          -39.39534728404599,
+          -34.96226694532846,
+          -32.09483566640039,
+          -29.147502061177573,
+          -26.092082663249396,
+          -23.280645977034222,
+          -20.209611915007912,
+          -16.44833612054049,
+          -14.491027907787956
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "highpass_80",
+      "chain": [
+        {
+          "effect": "HighpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 80.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -14.35990833952375,
+        "true_peak_dbtp": -9.4223240247268,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -82.27318224563854,
+          -69.85223580971126,
+          -60.14417904851651,
+          -18.3637242307457,
+          -60.8344987864205,
+          -24.336351466567116,
+          -66.61262151661842,
+          -64.00565724683348,
+          -61.07171213937818,
+          -58.34786321164308
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "highpass_150_24db",
+      "chain": [
+        {
+          "effect": "HighpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 150.0,
+            "slope_db_per_oct": 24.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -14.420976122045147,
+        "true_peak_dbtp": -9.571631648894742,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -114.99237251297109,
+          -89.42498509950238,
+          -63.22781691267667,
+          -18.435241710566487,
+          -60.81145943962508,
+          -24.33618323390647,
+          -66.61249631138236,
+          -64.00565865397267,
+          -61.071712852622504,
+          -58.34786325860883
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "lowpass_5k",
+      "chain": [
+        {
+          "effect": "LowpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 5000.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -14.317708373141759,
+        "true_peak_dbtp": -9.561644832495592,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -68.88190691610816,
+          -65.51346024504791,
+          -59.6680494066237,
+          -18.31207129833732,
+          -60.8302117780967,
+          -24.342052018946724,
+          -66.74912871260263,
+          -65.80482927560456,
+          -70.5054375998087,
+          -83.5213666287635
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "low_shelf_cut",
+      "chain": [
+        {
+          "effect": "LowShelfFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 120.0,
+            "gain_db": -6.0,
+            "q": 0.707
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -14.61837652968669,
+        "true_peak_dbtp": -9.877270679051275,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -74.88427449235144,
+          -70.88546593582818,
+          -61.7968979208961,
+          -18.666131696331135,
+          -60.893156683571235,
+          -24.337468171486563,
+          -66.61272249405978,
+          -64.00565856743158,
+          -61.07171211995453,
+          -58.34786385504315
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "high_shelf_boost",
+      "chain": [
+        {
+          "effect": "HighShelfFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 4000.0,
+            "gain_db": 4.0,
+            "q": 0.707
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -14.310902992228703,
+        "true_peak_dbtp": -9.394371742103742,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -68.88574671205981,
+          -65.51735413386213,
+          -59.671969740834726,
+          -18.311938045262643,
+          -60.83264100172248,
+          -24.321567478076886,
+          -66.29934545618453,
+          -61.786500490165736,
+          -57.273183183350234,
+          -54.35274952148971
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "peak_and_notch",
+      "chain": [
+        {
+          "effect": "PeakFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 1000.0,
+            "gain_db": 6.0,
+            "q": 1.0
+          }
+        },
+        {
+          "effect": "PeakFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 3150.0,
+            "gain_db": -9.0,
+            "q": 6.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -12.57016162309282,
+        "true_peak_dbtp": -7.464509333121106,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -68.88369936039012,
+          -65.49260492780184,
+          -59.54363130285983,
+          -17.81497813636256,
+          -59.684657038231265,
+          -18.37176262190668,
+          -65.07600272565217,
+          -65.13663795692149,
+          -61.04421264806872,
+          -58.34264299060894
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "compressor",
+      "chain": [
+        {
+          "effect": "Compressor",
+          "parameters": {
+            "threshold_db": -24.0,
+            "ratio": 4.0,
+            "attack_ms": 5.0,
+            "release_ms": 100.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -22.28458600404678,
+        "true_peak_dbtp": -13.995306703890238,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -75.54984252840654,
+          -72.25185023951165,
+          -67.14866598306006,
+          -26.33827070639888,
+          -64.96848538407106,
+          -32.268439315813595,
+          -68.18533307508173,
+          -71.67032372651887,
+          -68.95572465661776,
+          -66.23655134802928
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "deesser",
+      "chain": [
+        {
+          "effect": "DeEsser",
+          "parameters": {
+            "threshold_db": -36.0,
+            "frequency_hz": 7000.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -14.315341083283153,
+        "true_peak_dbtp": -9.47071996001402,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -68.8848698195199,
+          -65.51646942595458,
+          -59.671083277123145,
+          -18.31202855015498,
+          -60.832357211586945,
+          -24.336171812258364,
+          -66.61265277499717,
+          -64.00565563859003,
+          -61.07171180186323,
+          -58.34786319157829
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "gain_into_clip_guard",
+      "chain": [
+        {
+          "effect": "Gain",
+          "parameters": {
+            "gain_db": 8.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -6.31534108328315,
+        "true_peak_dbtp": -1.4707199600295766,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -60.88486981951991,
+          -57.51646942595458,
+          -51.671083277123145,
+          -10.312028550154979,
+          -52.83235721158694,
+          -16.336171812258364,
+          -58.61265277499718,
+          -56.00565563859003,
+          -53.07171180186322,
+          -50.3478631915783
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "gain_into_limiter",
+      "chain": [
+        {
+          "effect": "Gain",
+          "parameters": {
+            "gain_db": 9.0
+          }
+        },
+        {
+          "effect": "Limiter",
+          "parameters": {
+            "threshold_db": -1.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -5.697391073014451,
+        "true_peak_dbtp": -1.0500019576932969,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -60.24131790222178,
+          -56.80039487316752,
+          -51.08749040354268,
+          -9.695994325977031,
+          -52.233317117186274,
+          -15.720016623303971,
+          -57.97499318847991,
+          -55.389124233663985,
+          -52.454504431174556,
+          -49.73095770236323
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "fix_chain",
+      "chain": [
+        {
+          "effect": "HighpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 30.0
+          }
+        },
+        {
+          "effect": "LowShelfFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 150.0,
+            "gain_db": -4.0,
+            "q": 0.707
+          }
+        },
+        {
+          "effect": "PeakFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 2500.0,
+            "gain_db": -3.0,
+            "q": 2.0
+          }
+        },
+        {
+          "effect": "Compressor",
+          "parameters": {
+            "threshold_db": -20.0,
+            "ratio": 2.0,
+            "attack_ms": 10.0,
+            "release_ms": 150.0
+          }
+        },
+        {
+          "effect": "Gain",
+          "parameters": {
+            "gain_db": 4.0
+          }
+        },
+        {
+          "effect": "Limiter",
+          "parameters": {
+            "threshold_db": -1.5
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -13.831384963162405,
+        "true_peak_dbtp": -7.0862874930847,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -73.02649154005921,
+          -67.71642757765547,
+          -60.58480441913261,
+          -17.908627386648355,
+          -59.11092228200103,
+          -23.55132774484149,
+          -64.68619310161044,
+          -63.688736070151975,
+          -60.18097542716011,
+          -57.3968280826185
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "spectral_denoise",
+      "chain": [
+        {
+          "effect": "SpectralDenoise",
+          "parameters": {
+            "reduction_db": 12.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -26.233226903615,
+        "true_peak_dbtp": -12.044141223777578,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -69.0093172512198,
+          -65.6058490406272,
+          -60.52690457482178,
+          -30.254182409269653,
+          -65.26585578300495,
+          -36.28243865691044,
+          -72.1012976925623,
+          -70.40560298328076,
+          -67.51378591006409,
+          -64.73667337918728
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "spectral_denoise_gentle",
+      "chain": [
+        {
+          "effect": "SpectralDenoise",
+          "parameters": {
+            "reduction_db": 6.0,
+            "sensitivity": 2.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -20.297315814484385,
+        "true_peak_dbtp": -11.382077729303148,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -68.98527909776305,
+          -65.58356272767433,
+          -60.2637565881006,
+          -24.299672957455808,
+          -63.68170033221371,
+          -30.32496463292162,
+          -69.94712295092715,
+          -67.74222674560717,
+          -64.83020586718897,
+          -62.081582541466894
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "transient_shaper",
+      "chain": [
+        {
+          "effect": "TransientShaper",
+          "parameters": {
+            "attack_gain_db": 6.0,
+            "sustain_gain_db": -3.0,
+            "attack_ms": 5.0,
+            "release_ms": 150.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -17.27454712415631,
+        "true_peak_dbtp": -3.649717394716405,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -71.04360527626943,
+          -67.37998447719671,
+          -59.81195952252968,
+          -21.291774078874823,
+          -58.18885806759887,
+          -27.31284715707244,
+          -68.42400084926494,
+          -66.95568266334627,
+          -64.05063105168024,
+          -61.325887657569396
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "tape_saturation",
+      "chain": [
+        {
+          "effect": "TapeSaturation",
+          "parameters": {
+            "drive_db": 9.0,
+            "warmth": 0.7,
+            "mix": 0.8,
+            "output_trim_db": -2.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -9.447052413659973,
+        "true_peak_dbtp": -4.843303172922877,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -63.34558663209534,
+          -60.73158230062155,
+          -55.170113332236504,
+          -13.410897049975777,
+          -39.42403399329342,
+          -19.87465944421977,
+          -44.98665788912376,
+          -59.31565759871329,
+          -56.53811574508455,
+          -53.90617133226907
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "stereo_widener",
+      "chain": [
+        {
+          "effect": "StereoWidener",
+          "parameters": {
+            "width": 1.5
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -12.432602513643701,
+        "true_peak_dbtp": -7.173515786622157,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -68.8848698195199,
+          -65.51646942595458,
+          -59.671083277123145,
+          -18.31202855015498,
+          -60.832357211586945,
+          -24.336171812258364,
+          -66.61265277499717,
+          -64.00565563859003,
+          -61.07171180186323,
+          -58.34786319157829
+        ]
+      }
+    },
+    {
+      "signal": "hiss_tones_stereo_44k1",
+      "chain_name": "restoration_chain",
+      "chain": [
+        {
+          "effect": "HighpassFilter",
+          "parameters": {
+            "cutoff_frequency_hz": 30.0
+          }
+        },
+        {
+          "effect": "SpectralDenoise",
+          "parameters": {
+            "reduction_db": 12.0
+          }
+        },
+        {
+          "effect": "TransientShaper",
+          "parameters": {
+            "attack_gain_db": 3.0
+          }
+        },
+        {
+          "effect": "TapeSaturation",
+          "parameters": {
+            "drive_db": 6.0
+          }
+        },
+        {
+          "effect": "StereoWidener",
+          "parameters": {
+            "width": 0.8
+          }
+        },
+        {
+          "effect": "Gain",
+          "parameters": {
+            "gain_db": 2.0
+          }
+        },
+        {
+          "effect": "Limiter",
+          "parameters": {
+            "threshold_db": -1.0
+          }
+        }
+      ],
+      "expected": {
+        "integrated_lufs": -19.258448877386893,
+        "true_peak_dbtp": -3.569042903886036,
+        "octave_centers_hz": [
+          31.5,
+          63.0,
+          125.0,
+          250.0,
+          500.0,
+          1000.0,
+          2000.0,
+          4000.0,
+          8000.0,
+          16000.0
+        ],
+        "octave_levels_db": [
+          -62.20641628516532,
+          -57.506244136480966,
+          -52.34968366456905,
+          -22.54966476353686,
+          -56.363696289912994,
+          -28.5847601166393,
+          -64.22621997523504,
+          -62.70560264193658,
+          -59.816344351308814,
+          -57.13571221033962
+        ]
+      }
+    }
+  ],
+  "noise_floor": {
+    "signal": "hiss_tones_stereo_44k1",
+    "chain_name": "spectral_denoise",
+    "from_hz": 4000.0,
+    "input_floor_db": -61.14174354401052,
+    "output_floor_db": -67.5520207575107
+  }
+}

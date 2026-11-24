@@ -71,8 +71,7 @@ void RenderJobManager::startChainRender(const juce::String& description, const j
                                         const juce::String& abstainedReason, const juce::String& targetStem,
                                         const juce::String& decisionHash)
 {
-    lastChain_ = chain;
-    lastChainDecisionHash_ = decisionHash;
+    rememberChain(chain, decisionHash);
     const auto stemPaths = stemProvenanceProvider_ ? stemProvenanceProvider_() : std::map<juce::String, juce::String>{};
     Job job;
     job.info.description = description;
@@ -106,6 +105,48 @@ void RenderJobManager::startGraphRender(const juce::String& description, const j
                                    stemPaths](ipc::HttpServiceBridge& bridge) {
         return bridge.startApplyGraphJob(filePath, outputPath, branches, post, normalize, sessionId,
                                          sourceRecommendationId, stemPaths);
+    });
+}
+
+void RenderJobManager::startLocalRender(const juce::String& description, const juce::String& inputPath,
+                                        const juce::String& sessionId, const juce::String& sourceRecommendationId,
+                                        LocalRenderWork work, Callback onDone)
+{
+    JUCE_ASSERT_MESSAGE_THREAD
+    Job job;
+    job.info.description = description;
+    job.info.status = "running locally";
+    job.info.startedMs = juce::Time::currentTimeMillis();
+    job.callback = std::move(onDone);
+    job.inputPath = inputPath;
+    job.sessionId = sessionId;
+    job.sourceRecommendationId = sourceRecommendationId;
+    job.local = true;
+    job.localId = nextLocalId_++;
+    const auto localId = job.localId;
+    auto stop = job.stop;
+    jobs_.push_back(std::move(job));
+    sendChangeMessage();
+
+    juce::WeakReference<RenderJobManager> self(this);
+    pool_.addJob([self, localId, stop, work = std::move(work)]() {
+        LocalRenderOutcome outcome;
+        try {
+            outcome = work(*stop);
+        } catch (const std::exception& e) {
+            outcome = {false, juce::String("Render failed: ") + e.what(), {}};
+        }
+        juce::MessageManager::callAsync([self, localId, outcome = std::move(outcome)]() {
+            const bool known = self != nullptr && std::any_of(self->jobs_.begin(), self->jobs_.end(),
+                                                              [localId](const Job& j) { return j.localId == localId; });
+            if (!known) {
+                // Cancelled (or the manager went) while it finished: the
+                // render was never handed to anyone, so it must not linger.
+                if (outcome.ok) juce::File(outcome.outputPathOrError).deleteFile();
+                return;
+            }
+            self->finishJob(localId, outcome.ok, outcome.outputPathOrError, outcome.fullResult);
+        });
     });
 }
 
@@ -181,6 +222,11 @@ void RenderJobManager::cancelJob(juce::uint32 localId)
     const auto it = std::find_if(jobs_.begin(), jobs_.end(), [localId](const Job& j) { return j.localId == localId; });
     if (it == jobs_.end()) return;
 
+    if (it->local) { // OVH-9: stop the worker; its late result is discarded
+        it->stop->store(true);
+        finishJob(localId, false, {}, {});
+        return;
+    }
     if (it->info.jobId.isNotEmpty()) {
         const juce::String jobId = it->info.jobId;
         finishJob(localId, false, {}, {}); // empty error = user cancel

@@ -5,6 +5,7 @@
 // single centroid/tilt scalar.
 // THREAD_CONTEXT(UIThread)
 #pragma once
+#include "../shared/HoverCells.h"
 #include <JuceHeader.h>
 #include <khensu/analysis/AnalysisResult.h>
 #include "../shared/PanelCard.h"
@@ -19,8 +20,11 @@ class IAppController;
 /// tilt line (GenreEntry::spectral_tilt_target_db_per_octave) with a ±3 dB
 /// tolerance band. Bands outside tolerance are flagged, and the footer names
 /// the worst deviation ("+4.2 dB at 8 kHz - brighter than genre norm").
-class TonalBalancePanel final : public PanelCard {
+class TonalBalancePanel final : public PanelCard, public juce::SettableTooltipClient {
   public:
+    /// VIZ-U3: the readout under the pointer.
+    void mouseMove(const juce::MouseEvent& e) override { hover_.update(*this, e.position); }
+    void mouseExit(const juce::MouseEvent&) override { setTooltip({}); }
     explicit TonalBalancePanel(IAppController& c);
     void setData(const AnalysisResult& r);
     void paint(juce::Graphics& g) override;
@@ -37,6 +41,7 @@ class TonalBalancePanel final : public PanelCard {
 
     void rebuildVerdict();
 
+    mutable HoverCells hover_; ///< VIZ-U3, filled in paint()
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TonalBalancePanel)
 };
 

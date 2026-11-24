@@ -1,4 +1,5 @@
 // desktop-app/Source/ui/ExportDelivery/AlbumAssemblyPanel.cpp
+#include "../shared/ServiceErrorHint.h"
 #include "AlbumAssemblyPanel.h"
 #include "AlbumMasterDialog.h"
 #include "../shared/KhensuLookAndFeel.h"
@@ -236,7 +237,7 @@ void AlbumAssemblyPanel::runAnalysis()
             self->downButton_.setEnabled(self->selectedTrack_ >= 0
                                          && self->selectedTrack_ < self->trackPaths_.size() - 1);
             if (result.is_err()) {
-                self->statusLabel_.setText(TRANS("Analysis failed: ") + juce::String(result.error().message),
+                self->statusLabel_.setText(TRANS("Analysis failed: ") + serviceErrorLine(result.error()),
                                            juce::dontSendNotification);
                 return;
             }

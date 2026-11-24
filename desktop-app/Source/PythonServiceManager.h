@@ -63,6 +63,9 @@ class PythonServiceManager : private juce::Thread {
     /// True once the child process has been spawned, or a running verified
     /// service was adopted.
     bool weStartedIt() const noexcept { return launched_.load(); }
+    /// The service on the port was already running and was adopted: there is
+    /// no child process to watch, so "alive" means something still listens.
+    bool adoptedService() const noexcept { return adopted_.load(); }
 
     /// The bearer token this app wrote to token.txt. It is the HMAC key the
     /// /health identity challenge is checked against (AUDIT-020); without it

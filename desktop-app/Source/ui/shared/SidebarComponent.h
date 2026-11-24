@@ -41,6 +41,15 @@ class SidebarComponent final : public juce::Component {
     /// duplicating the label table.
     static const char* navLabelForVisualIndex(int visualIndex);
     void setSessionName(const juce::String& name, const juce::String& genre);
+    /// UX2-4: the session block's readiness number (the verdict's score);
+    /// `known` false hides it (no analysis yet, or one still running).
+    void setReadiness(float score, bool known);
+    bool readinessKnown() const noexcept { return readinessKnown_; }
+    float readiness() const noexcept { return readiness_; }
+    /// Tests: the row for a visual index.
+    const NavItemComponent& navItemForTesting(int visualIndex) const { return navItems_[(size_t)visualIndex]; }
+    /// The line icon of a visual row index (NavIcons.h).
+    static nav_icons::Icon iconForVisualIndex(int visualIndex);
     /// inProgress shows a small Cancel button next to the status text - used
     /// while the fast/deep analysis pass is running.
     void setAnalysisStatus(const juce::String& status, bool ok, bool inProgress = false);
@@ -58,6 +67,15 @@ class SidebarComponent final : public juce::Component {
     /// UX-15: the persistent "?" Getting started entry beside Help.
     std::function<void()> onGettingStarted;
 
+    /// UI-10: "Khensu closed unexpectedly last time" is a small badge beside
+    /// Settings, not a banner across every screen. Clicking it offers the
+    /// same two actions the banner had; either one removes the badge.
+    void setCrashNotice(std::function<void()> onOpenFolder, std::function<void()> onDismiss);
+    bool hasCrashNotice() const noexcept { return crashBadge_.isVisible(); }
+    /// Tests: run the badge's actions as its menu would.
+    void triggerCrashOpenFolder();
+    void triggerCrashDismiss();
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -67,21 +85,33 @@ class SidebarComponent final : public juce::Component {
     void applyThemeColours();
 
     static const char* kNavLabels[kNumScreens];
-    /// Visual indices where the Tools group and the bottom footer start (UX-2).
+    /// Visual indices where the Tools group and the System group (pinned to
+    /// the bottom) start (UX-2).
     static constexpr int kToolsStart = 6;
     static constexpr int kFooterStart = 9;
-    static constexpr int kCaptionH = 20;
-    juce::Rectangle<int> workflowCaption_, toolsCaption_;
+    static constexpr int kCaptionH = 24;
+    static constexpr int kBrandH = 52;
+    static constexpr int kSessionH = 76;
+    static constexpr int kStatusH = 56;
+    juce::Rectangle<int> workflowCaption_, toolsCaption_, systemCaption_;
+    juce::Rectangle<int> sessionBlockBounds() const;
 
     std::array<NavItemComponent, kNumScreens> navItems_;
     juce::String sessionName_, sessionGenre_;
     juce::String analysisStatus_;
     bool analysisOk_ = true;
+    bool analysisInProgress_ = false;
+    float readiness_ = 0.0f;
+    bool readinessKnown_ = false;
     PythonStatus pythonStatus_ = PythonStatus::Stopped;
     int pythonRestartAttempt_ = 0;
 
     juce::TextButton cancelAnalysisButton_{TRANS("Cancel")};
     juce::TextButton gettingStartedButton_{"?"}; // i18n-exempt(symbol; named by setTitle)
+    juce::TextButton crashBadge_{"!"};             // i18n-exempt(symbol; named by setTitle)
+    std::function<void()> crashOpenFolder_, crashDismiss_;
+    void showCrashMenu();
+    void clearCrashNotice();
 
     // Declared last: the handler touches the members above, so it must be
     // destroyed (deregistered) before they are.

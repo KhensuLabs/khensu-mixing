@@ -2,8 +2,8 @@
 // UX-1: the Dashboard's default "Essentials" view - about eight Zone 3 cards
 // instead of all 46. Mix Notes (the findings) always leads; then the card that
 // shows each finding, worst finding first; then a fixed core set fills the
-// rest. Experimental cards (VER-8) never appear here; "All" and the category
-// tabs still show them.
+// rest. Experimental cards (VER-8) and Advanced cards (OVH-7,
+// DashboardCategory.h) never appear here; their tabs still show them.
 #pragma once
 
 #include <algorithm>
@@ -14,6 +14,7 @@
 #include <khensu/recommendations/Recommendation.h>
 
 #include "../shared/FeatureMaturity.h"
+#include "DashboardCategory.h"
 
 namespace khensu::essentials {
 
@@ -80,7 +81,10 @@ inline constexpr std::string_view kCorePanels[] = {"reference",     "tonal_balan
 {
     std::vector<std::string> out;
     auto add = [&](std::string_view id) {
-        if (out.size() >= count || id.empty() || maturity::isExperimental(id)) return;
+        // OVH-7: Essentials never shows an experimental or advanced card.
+        if (out.size() >= count || id.empty() || maturity::isExperimental(id) ||
+            dashboard_category::isAdvanced(std::string(id)))
+            return;
         if (std::find(out.begin(), out.end(), id) == out.end()) out.emplace_back(id);
     };
 

@@ -116,6 +116,10 @@ class StemService final : public IStems {
     /// Session change: forget the separation result and vocal analysis, and
     /// stop an in-flight separation of the old session (AUDIT-067).
     void resetForSession();
+    /// How long a separation waits for the engine to prove its identity
+    /// before it starts (default 15 s: a few ServiceLifecycle health-probe
+    /// rounds, ~1.6 s apart with a 2.5 s timeout). Tests shorten it.
+    void setIdentityWaitMs(int ms) noexcept { identityWaitMs_.store(ms); }
 
   private:
     void notifyVocalAnalysisListeners();
@@ -139,6 +143,7 @@ class StemService final : public IStems {
     // polling, cancels its server job and never touches the new session's
     // separatingStems flag (AUDIT-067).
     std::atomic<uint64_t> separationGeneration_{0};
+    std::atomic<int> identityWaitMs_{15000};
 
     JUCE_DECLARE_WEAK_REFERENCEABLE(StemService)
     JUCE_DECLARE_NON_COPYABLE(StemService)

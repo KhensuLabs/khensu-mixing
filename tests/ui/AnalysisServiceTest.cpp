@@ -8,8 +8,12 @@
 // results are fed through the documented deliver*ForTesting seam, the same
 // handler the AnalysisController calls. Background work is counted, not run.
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
+#include <atomic>
+#include <cmath>
 #include <vector>
 #include "IBackgroundWork.h"
+#include "analysis/AnalysisController.h"
 #include "session/AnalysisService.h"
 #include "session/SessionService.h"
 #include <khensu/analysis/AnalysisInputs.h>
@@ -285,7 +289,8 @@ TEST_CASE("AnalysisService re-runs only an analysis missing its deep half when t
     CHECK(recovered == 1);
     CHECK(f.analysis.analysisRunToken() == run);
 
-    // The engine was asked and did not answer: re-analysed.
+    // The engine was asked and did not answer: re-analysed - in place
+    // (FN2-2b): the result stays on screen and the gate open meanwhile.
     f.analysis.beginAnalysis();
     auto unanswered = Fixture::finalResult(/*deep*/ false);
     unanswered.inputs_failed = khensu::analysis_inputs::serviceInputs(/*withReference*/ false);
@@ -294,7 +299,9 @@ TEST_CASE("AnalysisService re-runs only an analysis missing its deep half when t
     f.analysis.reanalyzeIfServiceRecovered();
     CHECK(recovered == 1);
     CHECK(f.analysis.analysisRunToken() == run2 + 1);
-    CHECK(f.analysis.resultsGate() == Gate::Analyzing);
+    CHECK(f.analysis.resultsGate() == Gate::Open);
+    CHECK(f.analysis.upgradeInFlight());
+    CHECK(f.analysis.hasAnalysis());
 
     f.analysis.removeServiceRecoveredListener(&key);
 }
@@ -341,7 +348,7 @@ TEST_CASE("AnalysisService leaves alone on recovery what the engine was never as
     CHECK(f.failure.isEmpty());
 
     // One part of the pipeline went unanswered (the deep half is there):
-    // that is worth a re-run too.
+    // that is worth a re-run too - in place (FN2-2b), the results stay.
     f.analysis.beginAnalysis();
     auto noDrums = Fixture::finalResult(/*deep*/ true);
     noDrums.inputs_failed = in::kDrums;
@@ -349,18 +356,36 @@ TEST_CASE("AnalysisService leaves alone on recovery what the engine was never as
     run = f.analysis.analysisRunToken();
     f.analysis.reanalyzeIfServiceRecovered();
     CHECK(f.analysis.analysisRunToken() == run + 1);
-    CHECK(f.analysis.resultsGate() == Gate::Analyzing);
-
-    // The re-run came back unanswered as well (a busy engine misses its
-    // health probes and "recovers" again): no second automatic run, or the
-    // results would be hidden over and over.
-    f.analysis.deliverResultForTesting(noDrums);
-    run = f.analysis.analysisRunToken();
-    f.analysis.reanalyzeIfServiceRecovered();
-    CHECK(f.analysis.analysisRunToken() == run);
     CHECK(f.analysis.resultsGate() == Gate::Open);
+    const auto analyzingSoFar = std::count(f.gates.begin(), f.gates.end(), Gate::Analyzing);
 
-    // The user's own re-run earns one more.
+    // The re-run came back unanswered as well. Not one-shot any more (the
+    // results are not hidden by a re-run), but bounded: while the engine
+    // stays up - every health tick reports Running - nothing repeats it, a
+    // busy engine answers no better now...
+    f.analysis.deliverResultForTesting(noDrums);
+    f.analysis.setEngineStatus(khensu::PythonStatus::Running); // an up-edge: the 2nd re-run
+    CHECK(f.analysis.analysisRunToken() == run + 2);
+    f.analysis.deliverResultForTesting(noDrums);
+    f.analysis.setEngineStatus(khensu::PythonStatus::Running); // still up: nothing
+    f.analysis.setEngineStatus(khensu::PythonStatus::Running);
+    CHECK(f.analysis.analysisRunToken() == run + 2);
+    CHECK_FALSE(f.analysis.analysisInFlight());
+    // ... each time it comes back up, one more, up to kMaxRecoveryReruns.
+    f.analysis.setEngineStatus(khensu::PythonStatus::Stopped);
+    f.analysis.setEngineStatus(khensu::PythonStatus::Running);
+    CHECK(f.analysis.analysisRunToken() == run + 3);
+    f.analysis.deliverResultForTesting(noDrums);
+    f.analysis.setEngineStatus(khensu::PythonStatus::Stopped);
+    f.analysis.setEngineStatus(khensu::PythonStatus::Running);
+    f.analysis.reanalyzeIfServiceRecovered();
+    CHECK(f.analysis.analysisRunToken() == run + 3);
+    CHECK(f.analysis.resultsGate() == Gate::Open);
+    // None of them hid the results.
+    CHECK(std::count(f.gates.begin(), f.gates.end(), Gate::Analyzing) == analyzingSoFar);
+    CHECK(AnalysisService::kMaxRecoveryReruns == 3);
+
+    // The user's own re-run earns them again.
     f.analysis.reanalyzeActiveSession();
     f.analysis.deliverResultForTesting(noDrums);
     run = f.analysis.analysisRunToken();
@@ -482,4 +507,235 @@ TEST_CASE("AnalysisService allows genre-relative actions once the genre is confi
     CHECK_FALSE(f.analysis.genreRelativeActionAllowed());
     f.analysis.setReferenceTrack("C:/refs/reference.wav");
     CHECK(f.analysis.genreRelativeActionAllowed());
+}
+
+// ---- FN2-2b: native findings before the engine, then the deep pass in place ----
+
+namespace {
+
+template <typename Pred> bool pumpUntil(Pred pred, int timeoutMs = 15000)
+{
+    auto* mm = juce::MessageManager::getInstance();
+    const auto deadline = juce::Time::currentTimeMillis() + timeoutMs;
+    while (!pred()) {
+        if (juce::Time::currentTimeMillis() > deadline) return false;
+        mm->runDispatchLoopUntil(20);
+    }
+    return true;
+}
+
+/// Two seconds of a stereo sine in a temp folder: enough for the native pass.
+struct SineFile {
+    juce::File dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                         .getChildFile("khensu-fn2-2b-" + juce::Uuid().toString());
+    juce::File file;
+    SineFile()
+    {
+        dir.createDirectory();
+        file = dir.getChildFile("track.wav");
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
+        REQUIRE(stream != nullptr);
+        const auto options =
+            juce::AudioFormatWriterOptions{}.withSampleRate(44100.0).withNumChannels(2).withBitsPerSample(16);
+        auto writer = wav.createWriterFor(stream, options);
+        REQUIRE(writer != nullptr);
+        juce::AudioBuffer<float> buf(2, 88200);
+        for (int i = 0; i < buf.getNumSamples(); ++i) {
+            const float v = 0.25f * std::sin(juce::MathConstants<float>::twoPi * 440.0f * (float)i / 44100.0f);
+            buf.setSample(0, i, v);
+            buf.setSample(1, i, v);
+        }
+        writer->writeFromAudioSampleBuffer(buf, 0, buf.getNumSamples());
+    }
+    ~SineFile() { dir.deleteRecursively(); }
+
+    khensu::Session session(const char* id) const
+    {
+        khensu::Session s;
+        s.id = id;
+        s.name = "t";
+        khensu::AudioFileRef f;
+        f.id = "file-1";
+        f.path = file.getFullPathName().toStdString();
+        f.format = "wav";
+        s.files.push_back(f);
+        return s;
+    }
+};
+
+/// An engine that is down until `up`, answers a deep job (after `release`,
+/// or gives up when the run is superseded) and answers every scan with an
+/// error about the request (an answer, not "unanswered").
+struct BootingEngine {
+    std::atomic<bool> up{false}, release{true};
+    std::atomic<int> deepCalls{0}, deepCancelled{0};
+
+    khensu::AnalysisServiceCalls calls()
+    {
+        using khensu::Result;
+        using Error = khensu::ipc::BridgeError;
+        const Error none{Error::Kind::HttpError, "not for this test", 422};
+        khensu::AnalysisServiceCalls c;
+        c.available = [this] { return up.load(); };
+        c.knownNotReady = [this] { return !up.load(); };
+        c.deep = [this](const std::string&, const khensu::DeepAnalysisJobHooks& hooks) {
+            ++deepCalls;
+            khensu::DeepAnalysisJobResult r;
+            const auto deadline = juce::Time::currentTimeMillis() + 10000;
+            while (!release && juce::Time::currentTimeMillis() < deadline) {
+                if (hooks.shouldCancel()) {
+                    ++deepCancelled;
+                    r.outcome = khensu::DeepAnalysisOutcome::Cancelled;
+                    return r;
+                }
+                juce::Thread::sleep(2);
+            }
+            r.outcome = khensu::DeepAnalysisOutcome::Completed;
+            r.hasResponse = true; // an empty response still marks the deep pass as run
+            return r;
+        };
+        c.sections = [none](const std::string&) { return Result<khensu::SectionAnalysis, Error>::err(none); };
+        c.drums = [none](const std::string&) { return Result<AnalysisResult::DrumData, Error>::err(none); };
+        c.reference = [none](const std::string&, const std::string&) {
+            return Result<khensu::ReferenceDeltas, Error>::err(none);
+        };
+        c.chords = [none](const std::string&) { return Result<khensu::ChordAnalysis, Error>::err(none); };
+        c.trust = [none](const std::string&) { return Result<juce::var, Error>::err(none); };
+        return c;
+    }
+};
+
+} // namespace
+
+TEST_CASE("AnalysisService: native findings publish at once while the engine starts; the deep pass replaces "
+          "them in place (FN2-2b)",
+          "[split][analysis][fn2-2b]")
+{
+    namespace in = khensu::analysis_inputs;
+    Fixture f(/*pipeline*/ true);
+    BootingEngine engine;
+    f.analysis.setServiceCallsForTesting(engine.calls());
+    f.analysis.setEngineStatus(khensu::PythonStatus::Starting);
+    SineFile track;
+    f.sessions.adopt(track.session("s-cold"));
+    int broadcasts = 0, key = 0;
+    f.analysis.addAnalysisListener(&key, [&](const AnalysisResult&) { ++broadcasts; });
+
+    const auto t0 = juce::Time::getMillisecondCounter();
+    f.analysis.beginAnalysis();
+    REQUIRE(pumpUntil([&] { return f.analysis.resultsGate() == Gate::Open && f.analysis.hasAnalysis(); }));
+    const auto elapsed = juce::Time::getMillisecondCounter() - t0;
+    INFO("native findings after " << elapsed << " ms");
+    CHECK(elapsed < 6000); // not held for the engine's 8 s wait
+    // A complete native result: published (not partial), the deep inputs unanswered.
+    CHECK(broadcasts == 1);
+    CHECK_FALSE(f.analysis.currentAnalysis().is_partial);
+    CHECK_FALSE(f.analysis.currentAnalysis().has_python_analysis());
+    CHECK((f.analysis.currentAnalysis().inputs_failed & in::kDeep) != 0);
+    CHECK(f.analysis.deepPassState() == khensu::DeepPassState::EngineUnavailable);
+    CHECK(engine.deepCalls == 0);
+    CHECK(f.gates == std::vector<Gate>{Gate::Analyzing, Gate::Open});
+    const auto version = f.analysis.analysisVersion();
+    const int run = f.analysis.analysisRunToken();
+
+    // The engine comes up: the analysis re-runs in place - the gate stays
+    // open, the native result stays readable - until the full one lands.
+    engine.release = false;
+    engine.up = true;
+    f.analysis.setEngineStatus(khensu::PythonStatus::Running);
+    CHECK(f.analysis.upgradeInFlight());
+    CHECK(f.analysis.analysisRunToken() == run + 1);
+    REQUIRE(pumpUntil([&] { return engine.deepCalls.load() == 1; }));
+    CHECK(f.analysis.resultsGate() == Gate::Open);
+    CHECK_FALSE(f.analysis.resultsPending());
+    CHECK(f.analysis.hasAnalysis());
+    CHECK((f.analysis.currentAnalysis().inputs_failed & in::kDeep) != 0);
+    CHECK(f.analysis.analysisVersion() == version);
+    // Running again (every health tick) starts nothing more meanwhile.
+    f.analysis.setEngineStatus(khensu::PythonStatus::Running);
+    CHECK(f.analysis.analysisRunToken() == run + 1);
+
+    engine.release = true;
+    REQUIRE(pumpUntil([&] { return f.analysis.currentAnalysis().has_python_analysis(); }));
+    CHECK_FALSE(f.analysis.upgradeInFlight());
+    CHECK_FALSE(f.analysis.analysisInFlight());
+    CHECK(f.analysis.resultsGate() == Gate::Open);
+    CHECK(f.analysis.currentAnalysis().inputs_failed == 0);
+    CHECK(f.analysis.analysisVersion() > version);
+    CHECK(broadcasts == 2);
+    CHECK(f.finals == 2);
+    CHECK(f.analysis.deepPassState() == khensu::DeepPassState::Complete);
+    // Never hidden again: no second Analyzing on the way.
+    CHECK(std::count(f.gates.begin(), f.gates.end(), Gate::Analyzing) == 1);
+    // Nothing left unanswered: the next health tick re-runs nothing.
+    f.analysis.setEngineStatus(khensu::PythonStatus::Running);
+    CHECK(f.analysis.analysisRunToken() == run + 1);
+    f.analysis.removeAnalysisListener(&key);
+}
+
+TEST_CASE("AnalysisService: with the engine up the results gate still waits for the main pipeline (FN2-2b)",
+          "[split][analysis][fn2-2b]")
+{
+    Fixture f(/*pipeline*/ true);
+    BootingEngine engine;
+    engine.up = true;
+    engine.release = false;
+    f.analysis.setServiceCallsForTesting(engine.calls());
+    f.analysis.setEngineStatus(khensu::PythonStatus::Running);
+    SineFile track;
+    f.sessions.adopt(track.session("s-warm"));
+    f.analysis.beginAnalysis();
+    REQUIRE(pumpUntil([&] { return engine.deepCalls.load() == 1; }));
+    // The fast pass is in; the grade is withheld while the deep job runs.
+    CHECK(f.analysis.resultsGate() == Gate::Analyzing);
+    CHECK_FALSE(f.analysis.hasAnalysis());
+    CHECK_FALSE(f.analysis.analysisModel().hasResult());
+    engine.release = true;
+    REQUIRE(pumpUntil([&] { return f.analysis.resultsGate() == Gate::Open; }));
+    REQUIRE(f.analysis.hasAnalysis());
+    CHECK(f.analysis.currentAnalysis().has_python_analysis());
+    CHECK(f.analysis.currentAnalysis().inputs_failed == 0);
+    CHECK(f.gates == std::vector<Gate>{Gate::Analyzing, Gate::Open});
+}
+
+TEST_CASE("AnalysisService: a session switch during the in-place deep pass publishes nothing stale (FN2-2b)",
+          "[split][analysis][fn2-2b]")
+{
+    Fixture f(/*pipeline*/ true);
+    BootingEngine engine;
+    f.analysis.setServiceCallsForTesting(engine.calls());
+    f.analysis.setEngineStatus(khensu::PythonStatus::Starting);
+    SineFile track;
+    f.sessions.adopt(track.session("s-old"));
+    f.analysis.beginAnalysis();
+    REQUIRE(pumpUntil([&] { return f.analysis.resultsGate() == Gate::Open && f.analysis.hasAnalysis(); }));
+
+    engine.release = false;
+    engine.up = true;
+    f.analysis.setEngineStatus(khensu::PythonStatus::Running);
+    REQUIRE(pumpUntil([&] { return engine.deepCalls.load() == 1; }));
+    REQUIRE(f.analysis.upgradeInFlight());
+
+    // The user opens another session while the old one's deep pass runs.
+    f.analysis.resetForSession();
+    f.openSession("s-new");
+    const auto version = f.analysis.analysisVersion();
+    const auto gatesBefore = f.gates.size();
+    const int finalsBefore = f.finals;
+    // The superseded run stops at its next cancellation check.
+    REQUIRE(pumpUntil([&] { return engine.deepCancelled.load() == 1; }));
+    engine.release = true;
+    // Let anything it might still deliver come through the message loop.
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(300);
+    CHECK_FALSE(f.analysis.hasAnalysis());
+    CHECK_FALSE(f.analysis.analysisModel().hasResult());
+    CHECK(f.analysis.analysisVersion() == version);
+    CHECK(f.finals == finalsBefore);
+    CHECK(f.gates.size() == gatesBefore);
+    CHECK_FALSE(f.analysis.upgradeInFlight());
+    CHECK_FALSE(f.analysis.analysisInFlight());
+    // And the recovery allowance belongs to the new session's runs.
+    f.analysis.setEngineStatus(khensu::PythonStatus::Running);
+    CHECK_FALSE(f.analysis.analysisInFlight());
 }

@@ -2,6 +2,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include <optional>
+#include "../services/AbLevelOffset.h"
 
 namespace khensu {
 
@@ -74,6 +75,21 @@ class PlaybackSourceController final {
     bool awaitingProcessedLufs() const noexcept
     {
         return processedPath.isNotEmpty() && !processedLufs.has_value() && !processedLufsUnavailable;
+    }
+
+    /// UI-6: B against A for the A/B control. "Matched" only when both
+    /// levels are known - gainFor() can only even out what was measured.
+    AbLevelOffset levelOffset(std::optional<float> originalLufs) const noexcept
+    {
+        AbLevelOffset o;
+        o.available = processedPath.isNotEmpty();
+        if (!o.available) return o;
+        o.measuring = awaitingProcessedLufs();
+        if (processedLufs.has_value() && originalLufs.has_value()) {
+            o.bMinusADb = *processedLufs - *originalLufs;
+            o.matched = true;
+        }
+        return o;
     }
 
     struct GainContext {

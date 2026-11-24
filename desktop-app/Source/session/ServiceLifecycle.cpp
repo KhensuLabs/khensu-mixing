@@ -78,7 +78,7 @@ void ServiceLifecycle::startHealthCheck()
     // pythonService_ outlives the poll pool (drained first in the owner's
     // destructor), so the raw pointer is safe on the worker.
     PythonServiceManager* service = &pythonService_;
-    runPoll_([self, processRunning, service]() {
+    runPoll_([self, processRunning = processRunning, service]() mutable {
         // Version AND HMAC proof, not "any 200" (AUDIT-040/020); also
         // re-opens/closes the bridge's identity gate. 2.5 s, not 1 s: a
         // service busy with an intake (scans, Demucs) can take over a second
@@ -94,6 +94,10 @@ void ServiceLifecycle::startHealthCheck()
 #else
         const bool portListening = true;
 #endif
+        // An adopted service has no child handle, so one slow probe (a busy
+        // engine) read as "process gone" and showed "not running" while it
+        // worked (RUN-14). Alive = still listening on the port.
+        if (!processRunning && service->adoptedService() && portListening) processRunning = true;
         juce::MessageManager::callAsync([self, running, processRunning, portListening]() {
             if (self == nullptr) return;
             self->healthCheckInFlight_.store(false);
@@ -115,6 +119,14 @@ void ServiceLifecycle::applyHealthResult(bool running, bool processRunning, bool
     const bool stopped = !running && !processRunning && !gaveUp;
     const bool mayRestart = stopped && svc.canAttemptRestart();
     const auto d = serviceHealth_.onHealthResult(running, processRunning, gaveUp, mayRestart, portListening);
+    if (static_cast<int>(d.status) != lastLoggedHealth_) { // RUN-14: why the status moved
+        lastLoggedHealth_ = static_cast<int>(d.status);
+        juce::Logger::writeToLog("ServiceLifecycle: health " + juce::String(lastLoggedHealth_) + " responding="
+                                 + juce::String((int)running) + " process=" + juce::String((int)processRunning)
+                                 + " listening=" + juce::String((int)portListening) + " adopted="
+                                 + juce::String((int)svc.adoptedService()) + " restart="
+                                 + juce::String((int)d.attemptRestart) + " wedged=" + juce::String((int)d.restartWedged));
+    }
     switch (d.status) {
     case HS::Running:
         setStatus(PythonStatus::Running);

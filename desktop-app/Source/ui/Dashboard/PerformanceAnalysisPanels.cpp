@@ -176,7 +176,7 @@ void HarmonyTimelinePanel::paint(juce::Graphics& g)
         const auto block = juce::Rectangle<float>(x0, strip.getY() + 3.0f, juce::jmax(1.0f, x1 - x0 - 1.0f),
                                                   strip.getHeight() - 6.0f);
         const float alpha = 0.18f + 0.5f * (float)juce::jlimit(0.0, 1.0, c.confidence);
-        g.setColour((i % 2 == 0 ? KhensuTheme::accentTeal : KhensuTheme::accentBlue).withAlpha(alpha));
+        g.setColour(KhensuTheme::accentTeal.withAlpha(i % 2 == 0 ? alpha : alpha * 0.7f)); // UX2-3: one accent
         g.fillRoundedRectangle(block, 2.0f);
         if (block.getWidth() > 18.0f) {
             g.setColour(KhensuTheme::textPrimary);
@@ -193,7 +193,7 @@ void HarmonyTimelinePanel::paint(juce::Graphics& g)
     }
     for (const auto& k : result_.keyChanges) {
         const float x = strip.getX() + ft::timelineX(k.timeSec, spanSec_, w);
-        g.setColour(KhensuTheme::accentAmber);
+        g.setColour(KhensuTheme::textPrimary); // a key change is an event, not a warning
         g.fillRect(x - 1.0f, strip.getY(), 2.0f, strip.getHeight());
         g.drawText(ft::keyName(k), juce::Rectangle<float>(x + 3.0f, (float)keyRow.getY(), 90.0f, 16.0f),
                    juce::Justification::centredLeft, false);

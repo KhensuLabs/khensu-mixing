@@ -43,8 +43,14 @@ reused across screens live in `ui/shared/`.
 
 The sidebar groups them (UX-2): **Workflow** - Intake, Issues (`Assistant/`),
 Analysis (`Dashboard/`), Mix / Master, Vocal, Export; **Tools** - Copilot, AI
-Detection, References; then Help (`SystemBrain/`) and Settings. A screen's
-title is its sidebar label (see "Screen header" below).
+Detection, References; **System** - Help (`SystemBrain/`) and Settings, pinned
+to the bottom. A screen's title is its sidebar label (see "Screen header"
+below). Each row has a 1.5 px line icon drawn as a `juce::Path`
+(`ui/shared/NavIcons.h`, 24-unit grid, stroked in the row's colour); the active
+row has a teal edge bar and a teal icon. Above the rows, the session block shows
+the track, its genre, a status dot and the readiness number
+(`SidebarComponent::setReadiness`); the analysis and engine status sit in the
+footer (UX2-4).
 
 ## Screen header, buttons and empty states (UX-3/4/5, 2026-11-09)
 
@@ -74,7 +80,55 @@ title is its sidebar label (see "Screen header" below).
 - **`ui/shared/ServiceStatusText.h`.** One wording for the engine's state, used
   by the sidebar, the Dashboard health widget, the app-wide notice
   (`AppNoticeBar`, posted and withdrawn by `AppController::updateServiceBanner`)
-  and the panels that wait on the service (`waitingPlaceholder()`).
+  and the panels that wait on the service (`waitingPlaceholder()`). A
+  fast-only result is worded by its reason (`deepPassLine(DeepPassState)`:
+  off / skipped by you / failed / engine unavailable, OVH-1).
+- **One engine status (OVH-1).** `ServiceLifecycle`'s status is the one
+  answer to "is the engine there": `AppController` publishes it to
+  `AnalysisService::setEngineStatus`, the deep pass reads it through
+  `service_ready::EngineGate` (probing `/health` only before the lifecycle
+  has judged the engine, and not waiting at all while it says Starting or
+  Down - the native result is then the final one, FN2-2b), and a result
+  whose engine inputs went unanswered re-runs in place whenever the engine
+  is Running - not only on an unhealthy -> healthy edge; again after each
+  new engine-up edge, at most `AnalysisService::kMaxRecoveryReruns` times. A skipped deep pass is reported as the stage
+  `deep_analysis:skipped`, which the progress strips show as skipped.
+- **One score (OVH-1).** The Dashboard headline is `MixScorecard::overall_score`
+  ("Readiness"); Mix Craft is its breakdown. `ui/Dashboard/VerdictModel.h`
+  holds the one grade table (80+ / 50+), the counts (from the derived
+  recommendation list the score was built from) and "Start here" (the issue
+  `IIssues::fixTopIssue` fixes). The weighting choice lives in
+  `IAnalysisHub::setScoreWeightProfile`, so the saved readiness is the shown one.
+- **Studio look (UI-3 / UI-4).** Graphite surfaces and one accent (teal);
+  severity colours only for severity; type 28 / 17 / 13 / 11 px
+  (`kFontMetric`, `kFontH1`, `kFontBody`, `kFontLabel`); every number in
+  `KhensuTheme::numericFont()` (tabular figures). The rollup strip is neutral
+  figures with a severity dot only when out of target.
+- **Motion (UI-7).** `ui/shared/ValueAnimator.h`: `ValueAnimator` eases a
+  value to a new target over 200 ms (the verdict's score), `motion::fade`
+  fades a component in or out. No full-height playhead in the backdrop.
+- **First five seconds (UI-10, UX2-1).** Client Summary is the default mode:
+  one calm progress line (`IntakeProgressHud` compact). The Analysis screen
+  reads top to bottom: the verdict, the hero spectrum (`HeroSpectrumView`, the
+  Issues screen's; a marker opens its finding there through
+  `IShell::showIssue`), the readiness breakdown as bars, the cards (Essentials
+  by default), the core measurements, and the waveform / spectrogram editor as
+  a collapsible section - no gate in front of the detail. Engineer Detail adds the six-stage strips, the keyboard legend
+  and the completeness chip. The crash notice is a sidebar badge.
+- **A/B (UI-6).** `AbControlStrip` in the top strip: a segmented A | B,
+  Delta, Blind and "B is -1.8 dB vs A (matched)" (`IPlayback::abLevelOffset`;
+  "matched" only when A's loudness is known). `PlaybackEngine` keeps A and B
+  loaded together and crossfades with the equal-power law over 50 ms
+  (`AbMixer`); other loads stay single-deck.
+- **Meters (UI-5).** `PlaybackMeterTap` measures what the device plays on the
+  audio thread (K-weighted 100 ms buckets, inter-sample peak, correlation,
+  a `StereoSampleRing` for the scope; lock-free, no allocation) and
+  `MeterBridge` drives the shared studio meters: compact in the transport,
+  large on Mix / Master, with the genre's loudness window as the target band.
+- **Presets (UI-9).** `ui/MixMasterEngine/PresetBar.h` on Mix / Master: name,
+  arrows, Apply, a menu (save / save as / delete / factory) over the Preset
+  Library's JSON store (`PresetStore.h`), and A | B snapshots of the Signal
+  Flow Rack (staged and applied through the one plugin chain, WF-9).
 
 ## Keyboard and the command palette (UX-11)
 
@@ -111,6 +165,21 @@ transport in place (WF-2).
   shows it with the milestone headline (`MilestonePanel::evaluate/headline`),
   the latest check and "Check again"; Mix Notes cards and Mix/Master's
   suggestion list read and act through it.
+  Above the list sits the hero spectrum (UI-1, `ui/shared/HeroSpectrumView`
+  over the pure `HeroSpectrumModel.h`): the track's band-power spectrum per
+  1/6 octave normalised at 1 kHz, the genre tilt target with its tolerance
+  fan, frequency findings as bands / a sloped tilt line / resonance markers,
+  and the rest as gauges (loudness, true peak, LRA, crest, width against the
+  genre window) and chips. Clicking a mark selects its row and the reverse;
+  the fixes the current version is built on (`IIssues::Issue::fixedAmount`)
+  morph the curve to the expected after (~250 ms) and the check shrinks each
+  mark by severity after / before. Rows have one primary action (Fix, Keep,
+  or Reopen) and a "..." / right-click menu (UI-2); the selected row shows
+  the fix prediction from `finding_evidence.json` (OVH-6,
+  `finding_evidence::predictFix`, incl. `fix.side_effects`), a Fix amount
+  (`IIssues::fixScaled`) and Preview, an audition rendered with
+  `renders().renderPreview` into the temp folder and played as B; Keep then
+  renders the version through the queue.
   The plugin's Suggestions tab still reads the feedback store on its own.
 - **Renders start from the current version (WF-1).** `IRenders::renderStart()`
   (session-scoped; Current version by default, or Original from the
@@ -135,10 +204,58 @@ transport in place (WF-2).
   (`startFollowUpScanBatch` / `addFollowUpScan` / `followUpScanFinished`) for
   the sidebar's "Ready - more checks running", not waited for. The fast pass
   reaches the overlay as provisional numbers through `onProvisionalResult`.
+  With the engine not running yet the gate opens on the complete native
+  result, and the in-place re-run (`upgradeInFlight()`) replaces it without
+  closing the gate (FN2-2b, `architecture.md`).
 - **Intake (UX-12).** Before a file: drop zone, trends, recent sessions.
   After a drop: what was detected, Confirm genre, Change target..., Create
   Session; Advanced holds the genre source, reference, toggles, stage retry,
   Cancel intake and Target Overrides (`IntakeScreen::updateDisclosure`).
+
+## Data visualisation (VIZ, 2026-11-24)
+
+- **One chart toolkit** (`shared-core/.../ui/ChartKit.h`): axes (linear,
+  log-frequency, time), recessive grid, legend, the hover crosshair with the
+  exact value and unit, wheel zoom / drag pan / double-click reset. A chart
+  derives from `ChartView` (desktop: `ThemedChart`, `ui/shared/ChartStyle.h`,
+  which follows the theme) and draws its data through `px()` / `py()`; it
+  never computes its own ticks or tooltip. The plugin uses the same kit and
+  the same module drawings (`ModuleViz.h`).
+- **One data palette** (`shared-core/.../ui/VizPalette.h`, `KhensuTheme::viz*`):
+  categorical (identity, fixed slot order - stems are vocals, drums, bass,
+  other), sequential (magnitude) and diverging (polarity, through a neutral
+  grey). Colour-blind checked in `tests/ui/VizPaletteTest.cpp` (protan / deutan
+  OKLab delta-E >= 8 for adjacent slots, 3:1 on the dark surfaces). Severity
+  colours are never a series colour, and a series colour is never severity.
+- **Where released tracks sit** (`resources/genre_norms/genre_spread.json`,
+  `GenreSpread`): the hero's spread bands, the tiles' dot strips and
+  percentiles, the readiness rows. Built by `scripts/build_genre_spread.py`
+  from the corpus measurement (`measure_genre_norms.py measure` with
+  `KHENSU_MEASURE_RAW`, which now records each track's band power and
+  scorecard).
+- **Time** is measured natively (`TrackTimeline`: momentary / short-term
+  loudness, true-peak events, a log-band spectrogram) and cached per file
+  (`ui/shared/TimelineCache.h`), so the song timeline, the difference views,
+  the stems, the album chart, the limiter history and the report do not wait
+  for the engine. The detailed spectrogram (`ui/shared/HiResSpectrogramView`,
+  VIZ-S1) measures its own finer grid (`HiResSpectrogramView::measuringOptions`)
+  and renders each pixel from it at the view's size, so zoom and resize stay
+  smooth; all three spectrograms (detailed, timeline lane, Live) use
+  `viz::spectrogram` (magma).
+- **Diagnostics run every feature**: `--screenshot-audio=<wav> --exercise-all`
+  presses each analysis button on every screen, card tab, Mix / Master view
+  and Export step one at a time (each waits for the previous to finish), asks
+  the Copilot a question and plays the song before the full capture; the
+  gate log records each feature's duration.
+- **One job per place**: the top strip is session state (version, open
+  issues, the last fix check, target, analysis - `SessionStateStrip`), the
+  transport's meters are live, the Analysis tiles are the analysed values, and
+  findings have their own row.
+- The design screenshots come from the full-length demo song
+  (`--write-demo-song=<path>`, `shared-core/.../dsp/DemoSong.h`) and are
+  compared with `tests/visual_baseline/` in verify_all (`app-loop`,
+  `scripts/compare_screenshots.py`; `-UpdateVisualBaseline` after a deliberate
+  change).
 
 ## Design system — Aurora Glass
 
@@ -299,9 +416,10 @@ goes through the shared helpers.
   service (transport sync, parameter polls, its own deep-analysis calls) but
   never owns the service's lifecycle — see `architecture.md`.
 - Builds as VST3, CLAP and an ARA2 VST3 (AU on macOS).
-- Eight editor tabs (`Ctrl+1`-`Ctrl+8`): Chain, AI Suggestions, Hooks / Brain,
-  Mixer Chain, Chat, Visuals, **Mix** (the multi-instance hub) and **Hosted**
-  (`HostedChainMiniPanel`), which
+- Five editor tabs (`Ctrl+1`-`Ctrl+5`): Suggest (suggestions + Apply top
+  fix, Hooks / Brain), DSP (Chain, EQ curve), Plugins (Mixer chain and
+  **Hosted** - `HostedChainMiniPanel`), **Mix** (the multi-instance hub) and
+  Chat. The Hosted view
   adds third-party `.vst3`s via a file chooser (loaded through
   `findAllTypesForFile`) and lists each slot with bypass, wet mix and remove.
   Hosted instances are re-prepared on sample-rate/block-size changes, and the
@@ -312,6 +430,47 @@ goes through the shared helpers.
   Processed side (running mean-square, ~3 s), so switching compares tone, not
   level; Blind mode plays a hidden random side. The mono loudness meter no
   longer reads +3.01 LU high.
+- **Studio meters and knob (UI-5)** live in `shared-core/include/khensu/ui/`
+  for the plugin and the desktop: `StudioMeters.h` (`LoudnessMeter`,
+  `TruePeakMeter`, `CorrelationMeter`, `Vectorscope` - push-fed on the
+  message thread, display ballistics in `MeterBallistics.h`, animated by a
+  `juce::VBlankAttachment` only while showing; the scope drains a lock-free
+  `StereoSampleRing` the audio thread fills), `KhensuKnob.h` (a `juce::Slider`
+  with the shared knob / linear look: the value drawn under the dial with its
+  unit (`setUnit`, `formatValue` / `parseValue`), Shift-drag fine, wheel,
+  double-click or Enter for an inline value editor, Alt/Option-click default;
+  a popup only when the knob is too small to draw its value) and `StudioStyle.h` (type scale 28/17/13/11, tabular
+  figures via `numberFont()`).
+- **Views and state (UI-8/UI-9, state v3).** Compact 560x380 or Small /
+  Medium / Large (720x540 / 960x720 / 1280x960); the view, size and tab, the
+  program and preset name, and the held A/B snapshot are root properties of the
+  plugin state (`khensuView*`, `khensuProgram`, `khensuPresetName`,
+  `khensuSnap*`), stripped before `replaceState` and written in a fixed order
+  so a round trip is byte-stable. Factory presets are host programs
+  (`CopilotPresets.h`); user presets are shared chain presets (FN2-5,
+  `shared-core/.../presets/ChainPreset.h`, KhensuCommon): one JSON file per
+  preset in `<data dir>/presets/` - name, author, source, created, version,
+  `params` keyed by the plugin's DSP parameter ids (plain values) and optional
+  desktop-only `stages` - which the desktop rack reads too. Readers ignore
+  unknown keys and load any version; the old XML files in
+  `<data dir>/Copilot Presets` are migrated on the first listing (originals
+  kept as `*.migrated`). The preset menu re-reads the folder each time it opens.
+- **Undo history (UX2-6b).** `copilot::ParamUndoHistory`
+  (`CopilotUndoHistory.h`, owned by the processor) listens to every
+  parameter's gestures on the message thread only: one user gesture is one
+  step named after its control; preset loads, Apply top fix, Apply chain and
+  A/B recalls are named transactions / custom steps; programmatic writes
+  (`setParamFromUi`, the live fix re-applying, fix automation) run under
+  `ScopedSuppress`; host automation never calls the gesture methods, so it is
+  never a step. Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, the preset bar's arrows and
+  History menu (last 20) drive it; a state restore clears it.
+- **Live top fix (OVH-8).** `mixerchain::mapRecommendationToDsp`
+  (`shared-core/.../mixerchain/RecommendationDspMapper.h`) maps a finding's
+  `suggested_parameters` onto the plugin's parameters, scaled like the
+  desktop's `scaledRecommendation`. `KhensuCopilotProcessor::applyLiveFix`
+  keeps the fix and the values it replaced; the automatable `fix_amount`
+  parameter re-applies it (async, message thread). Auto-apply is gated on
+  `safe_to_auto_apply`.
 - Editor-side background work runs on a processor-owned pool
   (`backgroundPool_`) instead of detached threads, so it can't outlive the
   plugin DLL.

@@ -65,6 +65,25 @@ const char* SidebarComponent::navLabelForVisualIndex(int visualIndex)
     return kNavLabels[juce::jlimit(0, kNumScreens - 1, visualIndex)];
 }
 
+nav_icons::Icon SidebarComponent::iconForVisualIndex(int visualIndex)
+{
+    using nav_icons::Icon;
+    switch (screenTypeForVisualIndex(visualIndex)) {
+    case ScreenType::Intake: return Icon::Intake;
+    case ScreenType::Issues: return Icon::Issues;
+    case ScreenType::Dashboard: return Icon::Analysis;
+    case ScreenType::MixMaster: return Icon::MixMaster;
+    case ScreenType::VocalWorkspace: return Icon::Vocal;
+    case ScreenType::Export: return Icon::Export;
+    case ScreenType::Copilot: return Icon::Copilot;
+    case ScreenType::AiDetection: return Icon::Provenance;
+    case ScreenType::ReferenceLibrary: return Icon::References;
+    case ScreenType::SystemBrain: return Icon::Help;
+    case ScreenType::Settings: return Icon::Settings;
+    }
+    return Icon::None;
+}
+
 int SidebarComponent::visualIndexForScreenType(ScreenType screen)
 {
     for (int i = 0; i < kNumScreens; ++i)
@@ -78,6 +97,7 @@ SidebarComponent::SidebarComponent()
     setFocusContainerType(juce::Component::FocusContainerType::focusContainer);
     for (int i = 0; i < kNumScreens; ++i) {
         navItems_[i].setLabel(juce::translate(kNavLabels[i]));
+        navItems_[i].setIcon(iconForVisualIndex(i)); // UX2-4
         navItems_[i].setExplicitFocusOrder(i + 1);
         navItems_[i].onClick = [this, i]() {
             if (onNavClicked) onNavClicked(i);
@@ -99,6 +119,52 @@ SidebarComponent::SidebarComponent()
         if (onGettingStarted) onGettingStarted();
     };
     addAndMakeVisible(gettingStartedButton_); // after the nav rows, so it sits on top of Help's row
+
+    crashBadge_.setTitle(TRANS("Crash report saved"));
+    crashBadge_.setTooltip(TRANS("Khensu closed unexpectedly last time - a crash report was saved locally "
+                                 "(nothing was sent). Click for options."));
+    crashBadge_.onClick = [this] { showCrashMenu(); };
+    addChildComponent(crashBadge_); // shown only while a report is unread
+}
+
+void SidebarComponent::setCrashNotice(std::function<void()> onOpenFolder, std::function<void()> onDismiss)
+{
+    crashOpenFolder_ = std::move(onOpenFolder);
+    crashDismiss_ = std::move(onDismiss);
+    crashBadge_.setVisible(true);
+    resized();
+}
+
+void SidebarComponent::clearCrashNotice()
+{
+    crashOpenFolder_ = nullptr;
+    crashDismiss_ = nullptr;
+    crashBadge_.setVisible(false);
+}
+
+void SidebarComponent::triggerCrashOpenFolder()
+{
+    auto action = crashOpenFolder_;
+    clearCrashNotice();
+    if (action) action();
+}
+
+void SidebarComponent::triggerCrashDismiss()
+{
+    auto action = crashDismiss_;
+    clearCrashNotice();
+    if (action) action();
+}
+
+void SidebarComponent::showCrashMenu()
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader(TRANS("Khensu closed unexpectedly last time"));
+    menu.addItem(TRANS("A crash report was saved locally (nothing was sent)."), false, false, [] {});
+    menu.addSeparator();
+    menu.addItem(TRANS("Open folder"), [this] { triggerCrashOpenFolder(); });
+    menu.addItem(TRANS("Dismiss"), [this] { triggerCrashDismiss(); });
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&crashBadge_));
 }
 
 SidebarComponent::~SidebarComponent() = default;
@@ -107,6 +173,8 @@ void SidebarComponent::applyThemeColours()
 {
     cancelAnalysisButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::bgRaised);
     cancelAnalysisButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::textTertiary);
+    crashBadge_.setColour(juce::TextButton::buttonColourId, KhensuTheme::bgRaised);
+    crashBadge_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentAmber);
 }
 
 void SidebarComponent::setActiveScreen(int idx)
@@ -122,10 +190,18 @@ void SidebarComponent::setSessionName(const juce::String& name, const juce::Stri
     repaint();
 }
 
+void SidebarComponent::setReadiness(float score, bool known)
+{
+    readiness_ = score;
+    readinessKnown_ = known;
+    repaint();
+}
+
 void SidebarComponent::setAnalysisStatus(const juce::String& s, bool ok, bool inProgress)
 {
     analysisStatus_ = s;
     analysisOk_ = ok;
+    analysisInProgress_ = inProgress;
     cancelAnalysisButton_.setVisible(inProgress);
     resized(); // re-layout the status row now that the cancel button's visibility changed
     repaint();
@@ -138,122 +214,180 @@ void SidebarComponent::setPythonStatus(PythonStatus s, int restartAttempt)
     repaint();
 }
 
+juce::Rectangle<int> SidebarComponent::sessionBlockBounds() const
+{
+    return getLocalBounds()
+        .withTrimmedRight(1)
+        .withTrimmedTop(kBrandH)
+        .withHeight(kSessionH)
+        .reduced(KhensuTheme::sp2, KhensuTheme::sp1);
+}
+
 void SidebarComponent::paint(juce::Graphics& g)
 {
-    // Void background
     g.setColour(KhensuTheme::bgBase);
     g.fillAll();
-
-    // Brand block (top 64px) - stacked wordmark split into two non-overlapping
-    // bands so the "AI AUDIO" subtitle no longer collides with "KHENSU".
-    auto b = getLocalBounds();
-    auto brand = b.removeFromTop(64);
-    brand.reduce(0, KhensuTheme::sp2);         // vertical breathing room
-    auto brandTitle = brand.removeFromTop(30); // KHENSU wordmark
-    auto brandSub = brand;                     // AI AUDIO subtitle (own band)
-    g.setFont(KhensuTheme::labelFont(16.0f));
-    g.setColour(KhensuTheme::textPrimary);
-    g.drawText("KHENSU", brandTitle, juce::Justification::centredBottom, false);
-    g.setFont(KhensuTheme::sectionHeaderFont());
-    g.setColour(KhensuTheme::textSecondary); // was textTertiary - nearly invisible on bgBase
-    g.drawText("AI AUDIO", brandSub, juce::Justification::centredTop, false);
-
-    // Teal rule below brand
-    g.setColour(KhensuTheme::accentTealDim);
-    g.fillRect(b.removeFromTop(1));
-
-    // Session pill (44px)
-    auto pill = b.removeFromTop(KhensuTheme::navItemH).reduced(KhensuTheme::sp3, KhensuTheme::sp2);
-    g.setColour(KhensuTheme::bgRaised);
-    g.fillRoundedRectangle(pill.toFloat(), 4.0f);
+    // The hairline between the sidebar and the content (UX2-4).
     g.setColour(KhensuTheme::borderSubtle);
-    g.drawRoundedRectangle(pill.toFloat(), 4.0f, 1.0f);
-    g.setFont(KhensuTheme::bodyFont(12.0f));
-    if (sessionName_.isEmpty()) {
-        g.setColour(KhensuTheme::textTertiary);
-        g.drawText("No session", pill, juce::Justification::centred, true);
-    } else {
+    g.fillRect(getLocalBounds().removeFromRight(1));
+
+    // Brand: the wordmark, left-aligned with the rows below it.
+    {
+        auto brand = getLocalBounds().removeFromTop(kBrandH).withTrimmedLeft(KhensuTheme::sp4 + 2);
+        const auto mark = KhensuTheme::uiFont(15.0f, juce::Font::bold).withExtraKerningFactor(0.16f);
+        const juce::String word = "KHENSU"; // i18n-exempt(brand name)
+        const int wordW = juce::GlyphArrangement::getStringWidthInt(mark, word) + 6;
+        g.setFont(mark);
         g.setColour(KhensuTheme::textPrimary);
-        g.drawText(sessionName_, pill.withTrimmedBottom(pill.getHeight() / 2), juce::Justification::centredLeft, true);
-        g.setFont(KhensuTheme::labelFont(10.0f));
+        g.drawText(word, brand.removeFromLeft(wordW), juce::Justification::centredLeft, false);
+        g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
         g.setColour(KhensuTheme::textTertiary);
-        g.drawText(sessionGenre_, pill.withTrimmedTop(pill.getHeight() / 2), juce::Justification::centredLeft, true);
+        g.drawText(TRANS("Mixing Suite"), brand.withTrimmedLeft(KhensuTheme::sp1).translated(0, 1),
+                   juce::Justification::centredLeft, true);
     }
 
-    // (Nav items painted by their own components in resized())
+    // Session block (UX2-4): the track, its genre and its readiness, with a
+    // status dot - what is loaded, at a glance, from every screen.
+    {
+        const auto card = sessionBlockBounds().toFloat();
+        g.setColour(KhensuTheme::bgSurface);
+        g.fillRoundedRectangle(card, 8.0f);
+        g.setColour(KhensuTheme::borderSubtle);
+        g.drawRoundedRectangle(card.reduced(0.5f), 8.0f, 1.0f);
 
-    // Status block (pinned bottom, 56px)
-    auto statusBlock = getLocalBounds().removeFromBottom(56).reduced(KhensuTheme::sp4, KhensuTheme::sp2);
+        auto inner = sessionBlockBounds().reduced(KhensuTheme::sp3, KhensuTheme::sp3);
+        if (sessionName_.isEmpty()) {
+            g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontBody));
+            g.setColour(KhensuTheme::textSecondary);
+            g.drawText(TRANS("No track loaded"), inner.removeFromTop(inner.getHeight() / 2),
+                       juce::Justification::centredLeft, true);
+            g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
+            g.setColour(KhensuTheme::textTertiary);
+            g.drawText(TRANS("Open a file on Intake"), inner, juce::Justification::centredLeft, true);
+        } else {
+            // Right: the readiness number, the largest figure in the sidebar.
+            if (readinessKnown_) {
+                auto scoreCol = inner.removeFromRight(46);
+                g.setFont(KhensuTheme::numericFont(KhensuTheme::kFontMetric - 4.0f, juce::Font::bold));
+                g.setColour(KhensuTheme::textPrimary);
+                g.drawText(juce::String(juce::roundToInt(readiness_)), scoreCol.removeFromTop(scoreCol.getHeight() / 2 + 6),
+                           juce::Justification::bottomRight, false);
+                g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
+                g.setColour(KhensuTheme::textTertiary);
+                g.drawText(TRANS("Readiness"), scoreCol.withTrimmedLeft(-20), juce::Justification::centredRight,
+                           false);
+                inner.removeFromRight(KhensuTheme::sp2);
+            }
+            // Left: status dot + name, then the genre.
+            auto nameRow = inner.removeFromTop(inner.getHeight() / 2);
+            const auto dotArea = nameRow.removeFromLeft(14).toFloat().withSizeKeepingCentre(7.0f, 7.0f);
+            if (readinessKnown_ && !analysisInProgress_) {
+                g.setColour(KhensuTheme::accentTeal); // analysed
+                g.fillEllipse(dotArea);
+            } else {
+                g.setColour(KhensuTheme::textSecondary); // working or waiting: a hollow ring
+                g.drawEllipse(dotArea.reduced(0.5f), 1.2f);
+            }
+            g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontBody).boldened());
+            g.setColour(KhensuTheme::textPrimary);
+            g.drawText(sessionName_, nameRow, juce::Justification::centredLeft, true);
+            g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
+            g.setColour(KhensuTheme::textSecondary);
+            const juce::String genre = sessionGenre_.isNotEmpty() ? sessionGenre_ : TRANS("No genre set");
+            g.drawText(genre, inner.withTrimmedLeft(14), juce::Justification::centredLeft, true);
+        }
+    }
+
+    // (Nav items are their own components, laid out in resized().)
+
+    // Group captions (UX-2 / UX2-4): sentence case, small and quiet.
+    g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
+    g.setColour(KhensuTheme::textTertiary);
+    for (auto [area, caption] : {std::pair{workflowCaption_, TRANS("Workflow")},
+                                 std::pair{toolsCaption_, TRANS("Tools")},
+                                 std::pair{systemCaption_, TRANS("System")}})
+        g.drawText(caption, area.withTrimmedLeft(KhensuTheme::sp4 + 2).withTrimmedBottom(3),
+                   juce::Justification::bottomLeft, false);
+
+    // Footer: the analysis and the engine, one line each.
+    auto statusBlock = getLocalBounds().withTrimmedRight(1).removeFromBottom(kStatusH).reduced(KhensuTheme::sp4, 0);
     g.setColour(KhensuTheme::borderSubtle);
     g.fillRect(statusBlock.removeFromTop(1));
     statusBlock.removeFromTop(KhensuTheme::sp2);
+    statusBlock.removeFromLeft(2);
+
+    auto drawDot = [&g](juce::Rectangle<int> row, juce::Colour c, bool hollow) {
+        const auto d = juce::Rectangle<float>(6.0f, 6.0f).withCentre(
+            {static_cast<float>(row.getX()) + 3.0f, static_cast<float>(row.getCentreY())});
+        g.setColour(c);
+        if (hollow)
+            g.drawEllipse(d.reduced(0.5f), 1.0f);
+        else
+            g.fillEllipse(d);
+    };
 
     // Analysis status row
-    auto aRow = statusBlock.removeFromTop(18);
-    g.setColour(analysisOk_ ? KhensuTheme::accentTeal : KhensuTheme::accentAmber);
-    g.fillEllipse((float)aRow.getX(), (float)aRow.getCentreY() - 3.0f, 6.0f, 6.0f);
-    g.setFont(KhensuTheme::labelFont(11.0f));
-    g.setColour(KhensuTheme::textTertiary);
-    auto textArea = aRow.withLeft(aRow.getX() + 12);
+    auto aRow = statusBlock.removeFromTop(20);
+    drawDot(aRow, analysisInProgress_ ? KhensuTheme::textSecondary
+                  : analysisOk_       ? KhensuTheme::accentTeal
+                                      : KhensuTheme::textTertiary,
+            analysisInProgress_ || !analysisOk_);
+    g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
+    g.setColour(KhensuTheme::textSecondary);
+    auto textArea = aRow.withLeft(aRow.getX() + 14);
     if (cancelAnalysisButton_.isVisible())
         textArea.removeFromRight(cancelAnalysisButton_.getWidth() + KhensuTheme::sp1);
-    g.drawText("Analysis: " + analysisStatus_, textArea, juce::Justification::centredLeft, true);
+    g.drawText(TRANS("Analysis") + ": " + analysisStatus_, textArea, juce::Justification::centredLeft, true);
 
-    // Python status row
-    auto pRow = statusBlock.removeFromTop(18);
+    // Engine status row. UX-6/UX-7: "analysis engine", the notice bar's words.
+    auto pRow = statusBlock.removeFromTop(20);
     const juce::Colour dotColour = pythonStatus_ == PythonStatus::Running    ? KhensuTheme::accentTeal
-                                   : pythonStatus_ == PythonStatus::Starting ? KhensuTheme::accentAmber
+                                   : pythonStatus_ == PythonStatus::Starting ? KhensuTheme::textSecondary
                                    : pythonStatus_ == PythonStatus::GaveUp   ? KhensuTheme::accentRed
                                                                              : KhensuTheme::textTertiary;
-    // UX-6: "analysis engine", not the implementation ("Python service").
-    // UX-7: the same wording as the notice bar and the health widget.
-    const juce::String pLabel = service_status::stateLine(pythonStatus_, pythonRestartAttempt_);
-    g.setColour(dotColour);
-    g.fillEllipse((float)pRow.getX(), (float)pRow.getCentreY() - 3.0f, 6.0f, 6.0f);
+    drawDot(pRow, dotColour, pythonStatus_ == PythonStatus::Starting || pythonStatus_ == PythonStatus::Stopped);
     g.setColour(KhensuTheme::textTertiary);
-    g.drawText(pLabel, pRow.withLeft(pRow.getX() + 12), juce::Justification::centredLeft, true);
-
-    // UX-2 group captions (laid out in resized()).
-    g.setFont(KhensuTheme::sectionHeaderFont());
-    g.setColour(KhensuTheme::textTertiary);
-    for (auto [area, caption] :
-         {std::pair{workflowCaption_, TRANS("WORKFLOW")}, std::pair{toolsCaption_, TRANS("TOOLS")}})
-        g.drawText(caption, area.withTrimmedLeft(KhensuTheme::sp4), juce::Justification::centredLeft, false);
+    g.drawText(service_status::stateLine(pythonStatus_, pythonRestartAttempt_), pRow.withLeft(pRow.getX() + 14),
+               juce::Justification::centredLeft, true);
 }
 
 void SidebarComponent::resized()
 {
-    auto b = getLocalBounds();
-    b.removeFromTop(64 + 1 + KhensuTheme::navItemH); // brand + rule + session pill
+    auto b = getLocalBounds().withTrimmedRight(1);
+    b.removeFromTop(kBrandH + kSessionH);
 
     // Status block geometry - must mirror paint()'s layout so the cancel
     // button lands inside the analysis status row it's drawn alongside.
-    auto statusBlock = b.removeFromBottom(56).reduced(KhensuTheme::sp4, KhensuTheme::sp2);
-    statusBlock.removeFromTop(1); // border rule
-    statusBlock.removeFromTop(KhensuTheme::sp2);
-    auto aRow = statusBlock.removeFromTop(18);
-    cancelAnalysisButton_.setBounds(aRow.removeFromRight(46));
+    auto statusBlock = b.removeFromBottom(kStatusH).reduced(KhensuTheme::sp4, 0);
+    statusBlock.removeFromTop(1 + KhensuTheme::sp2);
+    auto aRow = statusBlock.removeFromTop(20);
+    cancelAnalysisButton_.setBounds(aRow.removeFromRight(56));
+    b.removeFromBottom(KhensuTheme::sp1);
 
-    // UX-2: Workflow, then Tools under their caption; the footer group sits
-    // at the bottom, just above the status block. On a short window (the
-    // minimum is 640 px) the rows shrink, down to 28 px, so the groups never
-    // overlap.
-    const int fixed = 2 * kCaptionH + 2 * KhensuTheme::sp2;
-    const int rowH = juce::jlimit(28, KhensuTheme::navItemH, (b.getHeight() - fixed) / kNumScreens);
+    // Workflow and Tools under their captions from the top; System (Help,
+    // Settings) pinned to the bottom above the status block. On a short
+    // window (the minimum is 640 px) the rows shrink, down to 28 px, so the
+    // groups never overlap.
+    const int fixed = 3 * kCaptionH + KhensuTheme::sp2;
+    const int rowH = juce::jlimit(28, 38, (b.getHeight() - fixed) / kNumScreens);
     for (int i = kNumScreens - 1; i >= kFooterStart; --i)
-        navItems_[i].setBounds(b.removeFromBottom(rowH));
-    // UX-15: "?" at the right end of the Help row (the first footer row).
+        navItems_[(size_t)i].setBounds(b.removeFromBottom(rowH));
+    systemCaption_ = b.removeFromBottom(kCaptionH);
+    // UX-15: "?" at the right end of the Help row (the first System row).
+    const int badge = KhensuTheme::buttonHSmall - 4;
     const auto helpRow = navItems_[kFooterStart].getBounds();
-    gettingStartedButton_.setBounds(helpRow.withTrimmedLeft(helpRow.getWidth() - 40)
-                                        .withSizeKeepingCentre(KhensuTheme::buttonHSmall, KhensuTheme::buttonHSmall));
-    b.removeFromBottom(KhensuTheme::sp2);
+    gettingStartedButton_.setBounds(
+        helpRow.withTrimmedLeft(helpRow.getWidth() - 44).withSizeKeepingCentre(badge, badge));
+    // UI-10: the crash badge sits at the right end of the Settings row.
+    const auto settingsRow = navItems_[kNumScreens - 1].getBounds();
+    crashBadge_.setBounds(settingsRow.withTrimmedLeft(settingsRow.getWidth() - 44).withSizeKeepingCentre(badge, badge));
     workflowCaption_ = b.removeFromTop(kCaptionH);
     for (int i = 0; i < kToolsStart; ++i)
-        navItems_[i].setBounds(b.removeFromTop(rowH));
+        navItems_[(size_t)i].setBounds(b.removeFromTop(rowH));
     b.removeFromTop(KhensuTheme::sp2);
     toolsCaption_ = b.removeFromTop(kCaptionH);
     for (int i = kToolsStart; i < kFooterStart; ++i)
-        navItems_[i].setBounds(b.removeFromTop(rowH));
+        navItems_[(size_t)i].setBounds(b.removeFromTop(rowH));
 }
 
 } // namespace khensu

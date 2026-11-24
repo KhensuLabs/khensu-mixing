@@ -1,4 +1,5 @@
 #pragma once
+#include "../shared/LiveSpectrogramView.h"
 #include <JuceHeader.h>
 #include "../shared/ScreenHeader.h"
 #include "../shared/ListenerHandle.h"
@@ -16,6 +17,9 @@
 #include "CompressionXrayPanel.h"
 #include "RenderTreePanel.h"
 #include "PresetLibraryPanel.h"
+#include "PresetBar.h"
+#include "SectionTabs.h"
+#include "../shared/MeterBridge.h"
 #include "HumanizePanel.h"
 #include "../Dashboard/CardGroup.h"
 #include "StemRebalancePanel.h"
@@ -23,7 +27,6 @@
 #include "WhatChangedPanel.h"
 #include "../shared/ListeningRoomPanel.h"
 #include <khensu/ui/EqCurveComponent.h>
-#include "../shared/SegmentedControl.h"
 #include "../shared/SeverityLegendComponent.h"
 
 namespace khensu {
@@ -31,10 +34,15 @@ namespace khensu {
 class IAppController;
 enum class ReportMode;
 
+// UX2-2: one focal area. The signal chain (the plugin's DSP rack, with the
+// preset bar and rack A/B on top) is the hero; a right rail holds the large
+// meters and the three most severe open recommendations; everything else -
+// loudness (gain staging, streaming), the EQ curve, versions (what changed,
+// render tree, snapshots, timeline), dynamics (the gain X-ray) and presets &
+// tools (preset library, humanize, stem rebalance, listening room) - is a row
+// of five sentence-case tabs under the rack.
 // THREAD_CONTEXT(khensu::ThreadContext::UIThread)
-class MixMasterScreen final : public juce::Component,
-                              public juce::DragAndDropContainer,
-                              public juce::DragAndDropTarget {
+class MixMasterScreen final : public juce::Component {
   public:
     explicit MixMasterScreen(IAppController& controller);
     ~MixMasterScreen() override;
@@ -47,19 +55,21 @@ class MixMasterScreen final : public juce::Component,
     /// false if there's nothing unresolved to jump to.
     bool focusNextIssue();
 
+    /// The legacy card index (IShell::showMixMasterCard): 0 streaming, 1 EQ
+    /// curve, 2 timeline, 3 snapshots, 4 signal rack, 5 X-ray, 6 presets,
+    /// 7 humanize - each opens the view that holds it.
     void jumpToCard(int tabIdx);
 
-    // juce::DragAndDropTarget - right-stack card reordering.
-    bool isInterestedInDragSource(const SourceDetails& details) override;
-    void itemDragEnter(const SourceDetails& details) override;
-    void itemDragMove(const SourceDetails& details) override;
-    void itemDragExit(const SourceDetails& details) override;
-    void itemDropped(const SourceDetails& details) override;
+    /// The secondary views, in tab order.
+    enum View { ViewLoudness = 0, ViewEq = 1, ViewVersions = 2, ViewDynamics = 3, ViewTools = 4, ViewLive = 5, kViewCount = 6 };
+    void showView(int view);
+    int currentView() const noexcept { return view_; }
 
   private:
     void pushDataToPanels(const AnalysisResult& r);
     void updateState();
     void applyReportMode(ReportMode mode);
+    void layoutView(juce::Rectangle<int> area);
 
     IAppController& controller;
 
@@ -73,81 +83,36 @@ class MixMasterScreen final : public juce::Component,
     GainStagingPanel gainStagingPanel;
     EqCurveComponent eqCurvePanel;
     juce::TextButton applyEqButton_{TRANS("Apply EQ")};
-    // Live copy of eqCurvePanel's bands, kept in sync via onBandChanged -
-    // dragging a handle previously only logged a FeedbackManager override
-    // for preference learning; this is what lets "Apply EQ" write the
-    // user's actual edits back to a real render instead of just the
-    // recommendation-suggested starting points.
+    // Live copy of eqCurvePanel's bands, kept in sync via onBandChanged, so
+    // "Apply EQ" renders the user's actual edits, not just the suggestions.
     std::vector<EqBand> currentEqBands_;
     StreamingImpactPanel streamingPanel_;
     ProvenanceTimelinePanel timelinePanel_;
     SnapshotHistoryPanel snapshotPanel_;
     SignalFlowRackPanel signalFlowRackPanel_;
     CompressionXrayPanel compressionXrayPanel_;
-    RenderTreePanel renderTreePanel_; // shares the SNAPSHOTS tab
+    RenderTreePanel renderTreePanel_;
     PresetLibraryPanel presetLibraryPanel_;
     HumanizePanel humanizePanel_;       // §5.2 Artifacts/Humanize card
     StemRebalancePanel stemRebalancePanel_{controller}; // FEAT-4
+    PresetBar presetBar_{controller};                                 ///< UI-9: name, arrows, menu, rack A/B
+    MeterBridge meterCard_{controller, MeterBridge::Layout::Large}; ///< UI-5: the large meter view
+    LiveSpectrogramView liveSpectrogram_{controller}; ///< VIZ-4a: the Live view
     /// PERF-5: (session, result version, render-tree size, current version)
     /// at the last screen entry that refreshed the cards.
     std::tuple<std::string, uint64_t, size_t, int> lastEntryKey_{std::string{}, 0, 0, -2}; // -2: never seen
     WhatChangedPanel whatChangedPanel_; // §9.3 before->after diff card
     ListeningRoomPanel listeningRoomPanel_{controller}; // CE-COL-3 blind LAN A/B room
-    /// CON-5: one Versions card - what changed, the render tree, snapshots
-    /// and the provenance timeline as tabs (they were four boxes).
+    /// CON-5: one Versions view - what changed, the render tree, snapshots
+    /// and the provenance timeline as tabs.
     CardGroup versionsGroup_{"versions", TRANS("Versions")};
-    /// CON-2: gain staging and the streaming impact, one card with tabs.
-    CardGroup loudnessGroup_{"loudness", TRANS("Loudness & streaming")};
+    /// CON-2: gain staging and the streaming impact, one view with tabs.
+    CardGroup loudnessGroup_{"loudness", TRANS("Loudness")};
+    /// UX2-2: the preset library and the occasional tools, one view.
+    CardGroup toolsGroup_{"tools", TRANS("Presets & tools")};
 
-    // §7: the right column is a scrollable stack of individual cards -
-    // Variant Compare, EQ Curve, Timeline, Snapshots, Signal Rack, X-Ray and
-    // Presets are all visible at once instead of tab-gated one-at-a-time.
-    // The segmented control survives as jump-to-card navigation.
-    juce::Viewport rightViewport_;
-    juce::Component rightContent_;
-    void layoutRightStack();
-
-    // Data-driven ordered section list (drag reorder, shipped). Each
-    // section owns its own layout closure so both simple single-card rows and
-    // the two compound rows (EQ curve + Apply button; Snapshots/Render-Tree
-    // side-by-side pair) share one reorderable list instead of the previous
-    // hand-rolled sequence of `place()` calls. `card` is non-null only for
-    // draggable, collapsible single-card sections; compound sections have a
-    // null card and are not drag sources (no single header to arm the drag
-    // from) but can still be reordered around by dragging the cards next to
-    // them.
-    struct RightStackSection {
-        juce::String id;
-        PanelCard* card = nullptr;
-        std::function<int()> heightFor;
-        std::function<void(juce::Rectangle<int>)> layout;
-        bool draggable = true;
-    };
-    std::vector<RightStackSection> sections_;
-    void buildSections();
-    void loadSectionOrder();
-    void saveSectionOrder();
-    int sectionIndexById(const juce::String& id) const;
-    void reorderSection(const juce::String& draggedId, int insertBeforeIndex);
-
-    // Recorded by layoutRightStack() each pass; used both to resolve a drop's
-    // target index and to draw the insertion-line indicator while dragging.
-    std::vector<juce::Rectangle<int>> sectionRects_;
-    int dragInsertBeforeIndex_ = -1; ///< -1 = not currently dragging over the stack
-
-    SegmentedControl bottomTabControl_;
-    enum BottomTab {
-        TabVariant = 0, ///< CUT-2: the variant card is gone; this jumps to the top (Streaming)
-        TabEqCurve = 1,
-        TabTimeline = 2,
-        TabSnapshots = 3,
-        TabSignalRack = 4,
-        TabXray = 5,
-        TabPresets = 6,
-        TabHumanize = 7
-    };
-    int bottomTab_ = TabVariant;
-    int cardY_[8] = {}; ///< scroll anchors, filled by layoutRightStack()
+    SectionTabs viewTabs_;
+    int view_ = ViewLoudness;
     /// Re-applies every cached palette colour. Called at construction and on
     /// each theme change.
     void applyThemeColours();

@@ -28,12 +28,16 @@ void MemorabilityTrendComponent::paint(juce::Graphics& g)
 
     auto bounds = label.reduced(0, 4).toFloat();
     const int n = (int)scores_.size();
+    hover_.clear();
     juce::Path path;
     for (int i = 0; i < n; ++i) {
         const float t = (float)i / (float)(n - 1);
         const float v = juce::jlimit(0.0f, 1.0f, scores_[(size_t)i]);
         const float x = bounds.getX() + t * bounds.getWidth();
         const float y = bounds.getBottom() - v * bounds.getHeight();
+        hover_.addColumn(x - 6.0f, x + 6.0f, bounds,
+                         TRANS("Session") + " " + juce::String(i + 1) + " " + TRANS("of") + " " + juce::String(n) + ": "
+                             + TRANS("memorability") + " " + juce::String(juce::roundToInt(v * 100.0f)) + " %");
         if (i == 0)
             path.startNewSubPath(x, y);
         else

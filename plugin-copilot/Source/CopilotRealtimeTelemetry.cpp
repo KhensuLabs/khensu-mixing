@@ -26,6 +26,21 @@ void CopilotRealtimeTelemetry::prepareToPlay(double sampleRate, int /*channels*/
 
     binSamples_ = juce::jmax(1, juce::roundToInt(sampleRate * 0.1));
     resetLoudnessWindows();
+    resetIntegrated();
+    resetIntegrated_.store(false, std::memory_order_relaxed);
+
+    // The shared 4x interpolator as float, phase-major.
+    const auto& phases = analysis::truePeakPhases();
+    for (int p = 0; p < analysis::kTruePeakOversample; ++p)
+        for (int j = 0; j < analysis::kTruePeakPhaseTaps; ++j)
+            truePeakCoeffs_[static_cast<size_t>(p * analysis::kTruePeakPhaseTaps + j)] =
+                static_cast<float>(phases.w[p][j]);
+    for (int c = 0; c < 2; ++c) {
+        truePeak_[c].reset();
+        truePeakAccum_[c].store(0.0f, std::memory_order_relaxed);
+        lastBlockPeak_[c] = 0.0f;
+    }
+    scopeRing_.clear();
     emaLR_ = emaLL_ = emaRR_ = emaMid_ = emaSide_ = 0.0;
 }
 
@@ -37,6 +52,80 @@ void CopilotRealtimeTelemetry::resetLoudnessWindows() noexcept
     binEnergy_ = 0.0;
     momentaryLufs_.store(-96.0f, std::memory_order_relaxed);
     shortTermLufs_.store(-96.0f, std::memory_order_relaxed);
+}
+
+void CopilotRealtimeTelemetry::resetIntegrated() noexcept
+{
+    gateCount_.fill(0);
+    gateEnergy_.fill(0.0);
+    binsSinceReset_ = 0;
+    integratedLufs_.store(-96.0f, std::memory_order_relaxed);
+}
+
+void CopilotRealtimeTelemetry::addGatedBlock(double meanPower) noexcept
+{
+    if (!(meanPower > 0.0)) return;
+    const double lufs = -0.691 + 10.0 * std::log10(meanPower);
+    if (lufs <= -70.0) return; // absolute gate
+    const int bin = juce::jlimit(0, kGateBins - 1, static_cast<int>((lufs + 70.0) * 10.0));
+    ++gateCount_[static_cast<size_t>(bin)];
+    gateEnergy_[static_cast<size_t>(bin)] += meanPower;
+
+    // Relative gate: 10 LU under the mean of the absolute-gated blocks.
+    double sum = 0.0;
+    std::uint64_t count = 0;
+    for (int b = 0; b < kGateBins; ++b) {
+        sum += gateEnergy_[static_cast<size_t>(b)];
+        count += gateCount_[static_cast<size_t>(b)];
+    }
+    if (count == 0) return;
+    const double relative = -0.691 + 10.0 * std::log10(sum / static_cast<double>(count)) - 10.0;
+    const int firstBin = juce::jlimit(0, kGateBins, static_cast<int>(std::ceil((relative + 70.0) * 10.0)));
+    double gatedSum = 0.0;
+    std::uint64_t gatedCount = 0;
+    for (int b = firstBin; b < kGateBins; ++b) {
+        gatedSum += gateEnergy_[static_cast<size_t>(b)];
+        gatedCount += gateCount_[static_cast<size_t>(b)];
+    }
+    if (gatedCount > 0)
+        integratedLufs_.store(static_cast<float>(-0.691 + 10.0 * std::log10(gatedSum / static_cast<double>(gatedCount))),
+                              std::memory_order_relaxed);
+}
+
+void CopilotRealtimeTelemetry::accumulateMax(std::atomic<float>& target, float value) noexcept
+{
+    float current = target.load(std::memory_order_relaxed);
+    while (value > current && !target.compare_exchange_weak(current, value, std::memory_order_relaxed)) {
+    }
+}
+
+float CopilotRealtimeTelemetry::TruePeakDetector::push(float x, float threshold, const float* coeffs) noexcept
+{
+    history[static_cast<size_t>(pos)] = x;
+    history[static_cast<size_t>(pos + 128)] = x;
+    pos = (pos + 1) & 127;
+    const int start = (pos - kWindow + 128) & 127;
+    const float* window = history.data() + start; // oldest .. newest, contiguous
+    constexpr int centre = analysis::kTruePeakHalf;
+    if (std::abs(window[centre]) < threshold && std::abs(window[centre - 1]) < threshold
+        && std::abs(window[centre + 1]) < threshold)
+        return 0.0f;
+    float peak = 0.0f;
+    for (int p = 0; p < analysis::kTruePeakOversample; ++p) {
+        const float* w = coeffs + p * kWindow;
+        float y = 0.0f;
+        for (int j = 0; j < kWindow; ++j) y += w[j] * window[j];
+        peak = juce::jmax(peak, std::abs(y));
+    }
+    return peak;
+}
+
+void CopilotRealtimeTelemetry::takeTruePeaks(float& leftDbtp, float& rightDbtp) noexcept
+{
+    const float l = truePeakAccum_[0].exchange(0.0f, std::memory_order_relaxed);
+    const float r = truePeakAccum_[1].exchange(0.0f, std::memory_order_relaxed);
+    leftDbtp = static_cast<float>(analysis::peakToDb(l));
+    rightDbtp = static_cast<float>(analysis::peakToDb(r));
 }
 
 void CopilotRealtimeTelemetry::publishLoudness() noexcept
@@ -54,6 +143,9 @@ void CopilotRealtimeTelemetry::publishLoudness() noexcept
         return p > 1e-12 ? static_cast<float>(-0.691 + 10.0 * std::log10(p)) : -96.0f;
     };
     momentaryLufs_.store(powToLufs(momentary / (kMomentaryBins * binLen)), std::memory_order_relaxed);
+    // Integrated: each 100 ms hop adds the newest 400 ms block once the
+    // first full block exists.
+    if (++binsSinceReset_ >= kMomentaryBins) addGatedBlock(momentary / (kMomentaryBins * binLen));
     shortTermLufs_.store(powToLufs(shortTerm / (kShortTermBins * binLen)), std::memory_order_relaxed);
 }
 
@@ -87,6 +179,7 @@ void CopilotRealtimeTelemetry::process(const juce::AudioBuffer<float>& buffer)
     const int nSamples = buffer.getNumSamples();
     const int nChannels = buffer.getNumChannels();
     if (nSamples <= 0) return;
+    if (resetIntegrated_.exchange(false, std::memory_order_acq_rel)) resetIntegrated();
 
     auto toDb = [](float gain) noexcept -> float {
         return gain > 0.0f ? juce::Decibels::gainToDecibels(gain) : -96.0f;
@@ -99,6 +192,21 @@ void CopilotRealtimeTelemetry::process(const juce::AudioBuffer<float>& buffer)
         // Mono host: mirror the single channel so the desktop meters do not
         // show a frozen -96 right channel.
         rightPeakDb_.store(toDb(buffer.getMagnitude(0, 0, nSamples)), std::memory_order_relaxed);
+
+    // True peak per channel (mono mirrors channel 0), see the header.
+    for (int c = 0; c < juce::jmin(2, juce::jmax(1, nChannels)); ++c) {
+        if (nChannels < 1) break;
+        const float* data = buffer.getReadPointer(c);
+        const float blockPeak = buffer.getMagnitude(c, 0, nSamples);
+        const float threshold = juce::jmax(1.0e-6f, 0.5f * juce::jmax(blockPeak, lastBlockPeak_[c]));
+        float tp = blockPeak;
+        for (int i = 0; i < nSamples; ++i)
+            tp = juce::jmax(tp, truePeak_[c].push(data[i], threshold, truePeakCoeffs_.data()));
+        lastBlockPeak_[c] = blockPeak;
+        if (std::isfinite(tp)) accumulateMax(truePeakAccum_[c], tp);
+        else truePeak_[c].reset();
+    }
+    if (nChannels == 1) accumulateMax(truePeakAccum_[1], truePeakAccum_[0].load(std::memory_order_relaxed));
 
     // Loudness uses a K-weighted metering copy; correlation and width use the
     // unweighted signal. Mono hosts duplicate channel 0.
@@ -164,6 +272,8 @@ void CopilotRealtimeTelemetry::process(const juce::AudioBuffer<float>& buffer)
     }
 
     ringBuffer_.write(buffer);
+    if (nChannels >= 1)
+        scopeRing_.push(buffer.getReadPointer(0), buffer.getReadPointer(nChannels >= 2 ? 1 : 0), nSamples);
 }
 
 CopilotRealtimeTelemetry::Snapshot CopilotRealtimeTelemetry::snapshot() const noexcept
@@ -177,6 +287,7 @@ CopilotRealtimeTelemetry::Snapshot CopilotRealtimeTelemetry::snapshot() const no
     result.short_term_lufs = shortTermLufs_.load(std::memory_order_relaxed);
     result.correlation = correlation_.load(std::memory_order_relaxed);
     result.width = stereoWidth_.load(std::memory_order_relaxed);
+    result.integrated_lufs = integratedLufs_.load(std::memory_order_relaxed);
     return result;
 }
 

@@ -50,6 +50,10 @@ class IShell {
     /// Fixes the most severe open issue in the issue queue (F, the Issues
     /// header, the Dashboard's verdict card; CON-1).
     virtual void fixTopIssue() = 0;
+    /// UX2-1: the Issues screen with this finding selected (its key: the
+    /// recommendation id, or the code for a check-only finding) - a marker
+    /// clicked on the Analysis screen's spectrum.
+    virtual void showIssue(const std::string& key) = 0;
 
     virtual ReportMode getReportMode() const noexcept = 0;
     virtual void setReportMode(ReportMode mode) = 0;
@@ -62,6 +66,9 @@ class IShell {
     /// Alternatives -> How to Verify) for one recommendation.
     virtual void showChainReasoning(const Recommendation& rec) = 0;
     virtual void showMixMasterCard(int tabIdx) = 0;
+    /// VIZ-P2: explains a measurement tile (hero_spectrum::GaugeIndex:
+    /// loudness, true peak, LRA, crest, width).
+    virtual void showMetricExplanation(int gauge) = 0;
     /// A two-column metric diff modal for hosts without an overlay slot of
     /// their own (e.g. Snapshot History's compare-to-current).
     virtual void showMetricDiff(const juce::String& title, std::vector<MetricDiffTable::Row> rows,

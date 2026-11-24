@@ -65,6 +65,9 @@ inline constexpr int kHumanizeMs = 10 * 60 * 1000;        ///< up to 4 scans + 3
 inline constexpr int kCodecAuditMs = 5 * 60 * 1000;       ///< 3 ffmpeg encode/decode round trips
 inline constexpr int kRenderMs = 5 * 60 * 1000;           ///< offline renders (delta solo, pitch / clip gain)
 inline constexpr int kStemAnalysisMs = 5 * 60 * 1000;     ///< multi-file / stem-aware analyses
+/// A whole-track pitch track (CREPE / pyin): ~8 s alone, but it queues behind
+/// the DSP pool's other scans, and 30 s failed it while it waited (RUN-13).
+inline constexpr int kPitchTrackMs = 3 * 60 * 1000;
 } // namespace heavy_timeout
 
 // --- Small helpers for the per-endpoint wrappers ---------------------------

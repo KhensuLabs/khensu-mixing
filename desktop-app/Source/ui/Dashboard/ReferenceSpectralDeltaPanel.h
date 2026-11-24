@@ -1,6 +1,7 @@
 // desktop-app/Source/ui/Dashboard/ReferenceSpectralDeltaPanel.h
 // Time-varying reference spectral-delta heatmap. THREAD_CONTEXT(UIThread)
 #pragma once
+#include "../shared/HoverCells.h"
 #include <JuceHeader.h>
 #include "AutoScanCompletion.h"
 #include "../shared/KhensuTheme.h" // ThemeListener
@@ -11,8 +12,11 @@
 namespace khensu {
 class IAppController;
 
-class ReferenceSpectralDeltaPanel final : public PanelCard {
+class ReferenceSpectralDeltaPanel final : public PanelCard, public juce::SettableTooltipClient {
   public:
+    /// VIZ-U3: the value under the pointer (time, frequency, value).
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent&) override { setTooltip({}); }
     explicit ReferenceSpectralDeltaPanel(IAppController& c);
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -55,6 +59,10 @@ class ReferenceSpectralDeltaPanel final : public PanelCard {
         repaint();
     }};
 
+    std::vector<std::vector<float>> grid_, grid2_; ///< VIZ-U3: [frame][band] behind the image(s)
+    std::vector<float> edgesHz_;
+    float durationSec_ = 0.0f;
+    juce::Rectangle<float> gridArea_, grid2Area_; ///< where they were drawn
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ReferenceSpectralDeltaPanel)
 };
 } // namespace khensu

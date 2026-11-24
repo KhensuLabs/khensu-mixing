@@ -48,8 +48,6 @@ void VectorIconButton::paintButton(juce::Graphics& g, bool isMouseOver, bool isB
 // on screen on every screen, so a stale palette here is permanently visible.
 void PlaybackTransportBar::applyThemeColours()
 {
-    positionSlider_.setColour(juce::Slider::trackColourId, KhensuTheme::bgVoid);
-    positionSlider_.setColour(juce::Slider::thumbColourId, KhensuTheme::accentTeal);
     timeLabel_.setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
     volumeLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     volumeSlider_.setColour(juce::Slider::trackColourId, KhensuTheme::bgVoid);
@@ -89,31 +87,15 @@ PlaybackTransportBar::PlaybackTransportBar(IAppController& controller) : control
     };
     addAndMakeVisible(stopButton_);
 
-    // Position slider / scrubber
-    positionSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
-    positionSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    positionSlider_.setTitle(TRANS("Playback position"));
-    positionSlider_.setDescription(TRANS("Scrub through the current audio."));
-    positionSlider_.setHelpText(TRANS("Use Left and Right arrows to move the playback position."));
-    positionSlider_.setExplicitFocusOrder(3);
-    positionSlider_.onDragStart = [this]() { isDragging_ = true; };
-    positionSlider_.onDragEnd = [this]() {
-        controller_.playback().setPlaybackPosition(positionSlider_.getValue());
-        isDragging_ = false;
-    };
-    // Keyboard (arrow / Home / End) and accessibility changes arrive as value
-    // changes with no drag - they moved the thumb but never seeked. The timer
-    // updates with dontSendNotification, so this only fires for user input.
-    positionSlider_.onValueChange = [this]() {
-        if (!isDragging_) controller_.playback().setPlaybackPosition(positionSlider_.getValue());
-    };
-    addAndMakeVisible(positionSlider_);
+    // UX2-5: the waveform scrubber replaces the bare position slider.
+    waveform_.setExplicitFocusOrder(3);
+    addAndMakeVisible(waveform_);
 
     // Time readout label
     timeLabel_.setText("00:00 / 00:00", juce::dontSendNotification);
     timeLabel_.setTitle(TRANS("Playback time"));
     timeLabel_.setDescription(TRANS("Elapsed playback time and total duration."));
-    timeLabel_.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    timeLabel_.setFont(khensu::KhensuTheme::numericFont(khensu::KhensuTheme::kFontBody)); // UI-4: tabular
     timeLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(timeLabel_);
 
@@ -208,6 +190,8 @@ PlaybackTransportBar::PlaybackTransportBar(IAppController& controller) : control
     };
     addChildComponent(startFromBox_);
 
+    addChildComponent(meters_); // UI-5: shown with a session (updateControls)
+
     startTimer(40); // 25 fps updates
 }
 
@@ -248,9 +232,18 @@ void PlaybackTransportBar::resized()
     b.removeFromRight(2);
     undoButton_.setBounds(b.removeFromRight(52).withSizeKeepingCentre(52, 24));
     b.removeFromRight(8);
-    const int compW = juce::jmin(340, juce::jmax(160, b.getWidth() / 4));
-    comparisonStrip_.setBounds(b.removeFromRight(compW).withSizeKeepingCentre(compW, 26));
-    b.removeFromRight(8);
+    // UI-6: A/B lives at the top of every session screen now; a second
+    // strip here showed the same control twice. Kept (hidden) for the
+    // listeners and the snapshot combo it still owns.
+    comparisonStrip_.setBounds({});
+    comparisonStrip_.setVisible(false);
+    // UI-5: the compact meter rail.
+    if (b.getWidth() > 700) {
+        meters_.setBounds(b.removeFromRight(juce::jmin(400, b.getWidth() / 3)));
+        b.removeFromRight(12);
+    } else {
+        meters_.setBounds({});
+    }
     auto right = b.removeFromRight(150);
     volumeLabel_.setBounds(right.removeFromLeft(24).withSizeKeepingCentre(24, 24));
     volumeSlider_.setBounds(right.withSizeKeepingCentre(right.getWidth(), 16));
@@ -261,8 +254,8 @@ void PlaybackTransportBar::resized()
     timeLabel_.setBounds(b.removeFromRight(100));
     b.removeFromRight(12);
 
-    // Scrubber position slider
-    positionSlider_.setBounds(b.withSizeKeepingCentre(b.getWidth(), 16));
+    // The waveform scrubber takes the rest of the row.
+    waveform_.setBounds(b.withSizeKeepingCentre(b.getWidth(), juce::jmin(b.getHeight(), 34)));
 }
 
 void PlaybackTransportBar::timerCallback()
@@ -270,10 +263,7 @@ void PlaybackTransportBar::timerCallback()
     const double pos = controller_.playback().getPlaybackPosition();
     const double dur = controller_.playback().getPlaybackDuration();
 
-    if (!isDragging_) {
-        positionSlider_.setRange(0.0, juce::jmax(1.0, dur));
-        positionSlider_.setValue(pos, juce::dontSendNotification);
-    }
+    waveform_.update();
 
     auto formatTime = [](double seconds) -> juce::String {
         if (seconds < 0.0) seconds = 0.0;
@@ -299,7 +289,8 @@ void PlaybackTransportBar::updateControls()
     }
 
     // UX-5: A / B / Delta / Blind mean nothing without a track.
-    comparisonStrip_.setVisible(controller_.hasActiveSession());
+    comparisonStrip_.setVisible(false); // UI-6: A/B is at the top of the session screens
+    if (meters_.isVisible() != controller_.hasActiveSession()) meters_.setVisible(controller_.hasActiveSession());
     const bool ab = controller_.playback().hasAbComparison();
     comparisonStrip_.setComparisonAvailable(ab);
     if (ab) {

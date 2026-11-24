@@ -108,19 +108,19 @@ def _load_model(model_size: str):
     return _keep_only(model_size, model)
 
 
-def transcribe_lyrics(file_path: str, model_size: str = _DEFAULT_MODEL_SIZE) -> list[dict]:
-    """Word-level transcript: [{"word", "start_sec", "end_sec", "probability"}, ...].
-    Raises ASRNotAvailableError if faster-whisper isn't installed.
+# A segment Whisper itself rates as probably not speech, or decoded with low
+# confidence, is dropped when transcribing without the VAD (the usual shape of
+# a phantom lyric over an instrumental passage).
+_FALLBACK_MAX_NO_SPEECH = 0.6
+_FALLBACK_MIN_AVG_LOGPROB = -1.0
 
-    ``vad_filter`` (Silero VAD, bundled with faster-whisper) skips non-speech
-    regions: without it Whisper hallucinates words over instrumental passages,
-    and those phantom words were then flagged "masked" (AUDIT-080).
-    """
-    model = _get_model(model_size)
-    segments, _info = model.transcribe(file_path, word_timestamps=True, vad_filter=True)
 
+def _words_of(segments, *, guarded: bool) -> list[dict]:
     words: list[dict] = []
     for segment in segments:
+        if guarded and (getattr(segment, "no_speech_prob", 0.0) > _FALLBACK_MAX_NO_SPEECH
+                        or getattr(segment, "avg_logprob", 0.0) < _FALLBACK_MIN_AVG_LOGPROB):
+            continue
         if not segment.words:
             continue
         for w in segment.words:
@@ -132,6 +132,29 @@ def transcribe_lyrics(file_path: str, model_size: str = _DEFAULT_MODEL_SIZE) -> 
                           "end_sec": round(float(w.end), 3),
                           "probability": round(float(prob), 3) if prob is not None else None})
     return words
+
+
+def transcribe_lyrics(file_path: str, model_size: str = _DEFAULT_MODEL_SIZE) -> list[dict]:
+    """Word-level transcript: [{"word", "start_sec", "end_sec", "probability"}, ...].
+    Raises ASRNotAvailableError if faster-whisper isn't installed.
+
+    ``vad_filter`` (Silero VAD, bundled with faster-whisper) skips non-speech
+    regions: without it Whisper hallucinates words over instrumental passages,
+    and those phantom words were then flagged "masked" (AUDIT-080).
+
+    Silero is a speech detector, though: on a full mix it often hears no
+    speech in sung vocals at all (a released song gave 0 words with it and
+    191 correct ones without). When the VAD pass finds nothing, transcribe
+    again without it and keep only segments Whisper rates as speech with
+    reasonable confidence.
+    """
+    model = _get_model(model_size)
+    segments, _info = model.transcribe(file_path, word_timestamps=True, vad_filter=True)
+    words = _words_of(segments, guarded=False)
+    if words:
+        return words
+    segments, _info = model.transcribe(file_path, word_timestamps=True, vad_filter=False)
+    return _words_of(segments, guarded=True)
 
 
 # Presence-band definition matches extended_analyzer.analyze_vocal_clarity

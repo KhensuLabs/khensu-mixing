@@ -33,6 +33,7 @@ add_executable(KhensuCoreTests
     shared-core/test_mix_report.cpp
     shared-core/test_monitoring_reach.cpp  # NEW-10
     shared-core/test_mix_scorecard.cpp
+    shared-core/test_viz_foundation.cpp  # VIZ-F1 / VIZ-1 / VIZ-P3
     shared-core/test_analysis_result.cpp
     shared-core/test_extended_recommenders.cpp
     shared-core/test_feedback_manager.cpp
@@ -53,6 +54,7 @@ add_executable(KhensuCoreTests
     shared-core/test_service_health_tracker.cpp
     shared-core/test_recommendation_outbox.cpp
     shared-core/test_lookahead_limiter.cpp
+    shared-core/test_offline_chain_renderer.cpp  # OVH-9 native chain renderer + parity
     shared-core/test_batch_result_aggregator.cpp
     shared-core/test_music_theory.cpp
     shared-core/test_music_theory_degree.cpp
@@ -61,6 +63,9 @@ add_executable(KhensuCoreTests
     shared-core/test_native_meters_parity.cpp  # CE-PLT-3
     shared-core/test_collab_trust.cpp  # CE-TRU-3 evidence, CE-COL-1/2 cleanup
     shared-core/test_severity_scales.cpp  # FIX-9 reachable low-end rules, FIX-10 fixed severity scales
+    shared-core/test_meter_ballistics.cpp  # UI-5 studio meter ballistics + stereo ring
+    shared-core/test_recommendation_dsp_mapper.cpp  # OVH-8 findings -> plugin DSP
+    shared-core/test_chain_preset.cpp  # FN2-5 shared chain preset format
 )
 
 target_link_libraries(KhensuCoreTests PRIVATE
@@ -99,6 +104,9 @@ add_executable(KhensuTests
     ui/MultitrackModelTest.cpp
     ui/AlbumSequenceTest.cpp
     ui/KhensuThemeTest.cpp
+    ui/OverhaulVerdictTest.cpp
+    ui/OverhaulPlaybackTest.cpp
+    ui/MotionFrameTest.cpp
     ui/GlassPanelTest.cpp
     ui/BadgeComponentTest.cpp
     ui/ZoneMeterTest.cpp
@@ -112,14 +120,20 @@ add_executable(KhensuTests
     ui/ListenerHandleTest.cpp
     ui/EvidenceReportBodyTest.cpp  # CE-TRU-1/3
     ui/NavItemTest.cpp
+    ui/AnalysisScreenUx2Test.cpp  # UX2-1/3/4
     ui/IntakeLayoutTest.cpp
     ui/DashboardZone1Test.cpp
     ui/VocalWorkspaceTest.cpp
     ui/MixMasterTest.cpp
+    ui/MixMasterRedesignTest.cpp   # UX2-2 / UX2-5 / FN2-4
     ui/SystemBrainTest.cpp
     ui/ExportScreenTest.cpp
     ui/OnlineSettingsTests.cpp
     ui/PaletteThemeSyncTest.cpp
+    ui/VizPaletteTest.cpp  # VIZ-F2
+    ui/SongTimelineTest.cpp  # VIZ-2
+    ui/HiResSpectrogramTest.cpp  # VIZ-S1
+    ui/VizFeaturesTest.cpp  # VIZ-3a/4b/5/N2/N5
     ui/ThemeReadabilityTest.cpp  # UX-16
     ui/RenderHistoryTest.cpp
     ui/PushToTalkTest.cpp  # CE-AG-4
@@ -128,6 +142,7 @@ add_executable(KhensuTests
     ui/SessionServiceTest.cpp
     ui/PlaybackServiceTest.cpp
     ui/RenderServiceTest.cpp
+    ui/NativeFixLoopTest.cpp  # OVH-9 analyse -> fix -> check without the service
     ui/ReportBodyTest.cpp
     ui/StemServiceTest.cpp
     ui/KeyedListenersTest.cpp
@@ -143,6 +158,7 @@ add_executable(KhensuTests
     ui/AnalysisControllerTest.cpp
     ui/FixVerificationTest.cpp
     ui/IssueServiceTest.cpp
+    ui/HeroSpectrumModelTest.cpp  # UI-1 / OVH-6
     ui/FixRefineTest.cpp  # NEW-4
     ui/IntakeGenreConfirmationTest.cpp
     ui/ServiceErrorHintTest.cpp
@@ -239,6 +255,13 @@ add_executable(KhensuTests
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/Copilot/SectionIntensityPanel.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/PanelCard.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/IssueQueuePanel.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/HeroSpectrumView.cpp  # UI-1
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/SongTimelineView.cpp  # VIZ-2
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/HiResSpectrogramView.cpp  # VIZ-S1
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/FixDifferenceView.cpp  # VIZ-3a
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/LiveSpectrogramView.cpp  # VIZ-4a
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/StemViz.cpp  # VIZ-5
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/Dashboard/SongTimelineCard.cpp  # VIZ-2
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/SessionIntake/TargetSetupPanel.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/SessionIntake/TargetOverrideEditor.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/Milestones.cpp
@@ -248,11 +271,14 @@ add_executable(KhensuTests
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ExportDelivery/DeliveryQaPanel_CeDelivery.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ExportDelivery/DeliveryPackagePanel.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ExportDelivery/ProjectBoardPanel.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ExportDelivery/AlbumConsistencyView.cpp  # VIZ-N2
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ExportDelivery/VisualReport.cpp  # VIZ-N5
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ExportDelivery/MasterAssistantPanel.cpp
     ${CMAKE_SOURCE_DIR}/shared-core/src/ui/KhensuPalette.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/settings/OnlineSettings.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/KhensuTheme.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/KhensuLookAndFeel.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/PipelineProgressBar.cpp  # OVH-1 skipped stages
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/SessionIntake/DropZoneComponent.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/SessionIntake/MultitrackModel.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/SessionIntake/MaskingMatrixComponent.cpp
@@ -290,6 +316,7 @@ add_executable(KhensuTests
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/Settings/CalibrationPanel.cpp  # CUT-10
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/Settings/ComponentsPanel.cpp  # FEAT-10
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/Dashboard/GenreFitPanel.cpp  # NEW-3
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/Dashboard/MixCraftPanel.cpp  # UX2-1
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/Settings/MacroMappingPanel.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/ModelDetailsDialog.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/midi/MacroControlRouter.cpp
@@ -364,6 +391,12 @@ add_executable(KhensuPluginTests
     plugin/PluginCrashHandlerTest.cpp
     # CON-1: the Suggestions tab shares the issue queue's state
     plugin/SuggestionIssueStateTest.cpp
+    # UI-5 / UI-8 / UI-9 / OVH-8
+    plugin/PluginDeEsserShelfTest.cpp
+    plugin/PluginPresetStateTest.cpp
+    plugin/PluginLiveFixEditorTest.cpp
+    # UX2-6a / UX2-6b: knob readout + typed values, undo history
+    plugin/PluginUndoHistoryTest.cpp
 )
 
 target_include_directories(KhensuPluginTests PRIVATE

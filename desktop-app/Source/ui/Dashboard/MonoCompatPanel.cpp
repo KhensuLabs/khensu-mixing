@@ -13,8 +13,6 @@ namespace af = api::fields; // generated service field names (ApiSchema.h)
 // Every cached palette colour on this component, in one place (UI-01).
 void MonoCompatPanel::applyThemeColours()
 {
-    analyzeButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.2f));
-    analyzeButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
 }
 
 MonoCompatPanel::MonoCompatPanel(IAppController& c) : PanelCard(c, "Mono Compatibility")

@@ -11,8 +11,6 @@ namespace khensu {
 // Every cached palette colour on this component, in one place (UI-01).
 void SubBassPhasePanel::applyThemeColours()
 {
-    analyzeButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.2f));
-    analyzeButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
 }
 
 SubBassPhasePanel::SubBassPhasePanel(IAppController& c) : PanelCard(c, "Sub-Bass Phase")
@@ -152,8 +150,15 @@ void SubBassPhasePanel::drawHistory(juce::Graphics& g, juce::Rectangle<int> area
     auto yFor = [&](float c) { return midY - juce::jlimit(-1.0f, 1.0f, c) * (plot.getHeight() * 0.5f); };
 
     juce::Path path;
+    hover_.clear();
     for (size_t i = 0; i < history_.size(); ++i) {
         const float x = xFor(history_[i].x), y = yFor(history_[i].y);
+        {
+            const float w = plot.getWidth() / (float)juce::jmax<size_t>(1, history_.size() - 1);
+            hover_.addColumn(x - w * 0.5f, x + w * 0.5f, plot,
+                             juce::String(history_[i].x, 1) + " s: " + TRANS("kick / bass correlation") + " "
+                                 + juce::String(history_[i].y, 2));
+        }
         if (i == 0)
             path.startNewSubPath(x, y);
         else

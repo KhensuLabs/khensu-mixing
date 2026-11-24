@@ -7,6 +7,7 @@
 #include "../BackgroundReadKey.h"
 #include "../IBackgroundWork.h"
 #include "../PythonServiceManager.h"
+#include "../analysis/ServiceReadyWait.h"
 #include "../ui/shared/JobPoller.h"
 #include <khensu/analysis/AudioAnalyzer.h>
 #include <khensu/ipc/HttpServiceBridge.h>
@@ -158,7 +159,7 @@ void StemService::runStemSeparation(const juce::String& method,
     // Separation polls for up to 30 min: long pool, never the short one.
     // `this` is safe on the worker: the long pool is drained in the
     // owner's destructor before this service dies.
-    work_.runLongInBackground([this, file_path, output_dir, method_str, sessionId, separationGeneration,
+    work_.runLongInBackground([this, identityWaitMs = identityWaitMs_.load(), file_path, output_dir, method_str, sessionId, separationGeneration,
                                cb = std::move(callback), self]() mutable {
         // Demucs (the "advanced"/AI method) can take 1-3 minutes on CPU for a
         // full track - well past the default HTTP timeout, so the poll loop
@@ -177,6 +178,25 @@ void StemService::runStemSeparation(const juce::String& method,
         // ~10 s instead of holding this worker for 30 minutes), 404 =
         // terminal, a wall-clock deadline, and a server-side cancel when the
         // session changes or the wait is abandoned.
+        // The bridge refuses every request while the engine's identity is
+        // unproven - before the first HMAC /health answer, or after a busy
+        // service (a cold deep pass) missed its probes - and a one-shot start
+        // then failed the whole separation with "service identity not
+        // verified" while the engine was healthy. Give the gate the time the
+        // health monitor needs to re-prove it (a probe every ~1.6 s, 2.5 s
+        // timeout); a separation runs for minutes, so the wait is free.
+        const auto sessionChanged = [this, separationGeneration] {
+            return separationGeneration_.load() != separationGeneration;
+        };
+        service_ready::waitForService(
+            [] {
+                return !ipc::HttpServiceBridge::serviceIdentityRequired() ||
+                       ipc::HttpServiceBridge::serviceIdentityVerified();
+            },
+                                      sessionChanged,
+                                      [] { return static_cast<int>(juce::Time::getMillisecondCounter()); },
+                                      [](int ms) { juce::Thread::sleep(ms); }, identityWaitMs);
+
         JobPoller<ipc::SeparationJobStatus>::Hooks hooks;
         hooks.start = [&] { return bridge.startSeparationJob(file_path, output_dir, method_str); };
         hooks.poll = [&](const std::string& id) { return pollBridge.getSeparationProgress(id); };

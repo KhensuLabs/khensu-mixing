@@ -5,6 +5,7 @@
 // is visible instead of only audible on the big rig. Requires separated stems.
 // THREAD_CONTEXT(UIThread)
 #pragma once
+#include "../shared/HoverCells.h"
 #include <JuceHeader.h>
 #include "../shared/KhensuTheme.h" // ThemeListener
 #include "../shared/PanelCard.h"
@@ -15,8 +16,11 @@ namespace khensu {
 
 class IAppController;
 
-class SubBassPhasePanel final : public PanelCard {
+class SubBassPhasePanel final : public PanelCard, public juce::SettableTooltipClient {
   public:
+    /// VIZ-U3: the readout under the pointer.
+    void mouseMove(const juce::MouseEvent& e) override { hover_.update(*this, e.position); }
+    void mouseExit(const juce::MouseEvent&) override { setTooltip({}); }
     explicit SubBassPhasePanel(IAppController& c);
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -64,6 +68,7 @@ class SubBassPhasePanel final : public PanelCard {
         repaint();
     }};
 
+    mutable HoverCells hover_; ///< VIZ-U3, filled in paint()
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SubBassPhasePanel)
 };
 

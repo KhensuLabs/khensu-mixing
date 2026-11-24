@@ -16,12 +16,8 @@ namespace khensu {
 // Every cached palette colour on this component, in one place (UI-01).
 void ReferenceComparePanel::applyThemeColours()
 {
-    matchButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.22f));
-    matchButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
     toggleCurveButton_.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     toggleCurveButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
-    blindAbButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.15f));
-    blindAbButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
     matchLoudnessWidthToggle_.setColour(juce::ToggleButton::textColourId, KhensuTheme::textSecondary);
 }
 
@@ -508,7 +504,7 @@ void ReferenceComparePanel::paint(juce::Graphics& g)
             g.drawText(TRANS("Tonal balance closely matches the reference."), callout,
                        juce::Justification::centredLeft, true);
         } else {
-            g.setColour(worst->gain_db < 0.0f ? KhensuTheme::accentAmber : KhensuTheme::accentTeal);
+            g.setColour(KhensuTheme::textPrimary); // UX2-3: a direction, not a severity
             const juce::String verb = worst->gain_db < 0.0f ? "hot" : "shy";
             g.drawText("Biggest gap: mix is " + juce::String(std::abs(worst->gain_db), 1) + " dB " + verb + " at " +
                            fmtHz(worst->center_hz) + " vs reference.",
@@ -516,13 +512,13 @@ void ReferenceComparePanel::paint(juce::Graphics& g)
         }
 
         // Diverging strip: low->high freq left->right; teal = mix hot (needs
-        // cut), amber = mix shy (needs boost); alpha scales with magnitude.
+        // cut), neutral = mix shy (needs boost); alpha scales with magnitude.
         auto strip = b.removeFromTop(10);
         const float cellW = (float)strip.getWidth() / (float)bands.size();
         float x = (float)strip.getX();
         for (const auto& bd : bands) {
             const float mag = juce::jlimit(0.0f, 1.0f, std::abs(bd.gain_db) / 6.0f);
-            const juce::Colour c = (bd.gain_db < 0.0f ? KhensuTheme::accentTeal : KhensuTheme::accentAmber);
+            const juce::Colour c = (bd.gain_db < 0.0f ? KhensuTheme::accentTeal : KhensuTheme::textSecondary);
             g.setColour(c.withAlpha(0.15f + 0.65f * mag));
             g.fillRect(x, (float)strip.getY(), cellW - 1.0f, (float)strip.getHeight());
             x += cellW;

@@ -10,7 +10,8 @@ log and says whether the loop worked:
           the service never answered; or a milestone is missing (results
           released, the fix rendered, the fix check, Intake ready)
     WARN  only stem separation was unavailable (the optional Demucs stack;
-          the app exits 1 for it, but the loop itself is fine)
+          the app exits 1 for it, but the loop itself is fine), or the track
+          had nothing with a one-click fix (the fix and its check never ran)
     PASS  otherwise
 
 Exit codes: 0 PASS, 2 WARN, 1 FAIL. verify_all.ps1's `app-loop` step runs it.
@@ -60,7 +61,12 @@ def check(text: str) -> Verdict:
             verdict.fix_check = stripped[len("fix check:"):].strip()
         if stripped.startswith("stems: NOT available"):
             verdict.warnings.append(f"stem separation unavailable ({stripped})")
+    nothing_to_fix = any(line.strip().startswith("fix top issue: nothing to fix") for line in lines)
+    if nothing_to_fix:
+        verdict.warnings.append("nothing had a one-click fix - the fix and its check were not exercised")
     for prefix, meaning in MILESTONES:
+        if nothing_to_fix and prefix.startswith("fix "):
+            continue
         if not any(line.strip().startswith(prefix) for line in lines):
             verdict.problems.append(f"missing '{prefix}' - {meaning} never happened")
     if verdict.problems:

@@ -11,10 +11,10 @@ SuggestionRow::SuggestionRow()
 {
     automateButton.setButtonText("Auto-Apply");
     automateButton.onClick = [this]() {
-        if (on_automate_clicked_) {
-            on_automate_clicked_(rec_);
-        }
-        if (state_ != issue_state::State::Done) changeState(issue_state::State::Done);
+        // OVH-8: a fix the plugin did not apply (not safe to auto-apply,
+        // nothing it can map) leaves the finding open.
+        const bool applied = on_automate_clicked_ ? on_automate_clicked_(rec_) : false;
+        if (applied && state_ != issue_state::State::Done) changeState(issue_state::State::Done);
     };
     addAndMakeVisible(automateButton);
 
@@ -179,7 +179,7 @@ void SuggestionFeedPanel::rebuildRows(const std::vector<Recommendation>& recs, S
             if (on_state_changed_) on_state_changed_(rec_id, state);
         });
         row->setOnAutomateClicked([this](const Recommendation& r) {
-            if (on_automate_suggestion_) on_automate_suggestion_(r);
+            return on_automate_suggestion_ ? on_automate_suggestion_(r) : false;
         });
         row->setOnRowClicked([this, rec]() {
             if (on_row_clicked_) on_row_clicked_(rec);

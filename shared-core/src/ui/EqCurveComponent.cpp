@@ -4,6 +4,7 @@
 // for why this doesn't use desktop-app's full KhensuLookAndFeel.
 // THREAD_CONTEXT(UIThread)
 #include <khensu/ui/EqCurveComponent.h>
+#include <khensu/ui/ChartKit.h>
 #include <khensu/ui/KhensuPalette.h>
 #include <cmath>
 #include <complex>
@@ -525,6 +526,37 @@ void EqCurveComponent::paint(juce::Graphics& g)
         g.drawText("!", ch, juce::Justification::centred, false);
     }
 
+    // VIZ-U3: the crosshair readout - the frequency and what the EQ does there.
+    if (hoverPoint_ && hoveredBand_ < 0 && hoveredAnnotation_ < 0 && p.contains(*hoverPoint_)) {
+        const float hz = hzForX(hoverPoint_->x);
+        const float db = computeMagnitudeDb(hz);
+        const float x = hoverPoint_->x, y = yForDb(db);
+        g.setColour(khensu::ui::Palette::textPrimary.withAlpha(0.35f));
+        g.drawVerticalLine(juce::roundToInt(x), p.getY(), p.getBottom());
+        g.setColour(khensu::ui::Palette::accentTeal);
+        g.fillEllipse(x - 3.5f, y - 3.5f, 7.0f, 7.0f);
+        ui::chart::Axis fx;
+        fx.format = ui::chart::Format::Hz;
+        ui::chart::Readout r;
+        r.title = fx.label(hz, true);
+        r.lines.push_back({TRANS("EQ") + " " + (db >= 0.0f ? "+" : "") + juce::String(db, 1) + " dB",
+                           khensu::ui::Palette::accentTeal});
+        int nearest = -1;
+        float nearestOct = 1e9f;
+        for (size_t i = 0; i < bands_.size(); ++i) {
+            const float oct = std::abs(std::log2(std::max(1.0f, bands_[i].hz) / hz));
+            if (bands_[i].enabled && oct < nearestOct) nearestOct = oct, nearest = static_cast<int>(i);
+        }
+        if (nearest >= 0 && nearestOct < 1.0f) {
+            const auto& b = bands_[(size_t)nearest];
+            r.lines.push_back({TRANS("Band") + " " + juce::String(nearest + 1) + ": " + fx.label(b.hz, true) + ", "
+                                   + (b.gain_db >= 0.0f ? "+" : "") + juce::String(b.gain_db, 1) + " dB, Q "
+                                   + juce::String(b.q, 2),
+                               khensu::ui::Palette::textMuted});
+        }
+        ui::chart::ChartView::paintReadout(g, r, {x, y}, getLocalBounds().toFloat(), ui::chart::Style::fromPalette());
+    }
+
     // Hover tooltip for the focused annotation - the plain-English "what".
     if (hoveredAnnotation_ >= 0 && hoveredAnnotation_ < (int)annotations_.size()) {
         const auto& a = annotations_[hoveredAnnotation_];
@@ -600,7 +632,8 @@ void EqCurveComponent::mouseMove(const juce::MouseEvent& e)
     const int h = hitTestBand(e.position);
     // Band handles win over annotation chips when they overlap.
     const int a = (h >= 0) ? -1 : hitTestAnnotation(e.position);
-    if (h != hoveredBand_ || a != hoveredAnnotation_) {
+    hoverPoint_ = e.position;
+    if (h != hoveredBand_ || a != hoveredAnnotation_ || (h < 0 && a < 0)) {
         hoveredBand_ = h;
         hoveredAnnotation_ = a;
         repaint();
@@ -612,6 +645,10 @@ void EqCurveComponent::mouseMove(const juce::MouseEvent& e)
 
 void EqCurveComponent::mouseExit(const juce::MouseEvent&)
 {
+    if (hoverPoint_) {
+        hoverPoint_.reset();
+        repaint();
+    }
     if (hoveredBand_ != -1 || hoveredAnnotation_ != -1) {
         hoveredBand_ = -1;
         hoveredAnnotation_ = -1;

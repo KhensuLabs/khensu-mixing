@@ -1,4 +1,5 @@
 // desktop-app/Source/ui/VocalWorkspace/CompingPanel.cpp
+#include "../shared/ServiceErrorHint.h"
 #include "CompingPanel.h"
 #include "../shared/PanelRunState.h"
 #include "../../IAppController.h"
@@ -112,7 +113,7 @@ void CompingPanel::runAnalysis(bool render)
         auto result = bridge.postAnalyzeJson("/analyze/comping", juce::var(body.get()));
         postIfCurrent(self, work, [result, render](CompingPanel& panel) {
             if (result.is_err()) {
-                panel.statusLabel_.setText(TRANS("Failed: ") + juce::String(result.error().message),
+                panel.statusLabel_.setText(TRANS("Failed: ") + serviceErrorLine(result.error()),
                                            juce::dontSendNotification);
                 return;
             }

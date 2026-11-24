@@ -17,11 +17,15 @@ and metric, the median, the 10th / 90th percentiles and the track count:
 
 ``apply`` writes the tonal and stereo targets (centroid, low-end share, tilt,
 crest, width range) for every genre with at least ``MIN_TRACKS`` measured
-tracks and records the source in each entry's ``measured`` block. Loudness
-(LUFS / LRA / true peak) is measured and reported but not applied: the corpus
-is Creative Commons releases from archive.org, many of them not mastered to
-commercial loudness, so its loudness would move every target quieter for a
-reason that has nothing to do with the genre (docs/2026-11-16-genre-norms.md).
+tracks and records the source in each entry's ``measured`` block. The
+two-minute loudness is measured and reported but not applied. The whole-track
+measurements of ``dynamics`` widen the LRA window (``apply_dynamics``), set
+the crest ceiling (``apply_crest``) and widen the integrated-loudness window
+(``apply_loudness``, OVH-5) - widen only, and the loudness window never past
+the delivery bounds in ``apply_loudness``: the corpus is Creative Commons
+releases from archive.org, many of them not mastered to commercial loudness,
+so it can say "this genre's releases are this quiet" but not move a target
+toward under-mastering.
 """
 from __future__ import annotations
 
@@ -37,7 +41,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "corpus_data" / "genre_corpus_archive_org"
 TARGETS = ROOT / "resources" / "genre_norms" / "genre_targets.json"
 STATS = ROOT / "resources" / "genre_norms" / "genre_corpus_stats.json"
-RAW = ROOT / "bench-results" / "genre_norms_raw.jsonl"
+RAW = Path(os.environ.get("KHENSU_MEASURE_RAW") or ROOT / "bench-results" / "genre_norms_raw.jsonl")
 # A copy of the test binary can be named so a rebuild does not collide with a run.
 TEST_EXE = Path(os.environ.get("KHENSU_MEASURE_EXE") or ROOT / "build" / "tests" / "Release" / "KhensuCoreTests.exe")
 MIN_TRACKS = 6
@@ -98,7 +102,8 @@ def measure() -> None:
                 if _decode_to_wav(CORPUS / g / f, dst):
                     wavs[str(dst)] = f"{g}/{f}"
             listing = Path(tmp) / "list.txt"
-            listing.write_text("\n".join(wavs), encoding="utf-8")
+            # "<wav>\t<genre>": graded too (findings, scorecard - VIZ-1c).
+            listing.write_text("\n".join(w + "\t" + k.split("/", 1)[0] for w, k in wavs.items()), encoding="utf-8")
             out = Path(tmp) / "out.jsonl"
             env = dict(os.environ, KHENSU_MEASURE_LIST=str(listing), KHENSU_MEASURE_OUT=str(out))
             subprocess.run([str(TEST_EXE), "[.measure]"], env=env, check=False,
@@ -222,6 +227,12 @@ def report() -> dict:
     * fix - of the defects it caught, the share the app's own Fix cleared
       (``fixcheck``), or advice_only when it has nothing to render."""
     dyn = _dyn_rows()
+    # OVH-5: the loudness findings against the current windows, not the ones
+    # in force when the native run graded the tracks.
+    regraded = _regrade_loudness(dyn)
+    # FN2-1: and the LRA and crest findings against the current LRA windows
+    # and crest ceilings.
+    regraded_dynamics = _regrade_dynamics(dyn)
     dyn_clean = [r for r in dyn if not r["variants"].get("clean", {}).get("error") and "clean" in r["variants"]]
     ev = [json.loads(x) for x in EVIDENCE_RAW.read_text(encoding="utf-8").splitlines()] if EVIDENCE_RAW.exists() else []
     ev_clean = [r for r in ev if "clean" in r["variants"]]
@@ -250,6 +261,8 @@ def report() -> dict:
         "tracks": tracks,
         "lossless_tracks": sum(1 for r in dyn_clean if r.get("source") == "lossless"),
         "alarm_severity": ALARM_SEVERITY,
+        "loudness_regraded": regraded,
+        "dynamics_regraded": regraded_dynamics,
         "findings": {c: {"false_alarm_rate": round(counts.get(c, 0) / max(1, tracks), 4), "fired_on": counts.get(c, 0)}
                      for c in sorted(set(counts) | _engine_codes())},
         "defects": {},
@@ -288,6 +301,10 @@ def report() -> dict:
         named = {name: codes for name, _h, _f, _g, codes in DEFECTS}
         named.update(DYN_FINDINGS)
         tally: dict[str, dict[str, int]] = {}
+        # OVH-6: per fixed finding, the findings its render introduced
+        # (``new_findings``: in the regrade, not in the defective input) ->
+        # [renders, of which the input already peaked over the ceiling].
+        side: dict[str, dict[str, list[int]]] = {}
         for line in FIX_RAW.read_text(encoding="utf-8").splitlines():
             for d in json.loads(line)["defects"]:
                 if not d.get("fired"):
@@ -303,10 +320,27 @@ def report() -> dict:
                     elif d.get("outcome") in ("cleared", "not_cleared"):
                         t["tried"] += 1
                         t["cleared"] += d["outcome"] == "cleared"
+                        peak_over = "true_peak_over" in d.get("before", [])
+                        for nc in d.get("new_findings", []):
+                            for cc in credited:
+                                s_ = side.setdefault(cc, {}).setdefault(nc, [0, 0])
+                                s_[0] += 1
+                                s_[1] += peak_over
         for c, t in tally.items():
             entry = out["findings"].setdefault(c, {"false_alarm_rate": 0.0, "fired_on": 0})
             entry["fix"] = {"tried": t["tried"], "advice_only": t["tried"] == 0 and t["advice_only"] > 0,
                             **({"clears_rate": round(t["cleared"] / t["tried"], 4)} if t["tried"] else {})}
+            if t["tried"]:
+                # rate: the share of tried fixes whose render introduced the
+                # code; peak_guard_share: of those, the share whose input
+                # peaked over -1 dBTP, so the render's output ceiling
+                # (copilot/dsp._apply_output_gain) turned the whole master
+                # down - the app's Fix renders the same way, so it is a real
+                # side effect, but the cause is the ceiling, not the fix.
+                entry["fix"]["side_effects"] = [
+                    {"code": nc, "rate": round(n_ / t["tried"], 4), "tracks": n_,
+                     "peak_guard_share": round(pk / n_, 4)}
+                    for nc, (n_, pk) in sorted(side.get(c, {}).items(), key=lambda kv: (-kv[1][0], kv[0]))]
     _add_full(out)
     EVIDENCE_OUT.parent.mkdir(parents=True, exist_ok=True)
     EVIDENCE_OUT.write_text(json.dumps(out, indent=1) + "\n", encoding="utf-8", newline="\n")
@@ -855,18 +889,27 @@ def fixcheck() -> None:
 LRA_FLOOR_LU = 1.0
 
 
+def _hand_window(e: dict, field: str, tracks: int) -> list[float]:
+    """The hand-set window a measured widening starts from. Kept in the
+    entry's ``measured.hand_set`` block the first time the window is widened,
+    so re-applying with new measurements starts from the hand-set value
+    again, not from the last widening (which could then only grow)."""
+    m = e.setdefault("measured", {"tracks": tracks, "fields": [], "source": "genre_corpus_stats.json"})
+    return list(m.setdefault("hand_set", {}).setdefault(field, list(e[field])))
+
+
 def apply_dynamics() -> None:
     """Widen each genre's LRA window to the whole-track range measured on its
-    released tracks (``dynamics``): the floor drops to the 10th percentile
-    (never under LRA_FLOOR_LU) and the ceiling rises to the 90th - only ever
-    widened, so a hand-set window stricter than the corpus is kept where the
-    corpus agrees. On the corpus this took lra_too_compressed from firing on
-    52% of released tracks to 12.5%."""
-    rows = [json.loads(x) for f in _dyn_raw_files() for x in f.read_text(encoding="utf-8").splitlines()]
+    released tracks (``dynamics``, one row per song - ``_song_rows``): the
+    floor drops to the 10th percentile (never under LRA_FLOOR_LU) and the
+    ceiling rises to the 90th - only ever widened from the hand-set window
+    (``_hand_window``), so a hand-set window stricter than the corpus is kept
+    where the corpus agrees. On the corpus this took lra_too_compressed from
+    firing on 52% of released tracks to 12.5%."""
     by: dict[str, list[float]] = {}
-    for r in rows:
-        c = r["variants"].get("clean") or {}
-        if not c.get("error") and c.get("lufs", -99.0) > -60.0 and "lra" in c:
+    for r in _song_rows():
+        c = r["variants"]["clean"]
+        if "lra" in c:
             by.setdefault(r["genre"], []).append(float(c["lra"]))
     st = json.loads(STATS.read_text(encoding="utf-8"))
     doc = json.loads(TARGETS.read_text(encoding="utf-8"))
@@ -878,17 +921,17 @@ def apply_dynamics() -> None:
         p10, p90 = _pct(xs, 0.1), _pct(xs, 0.9)
         st["genres"].setdefault(e["id"], {})["lra_whole_track"] = {
             "n": len(xs), "p10": round(p10, 2), "median": round(statistics.median(xs), 2), "p90": round(p90, 2)}
-        lo, hi = e["lra_range"]
+        lo, hi = _hand_window(e, "lra_range", len(xs))
         new = [round(max(LRA_FLOOR_LU, min(lo, p10)), 1), round(max(hi, p90), 1)]
-        if new != [lo, hi]:
+        if new != e["lra_range"]:
             e["lra_range"] = new
             changed += 1
-        m = e.setdefault("measured", {"tracks": len(xs), "fields": [], "source": "genre_corpus_stats.json"})
+        m = e["measured"]
         if "lra_range" not in m["fields"]:
             m["fields"].append("lra_range")
-    STATS.write_text(json.dumps(st, indent=1) + "\n", encoding="utf-8")
+    STATS.write_text(json.dumps(st, indent=1) + chr(10), encoding="utf-8")
     TARGETS.write_text(json.dumps(doc, indent=2, ensure_ascii=False), encoding="utf-8", newline=chr(10))
-    print(f"lra_range widened for {changed} genres")
+    print(f"lra_range changed for {changed} genres")
 
 
 def apply_crest() -> None:
@@ -898,12 +941,11 @@ def apply_crest() -> None:
     above the higher of this and target + 3 dB (DynamicsRecommender), so the
     hand-set target can only be loosened where released music disagrees.
     The hand-set targets alone fired on 22% of released tracks and alarmed
-    on 10%."""
-    rows = _dyn_rows()
+    on 10%. One row per song (``_song_rows``)."""
     by: dict[str, list[float]] = {}
-    for r in rows:
-        c = r["variants"].get("clean") or {}
-        if not c.get("error") and c.get("lufs", -99.0) > -60.0 and "crest_factor_db" in c:
+    for r in _song_rows():
+        c = r["variants"]["clean"]
+        if "crest_factor_db" in c:
             by.setdefault(r["genre"], []).append(float(c["crest_factor_db"]))
     st = json.loads(STATS.read_text(encoding="utf-8"))
     doc = json.loads(TARGETS.read_text(encoding="utf-8"))
@@ -924,6 +966,238 @@ def apply_crest() -> None:
     STATS.write_text(json.dumps(st, indent=1) + chr(10), encoding="utf-8")
     TARGETS.write_text(json.dumps(doc, indent=2, ensure_ascii=False), encoding="utf-8", newline=chr(10))
     print(f"crest_factor_ceiling_db set for {changed} genres")
+
+
+#: OVH-5 bounds on the measured loudness window. The corpus can widen a
+#: genre's window toward what its releases measure, but not past these:
+#: * the floor never drops under LoudnessRecommender::kQuietChoiceFloorLufs
+#:   (-16 LUFS, the quietest mainstream normalisation reference). Under it a
+#:   master needs normalisation gain that peak-limited (Spotify) or
+#:   turn-down-only (YouTube) players do not give, which is a delivery fact,
+#:   not a genre norm - and the corpus is Creative Commons releases, many
+#:   self-released and never mastered to commercial loudness, so its 10th
+#:   percentile (down to -33 LUFS in funk) measures under-mastering, not the
+#:   genre. A hand-set floor already under -16 (cinematic, slowcore) is kept.
+#: * the ceiling never rises over -4 LUFS, the loudest hand-set ceiling and
+#:   the cap UserPreferenceModel puts on any window: the corpus's loudest
+#:   decile (up to +0.1 LUFS in jersey-club) is clipped lossy decodes, which
+#:   clipping_detected and over_compressed speak for.
+LUFS_FLOOR_BOUND = -16.0
+LUFS_CEILING_BOUND = -4.0
+
+
+def _song_rows() -> list[dict]:
+    """One clean whole-track row per song: the lossless original where one
+    was measured (it is the same song as its lossy copy, which would
+    otherwise count twice), else the lossy decode. Silent and failed rows
+    are dropped."""
+    lossy_of: dict[str, str] = {}
+    if (LOSSLESS / "manifest.json").exists():
+        for g, tracks in json.loads((LOSSLESS / "manifest.json").read_text(encoding="utf-8")).items():
+            for t in tracks:
+                if t.get("file") and t.get("lossy_file"):
+                    lossy_of[f"lossless:{g}/{t['file']}"] = f"lossy:{g}/{t['lossy_file']}"
+    songs: dict[str, dict] = {}
+    for r in sorted(_dyn_rows(), key=lambda r: r["key"]):
+        c = r["variants"].get("clean") or {}
+        if c.get("error") or c.get("lufs", -99.0) <= -60.0:
+            continue
+        song = lossy_of.get(r["key"], r["key"])
+        if song in songs and r.get("source") != "lossless":
+            continue
+        songs[song] = r
+    return [songs[k] for k in sorted(songs)]
+
+
+def apply_loudness() -> None:
+    """OVH-5: each genre's integrated-loudness window from the whole-track
+    loudness of its released tracks (``dynamics``, one row per song).
+
+    For every genre it writes ``lufs_whole_track`` (n, p10, median, p90) into
+    genre_corpus_stats.json; for a genre with at least MIN_TRACKS songs it
+    widens ``lufs_range`` the way ``apply_dynamics`` widens LRA - only ever
+    widened, so a hand-set window stricter than the corpus is kept where the
+    corpus agrees:
+
+        floor   = min(hand floor,   max(p10, LUFS_FLOOR_BOUND))
+        ceiling = max(hand ceiling, min(p90, LUFS_CEILING_BOUND))
+
+    Why widen: a window that calls a genre's typical release too quiet (37 of
+    113 genres' median release sat under its hand-set floor) teaches the user
+    to ignore the finding. Why only to the bounds: see LUFS_FLOOR_BOUND.
+    ``lufs_target`` is kept - it is where the Fix aims, and a corpus that is
+    quiet for reasons unrelated to the genre is no reason to aim quieter."""
+    by: dict[str, list[float]] = {}
+    for r in _song_rows():
+        by.setdefault(r["genre"], []).append(float(r["variants"]["clean"]["lufs"]))
+    st = json.loads(STATS.read_text(encoding="utf-8"))
+    doc = json.loads(TARGETS.read_text(encoding="utf-8"))
+    for g, xs in sorted(by.items()):
+        st["genres"].setdefault(g, {})["lufs_whole_track"] = {
+            "n": len(xs), "p10": round(_pct(xs, 0.1), 2), "median": round(statistics.median(xs), 2),
+            "p90": round(_pct(xs, 0.9), 2)}
+    changed = 0
+    for e in doc["genres"]:
+        xs = by.get(e["id"], [])
+        if len(xs) < MIN_TRACKS:
+            continue
+        lo, hi = _hand_window(e, "lufs_range", len(xs))
+        p10, p90 = _pct(xs, 0.1), _pct(xs, 0.9)
+        new = [round(min(lo, max(p10, LUFS_FLOOR_BOUND)), 1), round(max(hi, min(p90, LUFS_CEILING_BOUND)), 1)]
+        if new != e["lufs_range"]:
+            e["lufs_range"] = new
+            changed += 1
+        m = e["measured"]
+        if "lufs_range" not in m["fields"]:
+            m["fields"].append("lufs_range")
+    STATS.write_text(json.dumps(st, indent=1) + chr(10), encoding="utf-8")
+    TARGETS.write_text(json.dumps(doc, indent=2, ensure_ascii=False), encoding="utf-8", newline=chr(10))
+    print(f"lufs_range changed for {changed} genres")
+
+
+def _engine_constant(header: str, name: str) -> float:
+    """A float constant from a shared-core header, so the loudness regrade
+    below cannot drift from the engine."""
+    import re
+    text = (ROOT / "shared-core" / "include" / "khensu" / "recommendations" / header).read_text(encoding="utf-8")
+    m = re.search(rf"\b{name}\s*=\s*(-?[0-9.]+)f?\s*;", text)
+    if not m:
+        raise SystemExit(f"{name} not found in {header}")
+    return float(m.group(1))
+
+
+def loudness_findings(lufs: float, lufs_range: list[float]) -> dict[str, float]:
+    """lufs_too_quiet / lufs_too_loud and their severity for an integrated
+    loudness against a genre window - LoudnessRecommender::recommend with no
+    playback intent (the corpus runs grade with CreativeTarget{}), line for
+    line. Lets ``report`` regrade the measured loudness of every corpus track
+    against the current windows without another native pass: on the
+    2026-11-22 dynamics run it reproduces the engine's codes and severities
+    on all 1,461 graded tracks."""
+    silent = _engine_constant("LoudnessRecommender.h", "kSilentLufs")
+    floor = _engine_constant("LoudnessRecommender.h", "kQuietChoiceFloorLufs")
+    minor = _engine_constant("LoudnessRecommender.h", "kQuietChoiceSeverity")
+    scale = _engine_constant("RecommenderCommon.h", "kLufs")
+
+    def from_error(measured: float, threshold: float) -> float:
+        return min(100.0, max(0.0, 100.0 * abs(measured - threshold) / max(scale, 1e-4)))
+
+    out: dict[str, float] = {}
+    if lufs <= silent:
+        return out
+    lo, hi = float(lufs_range[0]), float(lufs_range[1])
+    if lufs > hi:
+        out["lufs_too_loud"] = from_error(lufs, hi)
+    if lufs < lo:
+        if lo <= floor:
+            out["lufs_too_quiet"] = from_error(lufs, lo)
+        elif lufs >= floor:
+            out["lufs_too_quiet"] = minor
+        else:
+            out["lufs_too_quiet"] = minor + (100.0 - minor) / 100.0 * from_error(lufs, floor)
+    return out
+
+
+LOUDNESS_CODES = ("lufs_too_quiet", "lufs_too_loud")
+
+
+def _regrade_loudness(rows: list[dict]) -> int:
+    """Replace the loudness findings of every measured variant with a
+    regrade against the current genre_targets.json (``loudness_findings``),
+    so a window changed after the native run is what the evidence reports.
+    Returns how many variants changed."""
+    windows = {e["id"]: e["lufs_range"] for e in json.loads(TARGETS.read_text(encoding="utf-8"))["genres"]}
+    changed = 0
+    for r in rows:
+        window = windows.get(r["genre"])
+        for v in r["variants"].values():
+            if window is None or v.get("error") or "lufs" not in v or "findings" not in v:
+                continue
+            new = loudness_findings(float(v["lufs"]), window)
+            old = {c: s for c, s in v.get("severity", {}).items() if c in LOUDNESS_CODES}
+            if set(new) == set(old) and all(abs(new[c] - old[c]) < 0.01 for c in new):
+                continue
+            changed += 1
+            v["findings"] = [c for c in v["findings"] if c not in LOUDNESS_CODES] + sorted(new)
+            if "severity" in v:
+                v["severity"] = {**{c: s for c, s in v["severity"].items() if c not in LOUDNESS_CODES}, **new}
+    return changed
+
+
+#: GenreDatabase::tiltCrestOverrides' crest targets, for an entry without one.
+_CREST_OVERRIDES = {"shoegaze": 8.0, "hyperpop": 6.0, "dream-pop": 10.0, "ambient": 14.0,
+                    "dark-ambient": 15.0, "lo-fi-hip-hop": 12.0, "lo-fi-beats": 12.0}
+
+
+def _crest_target(entry: dict) -> float:
+    """The crest target GenreDatabase::parseJson gives an entry: its own
+    value, else the built-in override, else 14 - 1.2 x the typical
+    compression ratio, clamped to 5..16 dB."""
+    if "crest_factor_target_db" in entry:
+        return float(entry["crest_factor_target_db"])
+    if entry.get("id") in _CREST_OVERRIDES:
+        return _CREST_OVERRIDES[entry["id"]]
+    return min(16.0, max(5.0, 14.0 - float(entry.get("compression_ratio_typical", 3.0)) * 1.2))
+
+
+def dynamics_findings(lra: float | None, crest: float, entry: dict) -> dict[str, float]:
+    """lra_too_compressed / lra_too_dynamic (LoudnessRecommender),
+    under_compressed and crest_above_genre_target (DynamicsRecommender) and
+    their severity for a whole-track LRA and crest factor against a genre
+    entry, line for line - so ``report`` can regrade them against windows
+    changed after the native run, as ``loudness_findings`` does for loudness.
+    ``lra`` None is an unmeasured LRA."""
+    lra_scale = _engine_constant("RecommenderCommon.h", "kLra")
+    crest_scale = _engine_constant("RecommenderCommon.h", "kCrest")
+    tol = _engine_constant("DynamicsRecommender.h", "kCrestToleranceDb")
+    under_ratio = _engine_constant("DynamicsRecommender.h", "kUnderCompressedLraRatio")
+
+    def sev(measured: float, threshold: float, scale: float) -> float:
+        return min(100.0, max(0.0, 100.0 * abs(measured - threshold) / max(scale, 1e-4)))
+
+    out: dict[str, float] = {}
+    lo, hi = (float(x) for x in entry.get("lra_range", (5.0, 10.0)))
+    target = _crest_target(entry)
+    over_compressed = crest < target - tol
+    if lra is not None:
+        if lra < lo:
+            out["lra_too_compressed"] = sev(lra, lo, lra_scale)
+        if lra > hi:
+            out["lra_too_dynamic"] = sev(lra, hi, lra_scale)
+        if not over_compressed and lra > hi * under_ratio:
+            out["under_compressed"] = sev(lra, hi * under_ratio, lra_scale)
+    ceiling = max(target + tol, float(entry.get("crest_factor_ceiling_db", 0.0)))
+    if crest > ceiling:
+        out["crest_above_genre_target"] = sev(crest, ceiling, crest_scale)
+    return out
+
+
+DYNAMICS_CODES = ("lra_too_compressed", "lra_too_dynamic", "under_compressed", "crest_above_genre_target")
+
+
+def _regrade_dynamics(rows: list[dict]) -> int:
+    """``_regrade_loudness`` for the LRA and crest findings
+    (``dynamics_findings``) against the current genre_targets.json.
+    Returns how many variants changed."""
+    entries = {e["id"]: e for e in json.loads(TARGETS.read_text(encoding="utf-8"))["genres"]}
+    changed = 0
+    for r in rows:
+        entry = entries.get(r["genre"])
+        for v in r["variants"].values():
+            if (entry is None or v.get("error") or "findings" not in v or "crest_factor_db" not in v
+                    or v.get("lufs", -99.0) <= _engine_constant("LoudnessRecommender.h", "kSilentLufs")):
+                continue
+            new = dynamics_findings(v.get("lra"), float(v["crest_factor_db"]), entry)
+            old = {c: s for c, s in v.get("severity", {}).items() if c in DYNAMICS_CODES}
+            if "severity" not in v:
+                old = {c: new.get(c, 0.0) for c in v["findings"] if c in DYNAMICS_CODES}
+            if set(new) == set(old) and all(abs(new[c] - old[c]) < 0.01 for c in new):
+                continue
+            changed += 1
+            v["findings"] = [c for c in v["findings"] if c not in DYNAMICS_CODES] + sorted(new)
+            if "severity" in v:
+                v["severity"] = {**{c: s for c, s in v["severity"].items() if c not in DYNAMICS_CODES}, **new}
+    return changed
 
 
 def _pct(xs: list[float], q: float) -> float:
@@ -1000,4 +1274,4 @@ def apply() -> None:
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "measure"
     {"measure": measure, "stats": stats, "apply": apply, "evidence": evidence, "report": report,
-     "dynamics": dynamics, "fixcheck": fixcheck, "apply_dynamics": apply_dynamics, "apply_crest": apply_crest, "full": full}[cmd]()
+     "dynamics": dynamics, "fixcheck": fixcheck, "apply_dynamics": apply_dynamics, "apply_crest": apply_crest, "apply_loudness": apply_loudness, "full": full}[cmd]()

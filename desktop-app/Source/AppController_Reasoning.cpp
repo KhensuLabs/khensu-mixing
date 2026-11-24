@@ -158,6 +158,41 @@ void AppController::showHealthMetricReasoning(int metricIndex)
     }
 }
 
+void AppController::showMetricExplanation(int gauge)
+{
+    if (!hasAnalysis()) return;
+    const auto& r = currentAnalysis();
+    switch (gauge) {
+    case 0: showHealthMetricReasoning(0); return; // loudness
+    case 3: showHealthMetricReasoning(1); return; // crest
+    case 4: showHealthMetricReasoning(3); return; // width / correlation
+    case 1: {
+        const float tp = r.loudness.true_peak_dbtp;
+        showMetricReasoning(tp > -98.0f ? "True peak measures " + juce::String(tp, 1) + " dBTP."
+                                        : juce::String("True peak was not measured on this file."),
+                            "True peak is the highest level of the waveform between samples (4x "
+                            "oversampled), the level a converter or a lossy codec actually reaches.",
+                            tp > -1.0f ? "Above -1 dBTP a lossy encode can clip. Lower the limiter ceiling to -1 dBTP."
+                                       : "Below -1 dBTP: safe for lossy encodes.",
+                            "A lower ceiling costs a little loudness; -1 dBTP is the usual delivery value.",
+                            "Re-run the analysis after changing the ceiling and check the true-peak tile.");
+        return;
+    }
+    case 2: {
+        showMetricReasoning(r.loudness.lra_measured ? "Loudness range is " + juce::String(r.loudness.lra, 1) + " LU."
+                                                    : juce::String("Loudness range needs a longer file to measure."),
+                            "Loudness range (EBU R128 LRA) is how far the short-term loudness moves "
+                            "between the quiet and loud parts of the track (10th to 95th percentile).",
+                            "Compare it with the dots: each one is a released track of the genre. Far "
+                            "below them is over-levelled; far above them sounds uneven on small speakers.",
+                            "Compression narrows the range; automation or a gentler limiter widens it.",
+                            "Re-run the analysis after the change and compare the tile's position in the dots.");
+        return;
+    }
+    default: return;
+    }
+}
+
 void AppController::showMetricDiff(const juce::String& title, std::vector<MetricDiffTable::Row> rows,
                                    const juce::String& labelA, const juce::String& labelB)
 {

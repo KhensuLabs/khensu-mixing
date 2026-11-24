@@ -28,7 +28,8 @@
 #include "ui/shared/IntakeProgressHud.h"
 #include "ui/shared/KhensuLookAndFeel.h"
 #include "ui/shared/KhensuTheme.h" // ThemeListener
-#include "ui/shared/MixHealthRollupStrip.h"
+#include "ui/shared/SessionStateStrip.h"
+#include "ui/shared/AbControlStrip.h"
 #include "ui/shared/PlaybackTransportBar.h"
 #include "ui/shared/RenderQueueStrip.h"
 #include "ui/shared/SessionHealthStrip.h"
@@ -159,6 +160,7 @@ class AppController final : public juce::Component,
     void removeReportModeListener(void* key) override;
     void showExplainer(const juce::String& title, const juce::String& category, const juce::String& description,
                        const juce::String& systemBrainFeatureId = {}) override;
+    void showMetricExplanation(int gauge) override;
     void showChainReasoning(const Recommendation& rec) override;
     void showMixMasterCard(int tabIdx) override;
     void showMetricDiff(const juce::String& title, std::vector<MetricDiffTable::Row> rows, const juce::String& labelA,
@@ -186,6 +188,7 @@ class AppController final : public juce::Component,
     void runCoreVerb(CoreVerb verb) override;
     void browseForAudioFile() override { runCoreVerb(CoreVerb::OpenFile); }
     void fixTopIssue() override { runCoreVerb(CoreVerb::FixTopIssue); }
+    void showIssue(const std::string& key) override;
     void toggleSessionHealthStrip() override;
     static bool textInputHasFocus();
     IAppController* commandAppController() override { return this; }
@@ -241,7 +244,10 @@ class AppController final : public juce::Component,
     std::unique_ptr<Midi2DeviceManager> midi2DeviceManager_;
     std::unique_ptr<MacroControlRouter> macroRouter_; // after midi2DeviceManager_: destroyed first
     std::unique_ptr<juce::DocumentWindow> macroMappingWindow_; // after macroRouter_: destroyed first
-    ReportMode reportMode_ = ReportMode::EngineerDetail;
+    // UI-10: the first view is calm - the verdict, the track and the one
+    // thing to fix. Engineer Detail (the per-stage strips, keyboard legend,
+    // completeness chip, the full card grid) is one click away.
+    ReportMode reportMode_ = ReportMode::ClientSummary;
     std::map<void*, std::function<void(ReportMode)>> reportModeListeners_;
     /// FEAT-6. Declared before the screens: their panels deregister on destruction.
     std::map<void*, std::function<void()>> projectsListeners_; ///< FEAT-6
@@ -357,7 +363,17 @@ class AppController final : public juce::Component,
 
     PlaybackService playback_{*this, sessions_, stems_, analysis_};
     PlaybackTransportBar playbackBar;
-    MixHealthRollupStrip mixHealthRollupStrip_;
+    /// VIZ-P1: the top strip - session state only (version, open issues, the
+    /// last fix check, target, analysis); measurements live in the tiles and
+    /// the transport.
+    SessionStateStrip sessionStateStrip_;
+    SessionStateStrip::State::Analysis analysisState_ = SessionStateStrip::State::Analysis::None;
+    void refreshSessionStateStrip();
+    /// VIZ-U2: on first run, the demo song opens as a sample session (once).
+    void openDemoSessionOnFirstRun();
+    /// UI-6: the first-class A | B control in the top strip (session-only).
+    AbControlStrip abControlStrip_{*this};
+    static constexpr int kTopStripH = 40;
     juce::TextButton reportModeButton_{TRANS("Engineer Detail")};
     juce::TooltipWindow tooltipWindow_{this}; // makes every setTooltip() in the app actually render
     // Worker pools, session epoch, shutdown flag: drained first thing in
@@ -384,7 +400,7 @@ class AppController final : public juce::Component,
     /// The reasoning overlay for any metric verdict, from plain-language fields.
     void showMetricReasoning(const juce::String& detected, const juce::String& cause, const juce::String& fix,
                              const juce::String& tradeOff, const juce::String& verify);
-    /// Reasoning for MixHealthRollupStrip chip `metricIndex` (0..4).
+    /// Reasoning for a core metric (0 loudness, 1 crest, 2 mids, 3 correlation, 4 clips).
     void showHealthMetricReasoning(int metricIndex);
     void hideMetricDiff();
     void hideAbxTrial();
@@ -406,12 +422,15 @@ class AppController final : public juce::Component,
     void finishScreenTransition() override { screenAnimator_.cancelAllAnimations(true); }
     void publishAnalysisForDiagnostics(const AnalysisResult& result) override;
     bool serviceSeenHealthy() const override { return updateCheckStarted_; }
+    int serviceStatusForDiagnostics() const override { return (int)lifecycle_.getPythonServiceStatus(); }
     bool startDiagnosticSession(const juce::File& audio) override;
     void deleteDiagnosticSession(std::function<void()> done) override;
     GateSnapshot gateSnapshot() const override;
     void fixTopIssueForDiagnostics(std::function<void(bool, juce::String)> done) override;
     std::vector<std::pair<juce::String, juce::Component*>> dashboardCardsForDiagnostics() override;
     int showExportStepForDiagnostics(int step) override;
+    int showMixMasterViewForDiagnostics(int view) override;
+    void playForDiagnostics(double fromSec, bool play) override;
     void dropIntoIntakeForDiagnostics(const juce::File& audio) override;
     bool intakeReadyForDiagnostics() const override;
 

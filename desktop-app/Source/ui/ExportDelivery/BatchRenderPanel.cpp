@@ -209,7 +209,7 @@ void BatchRenderPanel::run()
                 self->chooseButton_.setEnabled(true);
                 self->cancelButton_.setVisible(false);
                 self->resized();
-                self->statusLabel_.setText(TRANS("Error: ") + juce::String(result.error().message),
+                self->statusLabel_.setText(TRANS("Error: ") + serviceErrorLine(result.error()),
                                            juce::dontSendNotification);
                 self->refreshReadiness();
                 return;

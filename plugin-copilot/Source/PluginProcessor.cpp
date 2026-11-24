@@ -5,6 +5,7 @@ static_assert(khensu::copilot::ServiceClient::kShortRequestMs == khensu::KhensuC
 #include "PluginEditor.h"
 #include "PluginCrashHandler.h"
 #include <khensu/common/Version.h>
+#include <khensu/common/AppPaths.h>
 #if JucePlugin_Enable_ARA
 #include "ara/KhensuAraDocumentController.h"
 #endif
@@ -48,6 +49,21 @@ const juce::Identifier kStateVersionId{"khensuStateVersion"};
 const juce::Identifier kInstanceIdProp{"khensuInstanceId"};
 const juce::Identifier kMixRoleProp{"khensuMixRole"};
 const juce::Identifier kBoundSessionProp{"khensuBoundSession"}; // WF-8
+// State v3 (UI-8 / UI-9): editor view, program / preset, A/B snapshot.
+const juce::Identifier kViewCompactProp{"khensuViewCompact"};
+const juce::Identifier kViewSizeProp{"khensuViewSize"};
+const juce::Identifier kViewTabProp{"khensuViewTab"};
+const juce::Identifier kProgramProp{"khensuProgram"};
+const juce::Identifier kPresetNameProp{"khensuPresetName"};
+const juce::Identifier kSnapActiveProp{"khensuSnapActive"};
+const juce::Identifier kSnapOtherProp{"khensuSnapOther"};
+
+/// Same value from the host's point of view: a discrete (bool / choice)
+/// parameter compares by the step its normalised value lands on.
+bool sameDiscreteStep(juce::RangedAudioParameter& p, float a, float b)
+{
+    return p.convertFrom0to1(a) == p.convertFrom0to1(b);
+}
 
 bool isBlockFinite(const juce::AudioBuffer<float>& buffer) noexcept
 {
@@ -128,6 +144,14 @@ KhensuCopilotProcessor::KhensuCopilotProcessor()
     pLimThreshDb_ = apvts_.getRawParameterValue(ParamIDs::limThreshDb);
     pChainMix_ = apvts_.getRawParameterValue(ParamIDs::chainMix);
     pBypass_ = apvts_.getRawParameterValue(ParamIDs::bypass);
+    pEqType_ = apvts_.getRawParameterValue(ParamIDs::eqType);
+    pEq2Type_ = apvts_.getRawParameterValue(ParamIDs::eq2Type);
+    pEq3Type_ = apvts_.getRawParameterValue(ParamIDs::eq3Type);
+    pDeessOn_ = apvts_.getRawParameterValue(ParamIDs::deessOn);
+    pDeessFreq_ = apvts_.getRawParameterValue(ParamIDs::deessFreq);
+    pDeessThreshDb_ = apvts_.getRawParameterValue(ParamIDs::deessThreshDb);
+    pDeessRangeDb_ = apvts_.getRawParameterValue(ParamIDs::deessRangeDb);
+    pFixAmount_ = apvts_.getRawParameterValue(ParamIDs::fixAmount);
 
     // Any change to an AI-set parameter that did not come from setParamFromAI
     // clears its AI dot (PLG-20): typed values, arrow keys, host automation
@@ -141,6 +165,27 @@ KhensuCopilotProcessor::KhensuCopilotProcessor()
                 parameterToDspIndex_[static_cast<size_t>(index)] = i;
             parameter->addListener(this);
         }
+    // OVH-8: moving the Amount re-applies the live fix (on the message thread).
+    if (auto* amount = apvts_.getParameter(ParamIDs::fixAmount)) {
+        fixAmountParamIndex_ = amount->getParameterIndex();
+        amount->addListener(this);
+    }
+
+    // UI-9: what a preset / snapshot covers, and every factory preset as
+    // normalised values resolved now - setCurrentProgram never allocates.
+    for (const char* id : kDspParamIds)
+        if (auto* parameter = apvts_.getParameter(id)) snapshotParams_.push_back(parameter);
+    if (auto* mix = apvts_.getParameter(ParamIDs::chainMix)) snapshotParams_.push_back(mix);
+    for (const auto& preset : copilot::presets::factoryPresets()) {
+        std::vector<std::pair<juce::RangedAudioParameter*, float>> values;
+        for (auto* parameter : snapshotParams_) {
+            float normalised = parameter->getDefaultValue();
+            for (const auto& [id, plain] : preset.values)
+                if (parameter->getParameterID() == id) normalised = parameter->convertTo0to1(plain);
+            values.emplace_back(parameter, normalised);
+        }
+        programValues_.push_back(std::move(values));
+    }
 
     CopilotCorrectiveDsp::Parameters dspParams;
     dspParams.chainMix = pChainMix_;
@@ -172,6 +217,13 @@ KhensuCopilotProcessor::KhensuCopilotProcessor()
     dspParams.crossoverLowFreq = pCrossoverLowFreq_;
     dspParams.crossoverHighFreq = pCrossoverHighFreq_;
     dspParams.outGainDb = pOutGainDb_;
+    dspParams.eqType = pEqType_;
+    dspParams.eq2Type = pEq2Type_;
+    dspParams.eq3Type = pEq3Type_;
+    dspParams.deessOn = pDeessOn_;
+    dspParams.deessFreq = pDeessFreq_;
+    dspParams.deessThreshDb = pDeessThreshDb_;
+    dspParams.deessRangeDb = pDeessRangeDb_;
     correctiveDsp_.bindParameters(dspParams);
 
     // Transport sync: owned worker POSTs playhead + meter state at ~5 Hz so the
@@ -196,6 +248,7 @@ KhensuCopilotProcessor::~KhensuCopilotProcessor()
     closeAllHostedEditors();
     for (int i = 0; i < kNumDspParams; ++i)
         if (auto* parameter = apvts_.getParameter(kDspParamIds[static_cast<size_t>(i)])) parameter->removeListener(this);
+    if (auto* amount = apvts_.getParameter(ParamIDs::fixAmount)) amount->removeListener(this);
     {
         const std::lock_guard<std::mutex> lock(instanceIdRegistryMutex());
         const juce::ScopedLock sl(instanceIdLock_);
@@ -288,6 +341,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout KhensuCopilotProcessor::crea
     layout.add(std::make_unique<FloatParam>(ParamIDs::chainMix, "Chain Mix",
                                             juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 1.0f));
     layout.add(std::make_unique<BoolParam>(ParamIDs::bypass, "Global Bypass", false));
+
+    // ---- State v3 (OVH-8): appended, so a v2 project loads them at defaults.
+    const juce::StringArray shapes{"Bell", "Low shelf", "High shelf"};
+    layout.add(std::make_unique<juce::AudioParameterChoice>(ParamIDs::eqType, "EQ Shape", shapes, 0));
+    layout.add(std::make_unique<juce::AudioParameterChoice>(ParamIDs::eq2Type, "EQ2 Shape", shapes, 0));
+    layout.add(std::make_unique<juce::AudioParameterChoice>(ParamIDs::eq3Type, "EQ3 Shape", shapes, 0));
+    layout.add(std::make_unique<BoolParam>(ParamIDs::deessOn, "De-esser On", false));
+    layout.add(std::make_unique<FloatParam>(ParamIDs::deessFreq, "De-esser Freq", logRange(2000.0f, 12000.0f), 6500.0f,
+                                            logAttributes));
+    layout.add(std::make_unique<FloatParam>(ParamIDs::deessThreshDb, "De-esser Threshold",
+                                            juce::NormalisableRange<float>(-60.0f, 0.0f, 0.1f), -30.0f));
+    layout.add(std::make_unique<FloatParam>(ParamIDs::deessRangeDb, "De-esser Range",
+                                            juce::NormalisableRange<float>(0.0f, 24.0f, 0.1f), 6.0f));
+    // Percent text that round-trips exactly (clap-validator param-conversions).
+    const auto percentAttributes =
+        juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction([](float v, int) { return juce::String(juce::roundToInt(v * 100.0f)) + " %"; })
+            .withValueFromStringFunction([](const juce::String& t) { return t.getFloatValue() / 100.0f; });
+    layout.add(std::make_unique<FloatParam>(ParamIDs::fixAmount, "Fix Amount",
+                                            juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 1.0f, percentAttributes));
     return layout;
 }
 
@@ -303,6 +376,9 @@ bool KhensuCopilotProcessor::isBusesLayoutSupported(const BusesLayout& layouts) 
 
 void KhensuCopilotProcessor::setParamFromUi(const char* paramId, float plainValue)
 {
+    // UX2-6b: a programmatic write is never an undo step of its own; the
+    // caller's transaction (or the user's gesture around it) records it.
+    const copilot::ParamUndoHistory::ScopedSuppress quiet(undoHistory_);
     if (auto* p = apvts_.getParameter(paramId)) {
         p->beginChangeGesture();
         p->setValueNotifyingHost(p->convertTo0to1(plainValue));
@@ -337,11 +413,13 @@ void KhensuCopilotProcessor::setParamFromAI(const char* paramId, float plainValu
 
 void KhensuCopilotProcessor::applyAiParameterSet(const std::map<std::string, float>& params)
 {
+    const copilot::ParamUndoHistory::ScopedTransaction step(undoHistory_, TRANS("Apply chain"));
     // Stage switches the new set does not mention are turned off, so an
     // earlier Apply's stages do not stay on underneath this one (PLG-19).
-    static constexpr const char* kStageSwitches[] = {ParamIDs::hpfOn, ParamIDs::lpfOn,  ParamIDs::eqOn,
-                                                     ParamIDs::eq2On, ParamIDs::eq3On,  ParamIDs::compOn,
-                                                     ParamIDs::compMultiband, ParamIDs::limOn};
+    static constexpr const char* kStageSwitches[] = {ParamIDs::hpfOn,         ParamIDs::lpfOn,  ParamIDs::eqOn,
+                                                     ParamIDs::eq2On,         ParamIDs::eq3On,  ParamIDs::compOn,
+                                                     ParamIDs::compMultiband, ParamIDs::limOn,  ParamIDs::deessOn,
+                                                     ParamIDs::eqType,        ParamIDs::eq2Type, ParamIDs::eq3Type};
     for (const char* id : kStageSwitches)
         if (params.count(id) == 0) {
             setParamFromUi(id, 0.0f);
@@ -357,6 +435,7 @@ void KhensuCopilotProcessor::applyAiParameterSet(const std::map<std::string, flo
 void KhensuCopilotProcessor::adjustOutGainFromAi(float deltaDb)
 {
     if (!std::isfinite(deltaDb) || pOutGainDb_ == nullptr) return;
+    const copilot::ParamUndoHistory::ScopedTransaction step(undoHistory_, TRANS("Suggestion: output gain"));
     setParamFromAI(ParamIDs::outGainDb, pOutGainDb_->load(std::memory_order_relaxed) + deltaDb);
 }
 
@@ -364,6 +443,13 @@ void KhensuCopilotProcessor::parameterValueChanged(int parameterIndex, float)
 {
     // Any thread (host automation arrives on the audio thread): atomics and
     // a preallocated async message only.
+    if (parameterIndex == fixAmountParamIndex_ && fixAmountParamIndex_ >= 0) {
+        if (liveFixActive_.load(std::memory_order_acquire) && !restoringState_.load(std::memory_order_acquire)) {
+            pendingFixReapply_.store(true, std::memory_order_release);
+            triggerAsyncUpdate();
+        }
+        return;
+    }
     if (parameterIndex < 0 || parameterIndex >= static_cast<int>(parameterToDspIndex_.size())) return;
     const int idx = parameterToDspIndex_[static_cast<size_t>(parameterIndex)];
     if (idx >= 0 && setAiFlag(idx, false)) markNonParameterStateChanged();
@@ -419,6 +505,14 @@ void KhensuCopilotProcessor::migrateState(juce::ValueTree& state, int fromVersio
     // nothing existing changed shape. Future migrations go here, in order.
     if (fromVersion < 2) {
         // (no-op: v1 states simply lack the new properties)
+    }
+    // v2 -> v3: new parameters (EQ shapes, de-esser, fix amount) were
+    // APPENDED to the layout; a v2 state has no PARAM node for them, and
+    // replaceState gives each its default - bell bands and the de-esser off,
+    // which is exactly how v2 sounded. The editor view, program, preset name
+    // and snapshot properties are optional and default when absent.
+    if (fromVersion < 3) {
+        // (no-op)
     }
     state.setProperty(kStateVersionId, kStateVersion, nullptr);
 }
@@ -623,6 +717,16 @@ void KhensuCopilotProcessor::getStateInformation(juce::MemoryBlock& destData)
     }
     state.setProperty(kMixRoleProp, mixHubTap_.getRoleOverride(), nullptr);
     state.setProperty(kBoundSessionProp, juce::String(analysisController_.boundSessionId()), nullptr);
+    state.setProperty(kViewCompactProp, viewCompact_.load(std::memory_order_relaxed) ? 1 : 0, nullptr);
+    state.setProperty(kViewSizeProp, viewSize_.load(std::memory_order_relaxed), nullptr);
+    state.setProperty(kViewTabProp, viewTab_.load(std::memory_order_relaxed), nullptr);
+    state.setProperty(kProgramProp, currentProgram_.load(std::memory_order_relaxed), nullptr);
+    {
+        const juce::ScopedLock sl(presetLock_);
+        state.setProperty(kPresetNameProp, presetName_, nullptr);
+        state.setProperty(kSnapActiveProp, activeSnapshot_.load(std::memory_order_relaxed), nullptr);
+        state.setProperty(kSnapOtherProp, snapshotToString(otherSnapshot_), nullptr);
+    }
 
     // APVTS restores the full parent tree, so remove an older embedded
     // snapshot before writing the current hosted chain below.
@@ -642,10 +746,13 @@ void KhensuCopilotProcessor::getStateInformation(juce::MemoryBlock& destData)
     // any normalised value (0.55) and its own parameter cache keeps it - so a
     // reload left host and plugin disagreeing (pluginval strictness 10: "not
     // restored on setStateInformation"). Keep the exact raw values too.
+    // The same holds for choice parameters (EQ shapes, OVH-8).
     juce::StringArray boolRaw;
     for (auto* parameter : getParameters())
-        if (auto* boolParam = dynamic_cast<juce::AudioParameterBool*>(parameter))
-            boolRaw.add(boolParam->getParameterID() + "=" + juce::String((double)parameter->getValue(), 9));
+        if (dynamic_cast<juce::AudioParameterBool*>(parameter) != nullptr
+            || dynamic_cast<juce::AudioParameterChoice*>(parameter) != nullptr)
+            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter))
+                boolRaw.add(ranged->getParameterID() + "=" + juce::String((double)parameter->getValue(), 9));
     state.setProperty("khensuBoolRaw", boolRaw.joinIntoString(","), nullptr);
 
     // While an async restore is still in progress the live chain is
@@ -758,6 +865,7 @@ void KhensuCopilotProcessor::setStateInformation(const void* data, int sizeInByt
         juce::Logger::writeToLog("Khensu Copilot: ignored invalid state (" + rejection + ")");
         return;
     }
+    undoHistory_.requestClear(); // a restored project starts a new history
     {
         const juce::ScopedLock lock(stateRejectionLock_);
         lastStateRejection_.clear();
@@ -777,7 +885,23 @@ void KhensuCopilotProcessor::setStateInformation(const void* data, int sizeInByt
     adoptInstanceId(tree.getProperty(kInstanceIdProp).toString());
     mixHubTap_.setRoleOverride(tree.getProperty(kMixRoleProp).toString());
     analysisController_.setBoundSessionId(tree.getProperty(kBoundSessionProp).toString().toStdString());
-    for (const auto& id : {kStateVersionId, kInstanceIdProp, kMixRoleProp, kBoundSessionProp})
+    // v3 (UI-8 / UI-9): out-of-range values fall back to the defaults.
+    viewCompact_.store(static_cast<int>(tree.getProperty(kViewCompactProp, 0)) != 0, std::memory_order_relaxed);
+    viewSize_.store(juce::jlimit(0, 2, static_cast<int>(tree.getProperty(kViewSizeProp, 1))), std::memory_order_relaxed);
+    viewTab_.store(juce::jmax(0, static_cast<int>(tree.getProperty(kViewTabProp, 0))), std::memory_order_relaxed);
+    currentProgram_.store(juce::jlimit(0, getNumPrograms() - 1, static_cast<int>(tree.getProperty(kProgramProp, 0))),
+                          std::memory_order_relaxed);
+    {
+        const juce::ScopedLock sl(presetLock_);
+        presetName_ = tree.getProperty(kPresetNameProp).toString();
+        activeSnapshot_.store(juce::jlimit(0, 1, static_cast<int>(tree.getProperty(kSnapActiveProp, 0))),
+                              std::memory_order_relaxed);
+        otherSnapshot_ = snapshotFromString(tree.getProperty(kSnapOtherProp).toString());
+    }
+    // A loaded state is not the live fix's base any more.
+    liveFixActive_.store(false, std::memory_order_release);
+    for (const auto& id : {kStateVersionId, kInstanceIdProp, kMixRoleProp, kBoundSessionProp, kViewCompactProp,
+                           kViewSizeProp, kViewTabProp, kProgramProp, kPresetNameProp, kSnapActiveProp, kSnapOtherProp})
         tree.removeProperty(id, nullptr);
 
     std::vector<PersistedHostedPluginSlot> hostedSlots;
@@ -822,9 +946,11 @@ void KhensuCopilotProcessor::setStateInformation(const void* data, int sizeInByt
         const auto id = entry.upToFirstOccurrenceOf("=", false, false);
         const float raw = (float)entry.fromFirstOccurrenceOf("=", false, false).getDoubleValue();
         auto* parameter = apvts_.getParameter(id);
-        auto* boolParam = dynamic_cast<juce::AudioParameterBool*>(parameter);
-        if (boolParam == nullptr || !std::isfinite(raw) || raw < 0.0f || raw > 1.0f) continue;
-        if ((raw >= 0.5f) == boolParam->get() && raw != parameter->getValue()) parameter->setValueNotifyingHost(raw);
+        const bool discrete = dynamic_cast<juce::AudioParameterBool*>(parameter) != nullptr
+                              || dynamic_cast<juce::AudioParameterChoice*>(parameter) != nullptr;
+        if (!discrete || !std::isfinite(raw) || raw < 0.0f || raw > 1.0f) continue;
+        if (sameDiscreteStep(*parameter, raw, parameter->getValue()) && raw != parameter->getValue())
+            parameter->setValueNotifyingHost(raw);
     }
 
     // AI-set flags last: restoring the values above fires the parameter
@@ -1159,6 +1285,8 @@ void KhensuCopilotProcessor::handleAsyncUpdate()
 {
     // A hosted instance changed its latency after it was inserted.
     updateLatency();
+    // OVH-8: fix_amount moved (UI, host automation) - re-apply the live fix.
+    if (pendingFixReapply_.exchange(false, std::memory_order_acq_rel)) reapplyLiveFix();
     // A non-parameter change made off the message thread (PLG-05).
     if (pendingNonParameterChange_.exchange(false, std::memory_order_acq_rel))
         updateHostDisplay(ChangeDetails().withNonParameterStateChanged(true));
@@ -1252,6 +1380,7 @@ void KhensuCopilotProcessor::tickFixAutomation()
 
 bool KhensuCopilotProcessor::GestureSink::beginGesture(const std::string& paramId)
 {
+    const copilot::ParamUndoHistory::ScopedSuppress quiet(owner.undoHistory_);
     if (auto* parameter = owner.apvts_.getParameter(juce::String(paramId))) {
         parameter->beginChangeGesture();
         return true;
@@ -1261,13 +1390,332 @@ bool KhensuCopilotProcessor::GestureSink::beginGesture(const std::string& paramI
 
 void KhensuCopilotProcessor::GestureSink::setValue(const std::string& paramId, float plainValue)
 {
+    const copilot::ParamUndoHistory::ScopedSuppress quiet(owner.undoHistory_);
     if (auto* parameter = owner.apvts_.getParameter(juce::String(paramId)))
         parameter->setValueNotifyingHost(parameter->convertTo0to1(plainValue));
 }
 
 void KhensuCopilotProcessor::GestureSink::endGesture(const std::string& paramId)
 {
+    const copilot::ParamUndoHistory::ScopedSuppress quiet(owner.undoHistory_);
     if (auto* parameter = owner.apvts_.getParameter(juce::String(paramId))) parameter->endChangeGesture();
+}
+
+// ---- OVH-8: the live top fix -------------------------------------------------------
+
+float KhensuCopilotProcessor::readPlain(const char* paramId) const noexcept
+{
+    if (auto* raw = apvts_.getRawParameterValue(paramId)) return raw->load(std::memory_order_relaxed);
+    return 0.0f;
+}
+
+juce::String KhensuCopilotProcessor::autoApplyBlockReason(const Recommendation& rec)
+{
+    if (rec.safe_to_auto_apply) return {};
+    juce::String why = TRANS("Not applied automatically: this finding needs your judgement");
+    if (!rec.auto_apply_rationale.empty())
+        why << " (" << juce::String(juce::CharPointer_UTF8(rec.auto_apply_rationale.c_str())) << ")";
+    else if (rec.is_taste_decision)
+        why << " (" << TRANS("a taste decision") << ")";
+    return why + ".";
+}
+
+KhensuCopilotProcessor::LiveFixResult KhensuCopilotProcessor::applyLiveFix(const Recommendation& rec, bool requireSafe)
+{
+    LiveFixResult result;
+    // Re-applying the same finding keeps its original base, so pressing
+    // Apply twice does not stack the fix on itself.
+    const bool sameFix = liveFixActive_.load(std::memory_order_acquire) && liveFix_.id == rec.id && !rec.id.empty();
+    std::map<std::string, float> base = sameFix ? liveFixBase_ : std::map<std::string, float>{};
+    if (!sameFix)
+        for (const char* id : kDspParamIds) base[id] = readPlain(id);
+    const auto baseOf = [&base](const std::string& id) {
+        const auto it = base.find(id);
+        return it != base.end() ? it->second : 0.0f;
+    };
+    result.mapped = mixerchain::mapRecommendationToDsp(rec, getFixAmount(), baseOf);
+    if (requireSafe) {
+        result.blockedReason = autoApplyBlockReason(rec);
+        if (result.blockedReason.isNotEmpty()) return result;
+    }
+    if (result.mapped.empty()) {
+        result.blockedReason = TRANS("Nothing in this fix maps to the built-in chain.");
+        return result;
+    }
+    const auto fixId = rec.id;
+    const copilot::ParamUndoHistory::ScopedTransaction step(
+        undoHistory_, TRANS("Apply top fix") + " " + juce::String(juce::roundToInt(getFixAmount() * 100.0f)) + " %",
+        [this, fixId] {
+            if (getLiveFixId() == fixId) clearLiveFix();
+        });
+    liveFix_ = rec;
+    liveFixBase_ = std::move(base);
+    liveFixActive_.store(true, std::memory_order_release);
+    reapplyLiveFix();
+    result.applied = true;
+    return result;
+}
+
+void KhensuCopilotProcessor::reapplyLiveFix()
+{
+    // Follows fix_amount (a gesture or host automation): not a step itself.
+    const copilot::ParamUndoHistory::ScopedSuppress quiet(undoHistory_);
+    if (!liveFixActive_.load(std::memory_order_acquire)) return;
+    const auto baseOf = [this](const std::string& id) {
+        const auto it = liveFixBase_.find(id);
+        return it != liveFixBase_.end() ? it->second : 0.0f;
+    };
+    const float amount = getFixAmount();
+    if (amount < 0.005f) {
+        // Amount 0: the parameters the fix touches go back to before it.
+        for (const auto& [id, value] : mixerchain::mapRecommendationToDsp(liveFix_, 1.0f, baseOf).values) {
+            juce::ignoreUnused(value);
+            setParamFromUi(id.c_str(), baseOf(id));
+            clearAiSet(id.c_str());
+        }
+        return;
+    }
+    for (const auto& [id, value] : mixerchain::mapRecommendationToDsp(liveFix_, amount, baseOf).values)
+        if (std::abs(readPlain(id.c_str()) - value) > 1.0e-5f || !isAiSet(id.c_str())) setParamFromAI(id.c_str(), value);
+}
+
+void KhensuCopilotProcessor::clearLiveFix()
+{
+    liveFixActive_.store(false, std::memory_order_release);
+    pendingFixReapply_.store(false, std::memory_order_release);
+}
+
+std::string KhensuCopilotProcessor::getLiveFixId() const
+{
+    return liveFixActive_.load(std::memory_order_acquire) ? liveFix_.id : std::string();
+}
+
+// ---- UI-9: programs, user presets, A/B snapshots -----------------------------------
+
+void KhensuCopilotProcessor::setCurrentProgram(int index)
+{
+    if (index < 0 || index >= static_cast<int>(programValues_.size())) return;
+    currentProgram_.store(index, std::memory_order_relaxed);
+    for (const auto& [parameter, normalised] : programValues_[static_cast<size_t>(index)])
+        if (parameter->getValue() != normalised) parameter->setValueNotifyingHost(normalised);
+    // The name is shown by the editor; a juce::String assignment may
+    // allocate, so only the message thread writes it.
+    if (juce::MessageManager::existsAndIsCurrentThread()) {
+        const juce::ScopedLock sl(presetLock_);
+        presetName_ = getProgramName(index);
+    }
+}
+
+const juce::String KhensuCopilotProcessor::getProgramName(int index)
+{
+    const auto& presets = copilot::presets::factoryPresets();
+    if (index < 0 || index >= static_cast<int>(presets.size())) return {};
+    return presets[static_cast<size_t>(index)].name;
+}
+
+juce::String KhensuCopilotProcessor::getCurrentPresetName() const
+{
+    const juce::ScopedLock sl(presetLock_);
+    return presetName_;
+}
+
+juce::File KhensuCopilotProcessor::getUserPresetDirectory() const
+{
+    if (userPresetDirOverride_ != juce::File()) return userPresetDirOverride_;
+    return khensu::presets::presetsDirectory();
+}
+
+juce::File KhensuCopilotProcessor::getLegacyUserPresetDirectory() const
+{
+    if (legacyPresetDirOverride_ != juce::File()) return legacyPresetDirOverride_;
+    return juce::File(juce::String(juce::CharPointer_UTF8(AppPaths::dataDirectory().c_str())))
+        .getChildFile("Copilot Presets");
+}
+
+std::vector<khensu::presets::ListedPreset> KhensuCopilotProcessor::listUserPresets() const
+{
+    const auto dir = getUserPresetDirectory();
+    copilot::presets::migrateLegacyUserPresets(getLegacyUserPresetDirectory(), dir);
+    return khensu::presets::listPresets(dir);
+}
+
+void KhensuCopilotProcessor::loadProgramFromUi(int index)
+{
+    if (index < 0 || index >= getNumPrograms()) return;
+    const copilot::ParamUndoHistory::ScopedTransaction step(undoHistory_,
+                                                           TRANS("Preset:") + " " + getProgramName(index));
+    setCurrentProgram(index);
+}
+
+bool KhensuCopilotProcessor::saveUserPreset(const juce::String& name, juce::String& error)
+{
+    if (name.trim().isEmpty()) {
+        error = TRANS("A preset needs a name.");
+        return false;
+    }
+    const auto dir = getUserPresetDirectory();
+    khensu::presets::ChainPreset preset;
+    // Saving over a preset of the same name keeps what this plugin does not
+    // own: its author, when it was made and the desktop rack's stages.
+    if (auto existing = khensu::presets::loadPreset(khensu::presets::fileFor(dir, name))) {
+        preset.author = existing->author;
+        preset.created = existing->created;
+        preset.stages = existing->stages;
+    }
+    preset.name = name.trim();
+    preset.source = "Khensu Copilot";
+    for (auto* parameter : snapshotParams_)
+        preset.params[parameter->getParameterID()] = parameter->convertFrom0to1(parameter->getValue());
+    juce::File written;
+    if (!khensu::presets::save(preset, dir, written, error)) return false;
+    {
+        const juce::ScopedLock sl(presetLock_);
+        presetName_ = preset.name;
+    }
+    markNonParameterStateChanged();
+    return true;
+}
+
+bool KhensuCopilotProcessor::loadUserPreset(const juce::File& file, juce::String& error)
+{
+    auto preset = khensu::presets::loadPreset(file, &error);
+    if (!preset.has_value()) return false;
+    bool namesAny = false;
+    for (auto* parameter : snapshotParams_)
+        if (preset->params.count(parameter->getParameterID()) != 0) namesAny = true;
+    if (!namesAny) {
+        // A desktop-only chain: nothing here for the built-in DSP.
+        error = TRANS("The preset holds no parameters for the built-in chain.");
+        return false;
+    }
+    const copilot::ParamUndoHistory::ScopedTransaction step(undoHistory_, TRANS("Preset:") + " " + preset->name);
+    for (auto* parameter : snapshotParams_) {
+        const auto it = preset->params.find(parameter->getParameterID());
+        const float normalised =
+            it != preset->params.end() ? parameter->convertTo0to1(it->second) : parameter->getDefaultValue();
+        if (parameter->getValue() == normalised) continue;
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(normalised);
+        parameter->endChangeGesture();
+    }
+    {
+        const juce::ScopedLock sl(presetLock_);
+        presetName_ = preset->name;
+    }
+    markNonParameterStateChanged();
+    return true;
+}
+
+std::vector<float> KhensuCopilotProcessor::captureSnapshot() const
+{
+    std::vector<float> values;
+    values.reserve(snapshotParams_.size());
+    for (auto* parameter : snapshotParams_) values.push_back(parameter->convertFrom0to1(parameter->getValue()));
+    return values;
+}
+
+void KhensuCopilotProcessor::loadSnapshot(const std::vector<float>& plainValues)
+{
+    if (plainValues.size() != snapshotParams_.size()) return;
+    for (size_t i = 0; i < snapshotParams_.size(); ++i) {
+        auto* parameter = snapshotParams_[i];
+        const float normalised = parameter->convertTo0to1(plainValues[i]);
+        if (parameter->getValue() == normalised) continue;
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(normalised);
+        parameter->endChangeGesture();
+    }
+}
+
+void KhensuCopilotProcessor::switchSnapshot(int slot)
+{
+    slot = juce::jlimit(0, 1, slot);
+    const int from = activeSnapshot_.load(std::memory_order_relaxed);
+    if (slot == from) return;
+    // UX2-6b: one step; undo switches back, which restores both sides.
+    undoHistory_.performCustom(TRANS("Snapshot") + " " + (slot == 0 ? "A" : "B"),
+                               [this, slot] { switchSnapshotNow(slot); },
+                               [this, from] { switchSnapshotNow(from); });
+}
+
+void KhensuCopilotProcessor::switchSnapshotNow(int slot)
+{
+    slot = juce::jlimit(0, 1, slot);
+    if (slot == activeSnapshot_.load(std::memory_order_relaxed)) return;
+    auto live = captureSnapshot();
+    std::vector<float> other;
+    {
+        const juce::ScopedLock sl(presetLock_);
+        // The other side starts as a copy of this one the first time.
+        other = otherSnapshot_.size() == live.size() ? otherSnapshot_ : live;
+        otherSnapshot_ = live;
+    }
+    activeSnapshot_.store(slot, std::memory_order_relaxed);
+    clearLiveFix(); // the live fix's base belongs to the side it was applied on
+    loadSnapshot(other);
+    markNonParameterStateChanged();
+}
+
+void KhensuCopilotProcessor::copyActiveSnapshotToOther()
+{
+    auto live = captureSnapshot();
+    {
+        const juce::ScopedLock sl(presetLock_);
+        otherSnapshot_ = std::move(live);
+    }
+    markNonParameterStateChanged();
+}
+
+juce::String KhensuCopilotProcessor::snapshotToString(const std::vector<float>& plainValues) const
+{
+    // id=value pairs in parameter order; 9 decimals round-trip a float
+    // exactly, so a save -> load -> save is byte-stable.
+    if (plainValues.size() != snapshotParams_.size()) return {};
+    juce::StringArray parts;
+    for (size_t i = 0; i < plainValues.size(); ++i)
+        parts.add(snapshotParams_[i]->getParameterID() + "=" + juce::String(static_cast<double>(plainValues[i]), 9));
+    return parts.joinIntoString(",");
+}
+
+std::vector<float> KhensuCopilotProcessor::snapshotFromString(const juce::String& text) const
+{
+    if (text.isEmpty()) return {};
+    std::vector<float> values;
+    values.reserve(snapshotParams_.size());
+    for (auto* parameter : snapshotParams_) values.push_back(parameter->convertFrom0to1(parameter->getDefaultValue()));
+    for (const auto& entry : juce::StringArray::fromTokens(text, ",", "")) {
+        const auto id = entry.upToFirstOccurrenceOf("=", false, false);
+        const auto valueText = entry.fromFirstOccurrenceOf("=", false, false);
+        const float value = valueText.getFloatValue();
+        if (!std::isfinite(value)) continue;
+        for (size_t i = 0; i < snapshotParams_.size(); ++i)
+            if (snapshotParams_[i]->getParameterID() == id) {
+                const auto range = snapshotParams_[i]->getNormalisableRange();
+                values[i] = juce::jlimit(range.start, range.end, value);
+            }
+    }
+    return values;
+}
+
+// ---- UI-8: editor view --------------------------------------------------------------
+
+KhensuCopilotProcessor::EditorViewState KhensuCopilotProcessor::getEditorViewState() const noexcept
+{
+    EditorViewState state;
+    state.compact = viewCompact_.load(std::memory_order_relaxed);
+    state.size = static_cast<ViewSize>(juce::jlimit(0, 2, viewSize_.load(std::memory_order_relaxed)));
+    state.tab = viewTab_.load(std::memory_order_relaxed);
+    return state;
+}
+
+void KhensuCopilotProcessor::setEditorViewState(const EditorViewState& state)
+{
+    if (state == getEditorViewState()) return;
+    viewCompact_.store(state.compact, std::memory_order_relaxed);
+    viewSize_.store(static_cast<int>(state.size), std::memory_order_relaxed);
+    viewTab_.store(juce::jmax(0, state.tab), std::memory_order_relaxed);
+    // Not marked as a project edit: switching a tab must not make the host
+    // ask to save. The view is saved with the next save.
 }
 
 } // namespace khensu

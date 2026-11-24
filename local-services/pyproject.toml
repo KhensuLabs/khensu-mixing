@@ -1,6 +1,6 @@
 [project]
 name = "khensu-services"
-version = "1.0.2"
+version = "1.0.4"
 description = "Khensu Mixing Suite — Local Analysis Service"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.11"

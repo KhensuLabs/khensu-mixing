@@ -1,5 +1,10 @@
 // desktop-app/Source/ui/ExportDelivery/ReportPanel.cpp
 #include "ReportPanel.h"
+#include "VisualReport.h"
+#include "../../analysis/ResultDerivedData.h"
+#include "../shared/PanelRunState.h"
+#include "../shared/TimelineCache.h"
+#include <khensu/targets/GenreDatabase.h>
 #include "../shared/PanelRunState.h"
 #include "../shared/KhensuTheme.h"
 #include "../../IAppController.h"
@@ -90,6 +95,12 @@ ReportPanel::ReportPanel(IAppController& c) : PanelCard(c, "REPORT")
     savePdfButton_.onClick = [this]() { onSavePdf(); };
     addAndMakeVisible(savePdfButton_);
 
+    visualButton_.setTooltip(TRANS("Save one HTML page with the charts - tonal balance against released tracks, the "
+                                   "measurements, loudness over time, what the current version changed and the open "
+                                   "findings - to send to a client or a collaborator"));
+    visualButton_.onClick = [this]() { onSaveVisual(); };
+    addAndMakeVisible(visualButton_);
+
     pdfStatusLabel_.setText("", juce::dontSendNotification);
     pdfStatusLabel_.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
     addAndMakeVisible(pdfStatusLabel_);
@@ -133,6 +144,8 @@ void ReportPanel::resized()
     b.removeFromTop(gap);
 
     savePdfButton_.setBounds(b.removeFromTop(rowH));
+    b.removeFromTop(gap);
+    visualButton_.setBounds(b.removeFromTop(rowH));
     b.removeFromTop(2);
 
     pdfStatusLabel_.setBounds(b.removeFromTop(16));
@@ -159,6 +172,87 @@ void ReportPanel::onChooseOutput()
             self->outputPathDisplay_.setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
         }
     });
+}
+
+void ReportPanel::onSaveVisual()
+{
+    if (!controller_.hasActiveSession() || !controller_.hasAnalysis()) {
+        statusLabel_.setText(TRANS("Analyse a track first."), juce::dontSendNotification);
+        return;
+    }
+    juce::String base = "khensu_visual_report";
+    if (const auto* s = controller_.getActiveSession()) base = juce::File::createLegalFileName(juce::String(s->name).trim()) + "_visual";
+    chooser_ = std::make_unique<juce::FileChooser>(
+        TRANS("Save Visual Report As..."),
+        juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile(base + ".html"), "*.html");
+    juce::Component::SafePointer<ReportPanel> self(this);
+    chooser_->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [self](const juce::FileChooser& fc) {
+                              if (self != nullptr && fc.getResult() != juce::File{}) self->writeVisual(fc.getResult());
+                          });
+}
+
+void ReportPanel::writeVisual(const juce::File& file)
+{
+    // Everything the message thread owns is read here; the decode and the
+    // page are built on a worker.
+    auto in = std::make_shared<visual_report::Input>();
+    const auto* session = controller_.getActiveSession();
+    in->trackName = session != nullptr ? juce::String(session->name) : TRANS("Track");
+    std::optional<GenreEntry> genre;
+    if (session != nullptr) genre = controller_.genreDatabase().findById(session->target.primary_genre);
+    if (genre) {
+        in->genreName = juce::String(genre->name.empty() ? genre->id : genre->name);
+        in->lufsWindow = std::make_pair(genre->lufs_range_min, genre->lufs_range_max);
+    }
+    in->generatedAt = juce::Time::getCurrentTime().formatted("%Y-%m-%d %H:%M");
+    const auto& derived = controller_.analysis().derivedResultData();
+    in->scorecard = derived.scorecard;
+    if (const auto* spread = controller_.analysis().genreSpread().find(genre ? genre->id : std::string()))
+        in->scorecardSpread = spread->scorecard;
+    const auto issues = controller_.issues().list();
+    in->hero = hero_spectrum::build(controller_.currentAnalysis(), genre, issues, controller_.analysis().currentVerification(),
+                                    &controller_.analysis().genreSpread());
+    if (controller_.currentAnalysis().section_analysis) in->sections = controller_.currentAnalysis().section_analysis->sections;
+    for (const auto& i : issues) {
+        if (i.settled() || i.rec.type == RecommendationType::Strength) continue;
+        visual_report::Finding f;
+        f.title = juce::String(juce::CharPointer_UTF8((i.rec.what.empty() ? i.rec.suggested_action : i.rec.what).c_str()));
+        f.action = juce::String(juce::CharPointer_UTF8(i.rec.suggested_action.c_str()));
+        f.severity = i.rec.severity;
+        if (i.rec.time_range) f.moment = std::make_pair(static_cast<double>(i.rec.time_range->start_sec),
+                                                       static_cast<double>(i.rec.time_range->end_sec));
+        in->findings.push_back(f);
+    }
+    std::sort(in->findings.begin(), in->findings.end(), [](const auto& a, const auto& b) { return a.severity > b.severity; });
+    const auto original = controller_.activeSourcePath();
+    const auto current = controller_.renders().currentRenderPath();
+    if (current.isNotEmpty() && current != original) in->versionName = juce::File(current).getFileNameWithoutExtension();
+    statusLabel_.setText(TRANS("Writing the visual report..."), juce::dontSendNotification);
+    visualButton_.setEnabled(false);
+    fetchQuietly(
+        *this, controller_,
+        [in, file, original, current] {
+            const auto tl = timeline_cache::measure(current.isNotEmpty() ? current : original);
+            in->timeline = tl.get();
+            fix_difference::Result diff;
+            if (current.isNotEmpty() && current != original)
+                if (const auto a = timeline_cache::measure(original); a != nullptr && tl != nullptr)
+                    diff = fix_difference::compute(*a, *tl);
+            in->difference = diff.empty() ? nullptr : &diff;
+            const bool ok = file.replaceWithText(visual_report::buildHtml(*in), false, false, "\n");
+            in->timeline = nullptr;
+            in->difference = nullptr;
+            return ok;
+        },
+        [file](ReportPanel& self, bool ok) {
+            self.statusLabel_.setText(ok ? TRANS("Visual report saved:") + " " + file.getFileName()
+                                         : TRANS("The visual report could not be written."),
+                                      juce::dontSendNotification);
+            if (ok) file.startAsProcess();
+        },
+        [](ReportPanel& self) { self.visualButton_.setEnabled(true); }, true);
 }
 
 void ReportPanel::onGenerate()

@@ -46,6 +46,11 @@ service** (also in the command palette, `Ctrl+K`).
 
 On a Mac, push-to-talk voice commands ask for the microphone the first time.
 
+The first time Khensu opens, it loads a **demo song** - a 3:44 piece Khensu
+makes itself, with real sections and a few problems for the analysis to
+find - so the screens are full from the start. A notice says what it is;
+load your own track with **Open** (`Ctrl+O`) whenever you like.
+
 ### What you need
 Any WAV, AIFF, FLAC or MP3 mix or master. Stereo is the main case; 5.1, 7.1
 and 7.1.4 (and ADM BWF) are supported by the immersive checks.
@@ -60,7 +65,10 @@ and 7.1.4 (and ADM BWF) are supported by the immersive checks.
    clipping) appear within seconds, marked provisional; findings and grades
    appear when the full analysis is done.
 3. **Fix** from the Issues screen: **Fix top issue** (`F`), or **Fix** on any
-   row that has a one-click fix.
+   row that has a one-click fix. The spectrum above the list shows each
+   finding where it lives; the selected row says how often its fix cleared
+   the problem on released tracks, sets the **Amount**, and **Preview**
+   lets you hear the fix as B before **Keep** makes it a version.
 4. **Check** it worked: Khensu re-analyses the fixed version and marks each
    finding resolved, improved, unchanged, worse or new.
 5. **Compare** with `B` (loudness-matched A/B) and **Export** (`Ctrl+E`).
@@ -71,7 +79,8 @@ and 7.1.4 (and ADM BWF) are supported by the immersive checks.
 
 The sidebar lists the workflow screens (Intake, Issues, Analysis, Mix /
 Master, Vocal, Export), then the tools (Copilot, Provenance & Source,
-References), then Help and Settings. Each screen's header names it, says what
+References), then Help and Settings. Its top block shows the open track, its
+genre and its readiness score. Each screen's header names it, says what
 it is for and holds its main action. Screens that need a track show **Load a
 track...** until one is open.
 
@@ -85,6 +94,12 @@ track...** until one is open.
   **Advanced**.
 
 ### ✅ Issues - *every finding in one queue*
+- **Fix only in...** (a finding's ... menu) renders its fix in one section -
+  "fix the chorus only" - crossfaded in and out; the rest of the track is left
+  as it is.
+- While a fixed version is current, **What the current version changed**
+  shows it measured: the difference spectrum and the difference in loudness
+  over time. Toggling A/B glides the spectrum between the two versions.
 - Findings sorted by severity (red severe, amber moderate, blue minor).
 - **Fix** renders the finding's fix from the current version, through the
   safety gates; fixes stack. **Mark done** if you fixed it yourself;
@@ -95,14 +110,71 @@ track...** until one is open.
   loops each region the fix altered; an improved finding offers **Stronger**
   or **Gentler**.
 - **Fix top issue** (`F`) fixes the first fixable finding.
+- **Why?** also says how the finding behaves on released music: how often
+  it fires on tracks of its own genre, how often it catches the fault it
+  names, how often its Fix clears it and which findings that Fix may raise
+  in turn. The whole benchmark is `resources/calibration/BENCHMARK.md`.
+- The genre's loudness window comes partly from released tracks of that
+  genre: a master as quiet as its genre's quieter releases is not flagged,
+  down to -16 LUFS.
 
 ### 📊 Analysis - *what the analysis found, worst first*
-- The **verdict** with the master-ready score and the top finding.
-- **Readiness** (score bands) and **Mix Craft** (per-category scores) cards.
+- The **verdict**: one **Readiness** score (0-100) with its band, the counts
+  of severe / moderate / minor findings and strengths, and **Start here** - the
+  one thing to fix. Its button fixes exactly that issue (or opens the issue
+  list when nothing can be fixed in one click).
+  A severe finding caps the score at 64 (a moderate one at 89), so "Near
+  target" never sits beside a severe issue; the line under the score then
+  says why ("Capped by 2 severe issues - 86 without them").
+- Under it, the **spectrum** of the track against where **released tracks of
+  the genre** sit: the shaded bands are their middle 50 % and 80 %, the dashed
+  line their median. Where your track leaves the middle half, its line turns
+  red (more energy than released tracks) or blue (less). Every finding is
+  drawn where it lives; click a marker to open it on the Issues screen. Move
+  the pointer over the curve to read the frequency, your level and the
+  released tracks' range there. A reference track, when the session has one,
+  is the violet line.
+- Under the spectrum, two rows: the **measurements** (loudness, true peak,
+  LRA, crest, width) - each with a strip of dots, one per released track of
+  the genre, your track marked, and a line such as "Louder than 92 % of
+  released Glitch Hop"; click one to have it explained - and the **Top
+  findings** that have no frequency (loudness, DC offset, hooks...), worst
+  first. A value the file is too short to measure reads "-", never a red number.
+- **Where in the song**: one time axis for the sections, the waveform,
+  short-term and momentary loudness (with the genre's window and every
+  true-peak over -1 dBTP marked where it happens), the spectrogram and the
+  findings that happen at a moment. Click to play from there; click a finding
+  for **Play this moment**. Scroll to zoom, drag to pan, double-click for the
+  whole track. With a fixed version current, the original's loudness is the
+  dashed line; otherwise the reference's.
+- **Readiness breakdown** (Mix Craft): a row per category the score is built
+  from - your score as a dot against the band where released tracks of the
+  genre score - with the weighting it is scored under. The saved readiness
+  (project board, trends) is the number on screen.
+- **Spectrogram** (Tone card): the whole song as level over time and
+  frequency in fine detail - brighter is louder, 0 dB is the song's loudest
+  point and the button beside it sets how far down the colours reach (60, 84
+  or 108 dB). Sections run along the top, findings mark their frequency range
+  at the left edge, and the panel at the right is the spectrum at the cursor
+  (or the playhead) against the song's average (dashed). Hover for time,
+  frequency, note and level; scroll to zoom, drag to pan, double-click for the
+  whole song, click to play from there. **3D Waterfall** shows the same data
+  as a terrain.
+- The **Output meters** (Mix / Master) show the analysed integrated loudness,
+  true peak, correlation and a looped slice of the song in the vectorscope
+  while nothing plays, and the live signal while it does.
+- Below the cards: the core measurements, then **Show waveform & spectrogram
+  editor** (scrub, select, zoom, annotate); it remembers whether you left it open.
+- When the deep analysis did not run, the status line says why - switched
+  off, skipped by you, failed, or the engine was not available (then it
+  re-runs by itself once the engine is).
 - Cards grouped with tabs: **Stereo & mono**, **Tone**, **Loudness &
   delivery**, **Provenance & source**, **Stems**, plus Spectral Balance,
   Dynamics, Genre Fit, Sections, Chords, Hooks, Emotional Arc and more.
-  **Essentials** shows the core set; **All** shows everything.
+  **Essentials** shows the core set; **All** shows everything except the
+  song insights and the **Advanced** cards (research, forensic and
+  experimental views) - turn on **Show advanced cards** in the Analysis
+  screen's overflow menu to include them.
 - Each finding reads **Detected → Cause → Fix → Trade-off → Verify**.
 - **Explain this moment**: select a region on the timeline to measure it
   against the whole track and the genre norm.
@@ -111,11 +183,25 @@ track...** until one is open.
 
 ### 🎚️ Mix / Master - *audition and apply fixes, compare with the original*
 - **Loudness & streaming**: gain staging (LUFS, LRA, crest, DR, true peak)
-  and how each platform will normalise the track.
+  and how each platform will normalise the track. LRA and DR need about 10
+  seconds of audio; on a shorter file they read "-".
+- The **signal rack** shows what each module does beside its knobs: the
+  filters' and EQ bands' curves, the compressor's transfer curve with the
+  reduction it gives at this track's level, and the limiter's gain reduction
+  across the track.
+- **Output meters**: loudness, true peak, correlation, the vectorscope and
+  **stereo width by frequency** - per octave, the analysed track as outlines
+  and what is playing now as bars, against the genre's width window.
+- **Live**: a scrolling spectrogram of what is playing, with every finding's
+  frequency range drawn across it; a finding tied to a moment names itself
+  while it plays.
 - **Mix & Master recommendations** grouped by processing stage (Edit,
   Arrangement, Mix bus, Master), with **Fix This** where a fix renders.
 - **Versions**: what changed between any two versions, the **render tree**
-  (every version and what it was made from), snapshots and the timeline.
+  (every version and what it was made from, each with a small measured
+  difference against the original - red where it added energy, blue where it
+  took some away), snapshots and the timeline.
+- Recommendations show their whole text, wrapped.
 - Tools along the bottom: Streaming preview, EQ curve, Timeline, Snapshots,
   Signal rack (the effect chain), X-Ray, Presets and Humanize (Analog Feel).
 
@@ -131,6 +217,14 @@ track...** until one is open.
   version - how vocal edits reach the mix.
 
 ### 📦 Export - *render, check and deliver*
+- **Save visual report...** (Report) writes one HTML page with the charts -
+  the verdict, tonal balance against released tracks, the measurements, the
+  readiness categories, loudness over time, what the current version changed
+  and the open findings - to send to someone without the app.
+- **Album** step: with two or more tracks in a project, **Album consistency**
+  puts every track on one chart - integrated loudness against the album's
+  median (+/- 1 LU) and each track's tonal balance against the album's
+  average.
 Four steps:
 1. **Finish** - the **Master Assistant**: master to the session's target,
    adjust five macros (loudness, tone, width, punch, ceiling), **Accept this
@@ -204,6 +298,32 @@ master bus or any track.
 - **ARA**: analysis reads the audio straight from the host, no bounce.
 - **Capture...**: record the next 4, 8 or 16 bars (or the loop) and the desktop
   app opens it as a new session.
+- **Meters**: loudness (momentary, short-term and integrated LUFS against a
+  target band - click the integrated value to reset it), true peak per channel
+  with a held maximum (click to reset), correlation and a vectorscope.
+- **Apply top fix**: applies the most severe open finding that the built-in
+  chain can fix (EQ bands with bell / shelf shapes, de-esser, compressor,
+  limiter, output gain). **Amount** scales it live and is automatable; 0 %
+  puts the parameters back, **Undo** restores everything. A finding not marked
+  safe to apply automatically is not applied until you press **Apply anyway**.
+- **View**: **Compact** (560 x 380 - meters, the top three findings, Apply top
+  fix and A/B, for an insert slot) or the **Small / Medium / Large** full
+  editor. The view and the open tab are saved with the project.
+- **Presets**: factory presets (also the host's programs: Streaming master,
+  Club master, Podcast voice, Vocal clean-up, Gentle glue, Bypass) and your own
+  presets (one file each in the Khensu data folder, *presets* - the same
+  folder and format the desktop's Signal Flow Rack uses; presets from the old
+  *Copilot Presets* folder move there the first time the menu opens).
+  **A / B** holds two complete settings; the copy button copies the active one
+  over the other.
+- **Knobs**: the value is written under each knob with its unit. Drag (Shift
+  for fine) or scroll to change it, double-click it (or press Enter) to type a
+  value - "1.2k", "-3 dB", "70%" - and Alt/Option-click to reset it.
+- **Undo**: every change you make - a knob move, a preset, Apply top fix, an
+  A / B switch - is one step. **Ctrl+Z** undoes, **Ctrl+Shift+Z** / **Ctrl+Y**
+  redoes (Cmd on macOS), or use the arrows beside the preset bar; **History**
+  lists the last 20 steps by name and goes back (or forward) to any of them.
+  Host automation is not part of it.
 
 ---
 
@@ -287,6 +407,10 @@ answers haven't yet been checked on real material. It shows an
 the Analysis screen's default Essentials view. Findings from the
 experimental song-level models (hooks, memorability, heaviness, structure,
 the loudness arc) are shown as minor notes until they are checked.
+The check for hooks, memorability and heaviness is a pairwise listening
+study (`scripts/listener_study.py prepare-pairs` / `score-pairs`): 40
+Creative Commons clips, 120 pairs, "which clip ...?", with a keep /
+recalibrate / cut rule fixed before any answer is read.
 
 | Feature (id) | What still needs checking |
 |---|---|
@@ -318,7 +442,8 @@ the loudness arc) are shown as minor notes until they are checked.
   installer's plugin folders match your DAW's scan paths.
 - **Windows SmartScreen warns** - the installer isn't code-signed yet: **More
   info › Run anyway**.
-- **"Khensu closed unexpectedly last time"** - a crash report was saved on
-  your computer; **Open folder** shows it, and Settings › Export diagnostics
-  bundle packages it if you want to report the problem.
+- **"Khensu closed unexpectedly last time"** - a small **!** badge beside
+  Settings in the sidebar: a crash report was saved on your computer. Click
+  it for **Open folder** or **Dismiss**; Settings › Export diagnostics bundle
+  packages it if you want to report the problem.
 - **Report a bug** on the [issue tracker](https://github.com/KhensuLabs/khensu-mixing/issues).

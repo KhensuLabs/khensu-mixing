@@ -166,8 +166,18 @@ void TonalBalancePanel::paint(juce::Graphics& g)
     g.strokePath(curve, juce::PathStrokeType(1.8f, juce::PathStrokeType::curved));
 
     // Band markers: teal inside tolerance, amber/red outside.
+    hover_.clear();
     for (int i = 0; i < n; ++i) {
         const float d = measuredDb_[(size_t)i] - targetDb_[(size_t)i];
+        {
+            const float hz = 31.25f * std::pow(2.0f, (float)i * 9.0f / (float)juce::jmax(1, n - 1)); // 31 Hz - 16 kHz
+            const float w = plot.getWidth() / (float)juce::jmax(1, n - 1);
+            hover_.addColumn(xAt(i) - w * 0.5f, xAt(i) + w * 0.5f, plot,
+                             (hz >= 1000.0f ? juce::String(hz / 1000.0f, 1) + " kHz" : juce::String(juce::roundToInt(hz)) + " Hz")
+                                 + ": " + juce::String(measuredDb_[(size_t)i], 1) + " dB, " + TRANS("target") + " "
+                                 + juce::String(targetDb_[(size_t)i], 1) + " dB (" + (d >= 0.0f ? "+" : "")
+                                 + juce::String(d, 1) + " dB)");
+        }
         const bool out = std::abs(d) > kToleranceDb;
         const bool far_ = std::abs(d) > kToleranceDb + 3.0f;
         g.setColour(!out ? KhensuTheme::accentTeal : far_ ? KhensuTheme::accentRed : KhensuTheme::accentAmber);

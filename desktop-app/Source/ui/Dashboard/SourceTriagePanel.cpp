@@ -44,8 +44,6 @@ juce::String categoryLabel(const juce::String& cat)
 // Every cached palette colour on this component, in one place (UI-01).
 void SourceTriagePanel::applyThemeColours()
 {
-    scanButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.2f));
-    scanButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
 }
 
 SourceTriagePanel::SourceTriagePanel(IAppController& c) : PanelCard(c, "Fix-at-Source Triage")

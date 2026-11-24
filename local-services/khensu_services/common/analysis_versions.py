@@ -25,10 +25,10 @@ from __future__ import annotations
 ANALYZER_VERSIONS: dict[str, str] = {
     # router_audio: the quick / advanced bundle and the extended extras
     # (analyze_quick, analyze_advanced, compute_extended_result).
-    "analyze_base": "3",  # 2: NEW-1 song structure (roles, groups); 3: NEW-8 genre key profile
+    "analyze_base": "4",  # 2: NEW-1 song structure (roles, groups); 3: NEW-8 genre key profile; 4: RUN-10 call-and-response folding
     "analyze_extended": "3",  # 2: harshness calibrated on released music (FULL-3); 3: presence-band bump (TUNE-9)
     # router_audio: per-section pass, drums, chords, reference comparison.
-    "analyze_sections": "2",  # 2: NEW-1 song structure
+    "analyze_sections": "3",  # 2: NEW-1 song structure; 3: RUN-10 call-and-response folding
     "analyze_drums": "1",
     "analyze_chords": "2",  # 2: NEW-8 beat-synchronous segments
     "mix_metrics": "1",

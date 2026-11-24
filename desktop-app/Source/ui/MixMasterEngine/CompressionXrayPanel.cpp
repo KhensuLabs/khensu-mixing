@@ -116,9 +116,22 @@ void CompressionXrayPanel::paint(juce::Graphics& g)
     g.fillRect(plot.getX(), y2, plot.getWidth(), y4 - y2);
 
     juce::Path curve;
+    hover_.clear();
     for (int i = 0; i < n; ++i) {
         const float x = plot.getX() + plot.getWidth() * (float)i / (float)juce::jmax(1, n - 1);
         const float reduction = juce::jmax(0.0f, -curveDb_[(size_t)i]);
+        {
+            const float w = plot.getWidth() / (float)juce::jmax(1, n - 1);
+            juce::String text = juce::String(juce::roundToInt(100.0f * (float)i / (float)juce::jmax(1, n - 1))) + " % "
+                                + TRANS("through") + ": " + juce::String(reduction, 1) + " dB " + TRANS("of gain reduction");
+            if (!brightnessDb_.empty()) {
+                const auto bi = (size_t)juce::jlimit(0, (int)brightnessDb_.size() - 1,
+                                                     juce::roundToInt((float)i / (float)juce::jmax(1, n - 1) * (float)(brightnessDb_.size() - 1)));
+                text << ", " << (brightnessDb_[bi] >= 0.0f ? TRANS("brighter by") : TRANS("darker by")) << " "
+                     << juce::String(std::abs(brightnessDb_[bi]), 1) << " dB";
+            }
+            hover_.addColumn(x - w * 0.5f, x + w * 0.5f, plot, text);
+        }
         const float y = plot.getY() + juce::jmin(1.0f, reduction / maxDb) * plot.getHeight();
         if (i == 0)
             curve.startNewSubPath(x, y);

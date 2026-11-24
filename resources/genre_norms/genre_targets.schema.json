@@ -177,7 +177,17 @@
           "properties": {
             "tracks": { "type": "integer", "minimum": 1 },
             "fields": { "type": "array", "items": { "type": "string" } },
-            "source": { "type": "string" }
+            "source": { "type": "string" },
+            "hand_set": {
+              "type": "object",
+              "description": "OVH-5 / FN2-1: the hand-typed [low, high] window of each field the measured window replaced, kept as it was first typed.",
+              "additionalProperties": {
+                "type": "array",
+                "items": { "type": "number" },
+                "minItems": 2,
+                "maxItems": 2
+              }
+            }
           },
           "additionalProperties": false
         }

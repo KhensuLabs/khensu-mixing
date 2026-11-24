@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/Dashboard/SpatialAudioPanel.h
 #pragma once
+#include "../shared/HoverCells.h"
 #include "../shared/PanelCard.h"
 #include "../shared/Camera3D.h"
 #include <khensu/analysis/AnalysisResult.h>
@@ -14,8 +15,11 @@ namespace khensu {
 /// object-placement reference. See SpatialAudioAssessment.h for why this is
 /// a translatability estimate, not an Atmos certification - a stereo file
 /// carries no real per-object spatial data to detect.
-class SpatialAudioPanel final : public PanelCard {
+class SpatialAudioPanel final : public PanelCard, public juce::SettableTooltipClient {
   public:
+    /// VIZ-U3: the readout under the pointer.
+    void mouseMove(const juce::MouseEvent& e) override { hover_.update(*this, e.position); }
+    void mouseExit(const juce::MouseEvent&) override { setTooltip({}); }
     explicit SpatialAudioPanel(IAppController& c);
 
     void setData(const AnalysisResult& r);
@@ -40,6 +44,7 @@ class SpatialAudioPanel final : public PanelCard {
 
     static constexpr int kScoreColW = 190;
 
+    HoverCells hover_; ///< VIZ-U3, filled in paint()
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpatialAudioPanel)
 };
 

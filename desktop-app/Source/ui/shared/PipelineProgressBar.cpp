@@ -25,8 +25,10 @@ void PipelineProgressBar::updateStage(const std::string& stage, int stageIndex, 
     juce::ignoreUnused(totalStages);
     if (stageIndex < 1 || stageIndex > kNumSlots) return;
 
+    if (stage == "fast") slotStates_.fill(SlotState::Pending); // a new run
     for (int i = 0; i < stageIndex - 1; ++i)
-        if (slotStates_[static_cast<size_t>(i)] != SlotState::Failed)
+        if (slotStates_[static_cast<size_t>(i)] == SlotState::Pending
+            || slotStates_[static_cast<size_t>(i)] == SlotState::InProgress)
             slotStates_[static_cast<size_t>(i)] = SlotState::Done;
 
     const int idx = stageIndex - 1;
@@ -36,7 +38,12 @@ void PipelineProgressBar::updateStage(const std::string& stage, int stageIndex, 
     // anything else in progress just means "still running."
     const auto colon = stage.rfind(':');
     const std::string suffix = colon != std::string::npos ? stage.substr(colon + 1) : std::string();
-    if (suffix == "completed") {
+    if (suffix == "skipped") {
+        // OVH-1: the deep pass did not run, so neither did the service stages
+        // after it - they read skipped, not done.
+        for (int i = idx; i < kNumSlots - 1; ++i)
+            slotStates_[static_cast<size_t>(i)] = SlotState::Skipped;
+    } else if (suffix == "completed") {
         slotStates_[static_cast<size_t>(idx)] = SlotState::Done;
     } else if (suffix == "failed") {
         slotStates_[static_cast<size_t>(idx)] = SlotState::Failed;

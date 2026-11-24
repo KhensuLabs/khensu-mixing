@@ -1,16 +1,16 @@
 // desktop-app/Source/ui/MixMasterEngine/PresetLibraryPanel.h
-// Effect-chain preset library: save the most recently applied DSP chain
-// (whichever flow built it - chat, "Fix This", EQ apply) under a name, and
-// re-apply any saved preset to the active session later. JSON files on disk,
-// mirroring MixerChainPanel's proven chain_presets pattern (a sibling
-// directory holds actual EffectSpec chains rather than plugin-ecosystem
-// generation context).
+// Chain preset library: save the Signal Flow Rack's settings with the most
+// recently applied chain (whichever flow built it - chat, Fix, EQ apply)
+// under a name, and re-apply any saved preset later. The shared chain preset
+// files (PresetStore.h, FN2-5): the Copilot plugin's preset menu lists the
+// same presets, and presets saved there appear here.
 // THREAD_CONTEXT(UIThread)
 #pragma once
 #include <JuceHeader.h>
 #include "../shared/KhensuTheme.h" // ThemeListener
 #include "../shared/PanelCard.h"
 #include <khensu/ipc/HttpServiceBridge.h>
+#include "PresetStore.h"
 #include <vector>
 
 namespace khensu {
@@ -25,21 +25,19 @@ class PresetLibraryPanel final : public PanelCard {
     void resized() override;
 
   private:
-    struct PresetRow {
-        juce::String name;
-        juce::String fileName; // legalized, without .json
-        int effectCount = 0;
-        juce::String savedAt;
-    };
+    using PresetRow = preset_store::Entry;
 
-    static juce::File presetDirectory();
+  public:
+    /// Re-reads the shared folder (the plugin may have saved or deleted).
     void refreshList();
+
+  private:
     void saveCurrentChain();
     void applyPreset(const PresetRow& row);
     void deletePreset(const PresetRow& row);
 
     juce::TextEditor nameEditor_;
-    juce::TextButton saveButton_{TRANS("Save Last Applied Chain")};
+    juce::TextButton saveButton_{TRANS("Save preset")};
     juce::Label statusLabel_;
 
     juce::Viewport viewport_;
@@ -47,6 +45,7 @@ class PresetLibraryPanel final : public PanelCard {
     struct RowComponent;
     std::vector<std::unique_ptr<RowComponent>> rows_;
     std::vector<PresetRow> presets_;
+    void visibilityChanged() override;
     /// Re-applies every cached palette colour. Called at construction and on
     /// each theme change.
     void applyThemeColours();

@@ -96,3 +96,13 @@ def test_audio_with_two_alternating_parts_finds_them(tmp_path):
     assert roles.count("chorus") >= 2
     starts = [s["start_sec"] for s in found["sections"]]
     assert any(abs(x - 16.0) < 2.5 for x in starts)
+
+
+def test_short_call_and_response_is_one_section():
+    """RUN-10: 4-bar phrases taking turns inside one part are one section,
+    and the same exchange later in the song is the same part."""
+    h, t, lv, times, total = _bars("IVCVCVCBVCVCVCO", bars_each=4)
+    secs = ss.structure_from_bars(h, t, lv, times, total)
+    assert len(secs) <= 6
+    exchanges = [s for s in secs if s["bars"] >= 16]
+    assert len(exchanges) == 2 and exchanges[0]["group"] == exchanges[1]["group"]

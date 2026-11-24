@@ -17,6 +17,8 @@
 // and on the same tracks with an injected defect).
 #include <catch2/catch_test_macros.hpp>
 #include <khensu/analysis/AudioAnalyzer.h>
+#include <khensu/analysis/BandPower.h>
+#include <khensu/recommendations/MixScorecard.h>
 #include <khensu/recommendations/RecommendationEngine.h>
 #include <khensu/targets/CreativeTarget.h>
 #include <khensu/targets/GenreDatabase.h>
@@ -87,6 +89,18 @@ TEST_CASE("Corpus measurement for genre norms", "[.measure]")
             for (float db : a.spectral.rms_per_octave_db)
                 octaves.add(db);
             o->setProperty("octave_db", octaves);
+            // VIZ-1a: the normalised 1/6-octave band power the hero draws,
+            // on the fixed grid band_power::bandCentres() (25 Hz * 2^(i/6)).
+            {
+                auto bands = band_power::fromFft(a.spectral.fft_mid_magnitudes, a.sample_rate > 0.0 ? a.sample_rate : 44100.0);
+                if (bands.size() < 4) bands = band_power::fromOctaves(a.spectral.rms_per_octave_db);
+                band_power::normaliseAt1k(bands);
+                const auto grid = band_power::bandCentres();
+                juce::Array<juce::var> bandDb;
+                for (const float hz : grid)
+                    bandDb.add(bands.empty() || hz > bands.back().hz * 1.06f ? juce::var() : juce::var(band_power::at(bands, hz)));
+                o->setProperty("band_db", bandDb);
+            }
             if (haveGenres && !genreId.empty()) {
                 if (const auto genre = genres.findById(genreId)) {
                     juce::Array<juce::var> codes;
@@ -104,6 +118,17 @@ TEST_CASE("Corpus measurement for genre norms", "[.measure]")
                             severity->setProperty(code, juce::jmax(prev, static_cast<double>(rec.severity)));
                         }
                     o->setProperty("findings", codes);
+                    // VIZ-1c: the readiness categories released tracks reach.
+                    {
+                        const auto recs = RecommendationEngine{}.generate(a, *genre, CreativeTarget{});
+                        const auto sc = buildMixScorecard(a, *genre, recs);
+                        juce::DynamicObject::Ptr cats = new juce::DynamicObject();
+                        for (const auto& c : sc.categories)
+                            if (c.available) cats->setProperty(juce::String(c.id), c.score);
+                        o->setProperty("scorecard", juce::var(cats.get()));
+                        o->setProperty("readiness", sc.overall_score);
+                        o->setProperty("readiness_uncapped", sc.uncapped_score);
+                    }
                     o->setProperty("severity", juce::var(severity.get()));
                 }
             }

@@ -29,8 +29,6 @@ static const juce::String kPanBalanceBase =
 // Every cached palette colour on this component, in one place (UI-01).
 void PanBalancePanel::applyThemeColours()
 {
-    analyzeButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.2f));
-    analyzeButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
 }
 
 PanBalancePanel::PanBalancePanel(IAppController& c) : PanelCard(c, "Pan Energy Balance")
@@ -126,6 +124,7 @@ void PanBalancePanel::paint(juce::Graphics& g)
     b.removeFromBottom(40);
     auto lanes = b.toFloat();
     const float laneH = lanes.getHeight() / (float)bands_.size();
+    hover_.clear();
 
     for (size_t bi = 0; bi < bands_.size(); ++bi) {
         const auto& band = bands_[bi];
@@ -154,6 +153,18 @@ void PanBalancePanel::paint(juce::Graphics& g)
             for (int i = 0; i < n; ++i) {
                 const float x = lane.getX() + lane.getWidth() * (float)i / (float)(n - 1);
                 const float y = cy - band.biasCurve[(size_t)i] * (laneH * 0.42f);
+                {
+                    const float bias = band.biasCurve[(size_t)i];
+                    const float w = lane.getWidth() / (float)(n - 1);
+                    hover_.addColumn(x - w * 0.5f, x + w * 0.5f, lane,
+                                     band.name + " " + juce::String(juce::roundToInt(100.0f * (float)i / (float)(n - 1)))
+                                         + " % " + TRANS("through") + ": "
+                                         + (std::abs(bias) < 0.02f ? TRANS("centred")
+                                            : juce::String(juce::roundToInt(std::abs(bias) * 100.0f)) + " % "
+                                                  + (bias > 0.0f ? TRANS("right") : TRANS("left")))
+                                         + ", " + TRANS("side") + " " + juce::String(juce::roundToInt(band.sideShare * 100.0f))
+                                         + " %");
+                }
                 if (i == 0)
                     p.startNewSubPath(x, y);
                 else

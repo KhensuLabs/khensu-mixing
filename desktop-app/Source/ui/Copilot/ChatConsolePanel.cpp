@@ -490,7 +490,13 @@ void ChatConsolePanel::sendMessage()
             juce::AlertWindow::InfoIcon, TRANS("Cloud Copilot Chat"), body,
             TRANS("I Understand, Continue"), TRANS("Cancel"), this,
             juce::ModalCallbackFunction::create([self](int result) {
-                if (self == nullptr || result != 1) return; // 1 = "I Understand, Continue"
+                if (self == nullptr) return;
+                if (result != 1) { // 1 = "I Understand, Continue"
+                    // RUN-12: say why nothing was sent, and the offline way.
+                    self->setStatus(TRANS("Not sent - the cloud provider needs your OK. Choose the local model "
+                                          "in Settings > AI providers to chat without sharing anything."));
+                    return;
+                }
                 self->controller_.cloudChat().recordCloudChatConsent();
                 self->sendMessage();
             }));

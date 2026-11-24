@@ -1,4 +1,5 @@
 // desktop-app/Source/ui/VocalWorkspace/PitchNoteGridEditor.cpp
+#include "../shared/ServiceErrorHint.h"
 #include "PitchNoteGridEditor.h"
 #include "../shared/PanelRunState.h"
 #include "../../IAppController.h"
@@ -170,7 +171,7 @@ void PitchNoteGridEditor::analyze()
         auto result = bridge.analyzePitchCurve(target.toStdString(), referenceHz);
         postIfCurrent(self, work, [result](PitchNoteGridEditor& panel) {
             if (result.is_err()) {
-                panel.statusLabel_.setText(TRANS("Detection failed: ") + juce::String(result.error().message),
+                panel.statusLabel_.setText(TRANS("Detection failed: ") + serviceErrorLine(result.error()),
                                            juce::dontSendNotification);
                 return;
             }
@@ -223,7 +224,7 @@ void PitchNoteGridEditor::render()
         auto result = bridge.postAnalyzeJson("/render/pitch_correct", juce::var(body));
         postIfCurrent(self, *controllerPtr, [result, controllerPtr, sessionId, scope, target](PitchNoteGridEditor& panel) {
             if (result.is_err()) {
-                panel.statusLabel_.setText(TRANS("Render failed: ") + juce::String(result.error().message),
+                panel.statusLabel_.setText(TRANS("Render failed: ") + serviceErrorLine(result.error()),
                                            juce::dontSendNotification);
                 return;
             }

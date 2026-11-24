@@ -13,8 +13,6 @@ namespace af = api::fields; // generated service field names (ApiSchema.h)
 // Every cached palette colour on this component, in one place (UI-01).
 void TuningReferencePanel::applyThemeColours()
 {
-    analyzeButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.2f));
-    analyzeButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
 }
 
 TuningReferencePanel::TuningReferencePanel(IAppController& c) : PanelCard(c, "Tuning Reference")
@@ -103,8 +101,16 @@ void TuningReferencePanel::paint(juce::Graphics& g)
         g.drawHorizontalLine(juce::roundToInt(midY), (float)strip.getX(), (float)strip.getRight());
         const float tMax = drift_.back().x > 0 ? drift_.back().x : 1.0f;
         juce::Path p;
+        hover_.clear();
         for (size_t i = 0; i < drift_.size(); ++i) {
             const float x = strip.getX() + juce::jlimit(0.0f, 1.0f, drift_[i].x / tMax) * strip.getWidth();
+            {
+                const float w = strip.getWidth() / (float)juce::jmax<size_t>(1, drift_.size() - 1);
+                hover_.addColumn(x - w * 0.5f, x + w * 0.5f, strip.toFloat(),
+                                 juce::String(drift_[i].x, 1) + " s: " + (drift_[i].y >= 0.0f ? "+" : "")
+                                     + juce::String(drift_[i].y, 1) + " " + TRANS("cents from") + " "
+                                     + juce::String(refHz_, 1) + " Hz");
+            }
             const float y = midY - juce::jlimit(-50.0f, 50.0f, drift_[i].y) / 50.0f * (strip.getHeight() * 0.5f);
             if (i == 0)
                 p.startNewSubPath(x, y);

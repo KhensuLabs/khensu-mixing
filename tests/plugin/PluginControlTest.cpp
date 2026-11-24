@@ -368,9 +368,11 @@ TEST_CASE("Any manual value change clears the AI dot; the Chain tab covers every
     CHECK_FALSE(f.proc.isAiSet(P::eqGainDb));
 
     khensu::DspControlGridPanel grid(f.proc);
-    // HPF, LPF, 3 x EQ (3), comp (4), multiband (5), out gain + chain mix, limiter.
-    CHECK(grid.getNumKnobsForTest() == 23);
-    CHECK(grid.getNumTogglesForTest() == 8);
+    // HPF, LPF, 3 x EQ (3), comp (4), multiband (5), de-esser (3, OVH-8),
+    // out gain + chain mix, limiter; one shape selector per EQ band.
+    CHECK(grid.getNumKnobsForTest() == 26);
+    CHECK(grid.getNumTogglesForTest() == 9);
+    CHECK(grid.getNumShapeSelectorsForTest() == 3);
 
     KhensuCopilotEditor editor(f.proc);
     CHECK(editor.isResizable());

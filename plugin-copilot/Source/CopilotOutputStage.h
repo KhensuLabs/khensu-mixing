@@ -54,6 +54,8 @@ namespace khensu {
 /// needsProcessedPath() before running the chain.
 class CopilotOutputStage final {
   public:
+    /// VIZ-6b: the limiter's deepest gain reduction in the last block (dB, >= 0).
+    float lastLimiterReductionDb() const noexcept { return limiterReductionDb_.load(std::memory_order_relaxed); }
     static constexpr double kSwitchFadeSeconds = 0.015;
 
     CopilotOutputStage() = default;
@@ -176,6 +178,7 @@ class CopilotOutputStage final {
     double wetMs_ = 0.0, dryMs_ = 0.0;
     float matchGain_ = 1.0f;
     std::atomic<float> matchGainDb_{0.0f};
+    std::atomic<float> limiterReductionDb_{0.0f}; ///< VIZ-6b, the last block's deepest reduction
     // Ceiling guard for the A/B sides (FIX-12): recent sample peaks of the
     // aligned dry and of the delta, tracked in every mode so they are warm
     // when the listener switches.

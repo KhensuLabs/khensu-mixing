@@ -69,19 +69,17 @@ void AppController::postCrashNoticeIfAny()
     const auto pending = crash::pendingNotice(dir);
     if (!pending.show) return;
 
-    AppNoticeBar::Notice n;
-    n.id = "crash-report";
-    n.text = TRANS("Khensu closed unexpectedly last time - a crash report was saved locally (nothing was sent).");
-    n.actionLabel = TRANS("Open folder");
-    n.onAction = [dir, report = pending.newestReport] {
-        crash::acknowledge(dir);
-        if (report.existsAsFile())
-            report.revealToUser();
-        else
-            dir.startAsProcess();
-    };
-    n.onDismiss = [dir] { crash::acknowledge(dir); };
-    noticeBar_.post(std::move(n));
+    // UI-10: a badge in the sidebar footer, not a banner across every screen
+    // in the first five seconds; the same two actions live in its menu.
+    sidebar_.setCrashNotice(
+        [dir, report = pending.newestReport] {
+            crash::acknowledge(dir);
+            if (report.existsAsFile())
+                report.revealToUser();
+            else
+                dir.startAsProcess();
+        },
+        [dir] { crash::acknowledge(dir); });
 }
 
 void AppController::updateServiceBanner(PythonStatus status, int restartAttempt)
@@ -122,8 +120,11 @@ void AppController::updateSessionChrome()
         sessionHealthStripEnabled_ = OnlineSettings::load(configDir()).showSessionHealthStrip;
     const bool session = hasActiveSession();
     const bool health = session && *sessionHealthStripEnabled_;
-    if (mixHealthRollupStrip_.isVisible() == session && sessionHealthStrip_.isVisible() == health) return;
-    mixHealthRollupStrip_.setVisible(session);
+    if (sessionStateStrip_.isVisible() == session && sessionHealthStrip_.isVisible() == health
+        && abControlStrip_.isVisible() == session)
+        return;
+    sessionStateStrip_.setVisible(session);
+    abControlStrip_.setVisible(session); // UI-6 / UX-5: A/B means nothing without a track
     sessionHealthStrip_.setVisible(health);
     resized();
 }

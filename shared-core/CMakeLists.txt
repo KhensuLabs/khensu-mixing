@@ -11,14 +11,25 @@ add_library(KhensuCommon STATIC
     src/common/FileAcl.cpp
     src/common/HmacSha256.cpp
     src/common/SecureRandom.cpp
+    src/presets/ChainPreset.cpp  # FN2-5 shared chain preset format
 )
 
 add_library(KhensuDsp STATIC
     src/session/AudioFileProber.cpp
     src/dsp/LookaheadBrickwallLimiter.cpp
+    src/dsp/IirDesign.cpp  # OVH-9: the native chain renderer
+    src/dsp/TruePeakOversampler.cpp
+    src/dsp/ChainProcessor.cpp
+    src/dsp/RealFft.cpp  # FN2-2a: native denoise / saturation stages
+    src/dsp/SpectralDenoiser.cpp
+    src/dsp/TapeSaturator.cpp
+    src/dsp/OfflineChainRenderer.cpp
+    src/dsp/DemoSong.cpp  # VIZ-U2 / VIZ-F3 demo song
     src/targets/GenreDatabase.cpp
+    src/targets/GenreSpread.cpp  # VIZ-1 measured spread
     src/analysis/KWeighting.cpp
     src/analysis/TruePeakFilter.cpp  # MEAS-5
+    src/analysis/TrackTimeline.cpp  # VIZ-2 native timeline
     src/analysis/LoudnessAnalyzer.cpp
     src/analysis/SpectralAnalyzer.cpp
     src/analysis/DynamicsAnalyzer.cpp
@@ -38,6 +49,10 @@ add_library(KhensuDsp STATIC
     src/midi/MidiUmpEvent.cpp
     src/ui/EqCurveComponent.cpp
     src/ui/KhensuPalette.cpp
+    src/ui/StudioMeters.cpp  # UI-5 studio meters
+    src/ui/KhensuKnob.cpp  # UI-5 knob / linear slider
+    src/ui/ChartKit.cpp  # VIZ-F1 chart toolkit
+    src/ui/ModuleViz.cpp  # VIZ-6 module visuals
 )
 
 add_library(KhensuServiceClient STATIC
@@ -68,6 +83,7 @@ add_library(KhensuData STATIC
     src/mixerchain/DspChainMapper.cpp
     src/mixerchain/VocalMacroMapper.cpp
     src/mixerchain/PluginScanner.cpp
+    src/mixerchain/RecommendationDspMapper.cpp  # OVH-8 findings -> plugin DSP
 )
 
 set(KHENSU_CORE_LIBS KhensuCommon KhensuDsp KhensuServiceClient KhensuData)

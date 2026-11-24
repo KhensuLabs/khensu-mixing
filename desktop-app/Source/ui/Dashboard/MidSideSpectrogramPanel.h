@@ -1,6 +1,7 @@
 // desktop-app/Source/ui/Dashboard/MidSideSpectrogramPanel.h
 // Mid/Side spectrogram: center vs sides across time x frequency. THREAD_CONTEXT(UIThread)
 #pragma once
+#include "../shared/HoverCells.h"
 #include <JuceHeader.h>
 #include "AutoScanCompletion.h"
 #include "../shared/KhensuTheme.h" // ThemeListener
@@ -10,8 +11,11 @@
 namespace khensu {
 class IAppController;
 
-class MidSideSpectrogramPanel final : public PanelCard {
+class MidSideSpectrogramPanel final : public PanelCard, public juce::SettableTooltipClient {
   public:
+    /// VIZ-U3: the value under the pointer (time, frequency, value).
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent&) override { setTooltip({}); }
     explicit MidSideSpectrogramPanel(IAppController& c);
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -54,6 +58,10 @@ class MidSideSpectrogramPanel final : public PanelCard {
         repaint();
     }};
 
+    std::vector<std::vector<float>> grid_, grid2_; ///< VIZ-U3: [frame][band] behind the image(s)
+    std::vector<float> edgesHz_;
+    float durationSec_ = 0.0f;
+    juce::Rectangle<float> gridArea_, grid2Area_; ///< where they were drawn
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidSideSpectrogramPanel)
 };
 } // namespace khensu

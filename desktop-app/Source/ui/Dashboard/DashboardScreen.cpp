@@ -1,4 +1,5 @@
 // desktop-app/Source/ui/Dashboard/DashboardScreen.cpp
+#include "../shared/TimelineCache.h"
 #include "DashboardScreen.h"
 #include "../shared/PanelRunState.h"
 #include "../shared/CardFindingRow.h"
@@ -20,6 +21,9 @@
 #include "../../analysis/ResultDerivedData.h"
 #include <khensu/targets/GenreDatabase.h>
 #include "DashboardCategory.h"
+#include "VerdictModel.h"
+#include "../shared/ServiceStatusText.h"
+#include "../shared/ValueAnimator.h"
 
 namespace khensu {
 
@@ -34,22 +38,20 @@ void* const kPrimaryAnalysisListenerKey = reinterpret_cast<void*>(0x1);
 // in all three themes.
 void DashboardScreen::applyThemeColours()
 {
-    btnRerunDeep_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentAmber.withAlpha(0.20f));
-    btnRerunDeep_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentAmber);
-    statusLabel.setColour(juce::Label::textColourId, KhensuTheme::accentTeal);
+    // UX2-3: Re-run is a neutral secondary button and the status line plain
+    // secondary text - amber and teal are for severity and state.
+    statusLabel.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     shortcutLegendLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     conflictBanner_.setColour(juce::Label::backgroundColourId, KhensuTheme::accentAmber.withAlpha(0.15f));
     conflictBanner_.setColour(juce::Label::outlineColourId, KhensuTheme::accentAmber.withAlpha(0.5f));
     conflictBanner_.setColour(juce::Label::textColourId, KhensuTheme::accentAmber);
     warningLabel.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
-    expandButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.18f));
-    expandButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
-    timelineToggleButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.18f));
-    timelineToggleButton_.setColour(juce::TextButton::buttonOnColourId, KhensuTheme::accentTeal.withAlpha(0.55f));
-    timelineToggleButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
-    // The "on" label sits on a strong teal fill, so it needs the background's
-    // contrasting text tone, not a literal white (invisible in Light).
-    timelineToggleButton_.setColour(juce::TextButton::textColourOnId, KhensuTheme::bgVoid);
+    // UX2-3: Timeline is an ordinary secondary toggle; "on" is a quiet
+    // raised fill, not a second teal button.
+    timelineToggleButton_.setColour(juce::TextButton::buttonOnColourId, KhensuTheme::bgOverlay);
+    timelineToggleButton_.setColour(juce::TextButton::textColourOnId, KhensuTheme::textPrimary);
+    for (auto* caption : {&detailCaption_, &measurementsCaption_})
+        caption->setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
 }
 
 DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessionRegistration_(ctrl, *this)
@@ -113,14 +115,16 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
     pipelineProgressListener_ = listen(
         controller.analysis(), this, &IAnalysisHub::addPipelineProgressListener,
         &IAnalysisHub::removePipelineProgressListener, [this](const std::string& stage, int idx, int total) {
-            pipelineProgress_.setVisible(true);
+            // UI-10: the per-stage bar is engineer detail; otherwise the app's
+            // one calm progress line (AppController) says what is happening.
+            pipelineProgress_.setVisible(engineerDetail());
             if (stage.rfind("deep_analysis:", 0) == 0) {
                 const auto rest = stage.substr(14);
                 const auto colon = rest.find(':');
-                if (rest == "failed") {
+                if (rest == "failed" || rest == "skipped") {
                     // Terminal failure - no sub-progress numbers to parse, just
                     // forward the ":failed" suffix so updateStage marks the slot.
-                    pipelineProgress_.updateStage("deep_analysis:failed", idx, total);
+                    pipelineProgress_.updateStage("deep_analysis:" + rest, idx, total);
                 } else if (colon != std::string::npos) {
                     const int subIdx = std::stoi(rest.substr(0, colon));
                     const int subTotal = std::stoi(rest.substr(colon + 1));
@@ -170,13 +174,17 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
     addChildComponent(loadTrackButton_);
 
     // Zone 0, 1, 2, and 3 panels all live inside viewport/grid so the whole page scrolls
-    scoreCard_.onLayoutChanged = [this] {
-        layoutZone3();
-        grid.repaint();
-    };
     grid.addAndMakeVisible(verdictCard_);
-    // CON-1: the issue queue fixes it (the guided wizard is retired).
+    // CON-1: the issue queue fixes it (the guided wizard is retired). OVH-1:
+    // "Start here" names the issue that Fix top issue fixes (VerdictModel.h).
     verdictCard_.onFixClicked = [this] { controller.shell().fixTopIssue(); };
+    verdictCard_.onReviewClicked = [this] { controller.shell().showScreen(ScreenType::Issues); };
+    issuesListener_ = listen(controller.issues(), this, &IIssues::addIssuesListener, &IIssues::removeIssuesListener,
+                             [this] {
+                                 refreshVerdict();
+                                 updateHero();
+                                 songTimeline_.refresh();
+                             });
 
     addAndMakeVisible(serviceHealthWidget_);
     serviceHealthWidget_.getStatus = [this]() { return controller.lifecycle().getPythonServiceStatus(); };
@@ -184,47 +192,49 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
     serviceHealthWidget_.onCopyLogsRequested = [this]() { controller.lifecycle().copyServiceLogsToClipboard(); };
     serviceHealthWidget_.onDiagnoseRequested = [this]() { controller.lifecycle().diagnoseServiceStatus(); };
 
-    expandButton_.setButtonText(TRANS("Show Detailed Analysis"));
-    expandButton_.onClick = [this] {
-        isCollapsed_ = false;
-        layoutZone3();
-        grid.repaint();
-    };
-    grid.addChildComponent(expandButton_);
-    // Switching the detail level switches the default view with it.
+    // UX2-1: the hero spectrum - the Issues screen's, with the findings
+    // drawn; a marker opens that finding on the Issues screen.
+    hero_.setTitle(TRANS("Spectrum and findings"));
+    hero_.setTooltip(TRANS("The track's spectrum against the genre target, with every finding where it lives. "
+                           "Click a marker to open that finding on the Issues screen."));
+    hero_.onFindingClicked = [this](const std::string& key) { controller.shell().showIssue(key); };
+    hero_.onMetricClicked = [this](int gauge) { controller.shell().showMetricExplanation(gauge); };
+    hero_.setOriginalProbe([this] {
+        auto& p = controller.playback();
+        return p.hasAbComparison() && p.isPlaying() && !p.isPlayingProcessed();
+    });
+    grid.addChildComponent(hero_);
+    grid.addChildComponent(songTimeline_);
+
+    // UX2-1: no "Show Detailed Analysis" gate - the detail follows the
+    // breakdown under quiet captions; the editor is a collapsible section.
+    detailCaption_.setText(TRANS("Detailed analysis"), juce::dontSendNotification);
+    measurementsCaption_.setText(TRANS("Core measurements"), juce::dontSendNotification);
+    for (auto* caption : {&detailCaption_, &measurementsCaption_}) {
+        caption->setFont(KhensuTheme::uiFont(KhensuTheme::kFontH1, juce::Font::bold));
+        caption->setJustificationType(juce::Justification::bottomLeft);
+        caption->setBorderSize({});
+        grid.addChildComponent(*caption);
+    }
+    waveformToggle_.setTooltip(TRANS("Show or hide the waveform and spectrogram editor (scrub, select, zoom, annotate)."));
+    waveformToggle_.onClick = [this] { setWaveformOpen(!waveformOpen_, true); };
+    grid.addChildComponent(waveformToggle_);
+    setWaveformOpen(false, false);
+
+    // Switching the detail level re-lays the engineer chrome (UI-10).
     reportModeListener_ = listen(controller.shell(), this, &IShell::addReportModeListener,
-                                 &IShell::removeReportModeListener, [this](ReportMode mode) {
-                                     isCollapsed_ = mode == ReportMode::ClientSummary;
+                                 &IShell::removeReportModeListener, [this](ReportMode) {
+                                     updateHeader(); // UI-10: engineer chrome follows the mode
+                                     updateCompletenessBadge();
                                      layoutZone3();
                                      grid.repaint();
                                  });
 
-    grid.addAndMakeVisible(scoreCard_);
     grid.addAndMakeVisible(mixCraft_);
 
-    for (auto* tile : {&tileIntLufs_, &tileTruePeak_, &tileDynamicRange_, &tilePhase_, &tileClipping_, &tileReadiness_})
+    for (auto* tile : {&tileIntLufs_, &tileTruePeak_, &tileDynamicRange_, &tilePhase_, &tileClipping_})
         grid.addAndMakeVisible(*tile);
     setupTileContextMenus();
-    grid.addAndMakeVisible(readinessBreakdown_);
-    readinessBreakdown_.onSegmentClicked = [this](const std::string& termName) {
-        juce::Component* targetPanel = nullptr;
-        if (termName == "Headroom")
-            targetPanel = &loudness_;
-        else if (termName == "Crest Factor")
-            targetPanel = &dynamics_;
-        else if (termName == "Low-End Balance")
-            targetPanel = &spectral_;
-        else if (termName == "Stereo Correlation")
-            targetPanel = &stereo_;
-        else if (termName == "Critical Issues")
-            targetPanel = &mixNotes_;
-        else if (termName == "Streaming Delta")
-            targetPanel = &loudness_;
-
-        if (targetPanel != nullptr && targetPanel->isVisible()) {
-            viewport.setViewPosition(viewport.getViewPositionX(), targetPanel->getY());
-        }
-    };
 
     grid.addAndMakeVisible(spectral_);
     grid.addAndMakeVisible(loudness_);
@@ -235,7 +245,7 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
     // summary_ lives on the always-visible main dashboard (Zone 0.5, right below
     // the hero scorecards) rather than the tabbed/scrollable Zone 3 panels.
     grid.addAndMakeVisible(summary_);
-    grid.addAndMakeVisible(waveformEditor_);
+    grid.addChildComponent(waveformEditor_); // UX2-1: shown when its section is open
 
     zone3Panels_ = {
         &songInfo_, &vocalInfo_, &phase_, &artifact_, &translation_, &hooks_,
@@ -437,6 +447,7 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
         menu.addItem(1, TRANS("Customize Layout..."));
         menu.addItem(2, TRANS("Tune Weights..."));
         menu.addItem(3, TRANS("Confidence Overlay"), true, confidenceOverlayEnabled_);
+        menu.addItem(4, TRANS("Show advanced cards"), true, showAdvancedCards_); // OVH-7
         menu.showMenuAsync(juce::PopupMenu::Options{}, [this](int result) {
             switch (result) {
             case 1:
@@ -447,6 +458,11 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
                 break;
             case 3:
                 toggleConfidenceOverlay(!confidenceOverlayEnabled_);
+                break;
+            case 4: // OVH-7: research / forensic / experimental cards in "All"
+                showAdvancedCards_ = !showAdvancedCards_;
+                writePreferenceAsync("dashboard_show_advanced", showAdvancedCards_ ? "1" : "0");
+                layoutZone3();
                 break;
             default:
                 break;
@@ -462,7 +478,11 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
         weightProfileCombo_.addItem(juce::String(g.name) + " " + TRANS("Tuning"), pId++);
     }
     weightProfileCombo_.setSelectedId(1, juce::dontSendNotification);
+    weightProfileCombo_.setTitle(TRANS("Readiness weighting"));
+    weightProfileCombo_.setTooltip(TRANS("How the readiness categories are weighted: the default, or a genre's tuning."));
     weightProfileCombo_.onChange = [this]() {
+        // OVH-1: one choice for the score on screen and the one saved.
+        controller.analysis().setScoreWeightProfile(currentWeightProfileId());
         if (controller.hasAnalysis()) {
             onAnalysisUpdate(controller.currentAnalysis());
         }
@@ -552,10 +572,12 @@ void DashboardScreen::loadPreferencesAsync()
         const std::string compare = get("dashboard_compare_mode");
         const std::string dock = get(kDockStatePrefKey);
         const std::string confidence = get("dashboard_confidence_overlay");
+        const std::string advanced = get("dashboard_show_advanced"); // OVH-7
+        const std::string waveformOpen = get("dashboard_waveform_open"); // UX2-1
         auto layoutRes = sm->getUserPreference("dashboard_layout_active");
         const bool hasLayout = layoutRes.is_ok();
         const std::string layout = hasLayout ? layoutRes.value() : std::string{};
-        juce::MessageManager::callAsync([safe, compare, dock, confidence, hasLayout, layout] {
+        juce::MessageManager::callAsync([safe, compare, dock, confidence, advanced, waveformOpen, hasLayout, layout] {
             auto* self = safe.getComponent();
             if (self == nullptr) return;
             if (compare == "1") {
@@ -572,6 +594,8 @@ void DashboardScreen::loadPreferencesAsync()
                 for (auto* p : self->zone3Panels_)
                     if (auto* card = dynamic_cast<PanelCard*>(p)) card->setConfidenceOverlayEnabled(true);
             }
+            self->showAdvancedCards_ = advanced == "1"; // OVH-7
+            self->setWaveformOpen(waveformOpen == "1", false); // UX2-1
             if (hasLayout) self->applyWorkspaceLayout(WorkspaceLayout::fromJson(juce::String(layout)), false);
             self->prefsLoaded_ = true;
             // Already visible before the prefs arrived: pop out now.
@@ -611,20 +635,83 @@ void DashboardScreen::resetForSession()
     updateCompletenessBadge();
 }
 
-void DashboardScreen::repaintPlayhead()
+bool DashboardScreen::engineerDetail() const
 {
-    if (!isShowing()) return;
-    // Same geometry as KhensuLookAndFeel::drawGlassmorphicBackground's
-    // playhead: x = 170 + progress * (width - 200), a ~15 px glow.
-    const double duration = controller.playback().getPlaybackDuration();
-    if (duration <= 0.0) return;
-    const double progress = controller.playback().getPlaybackPosition() / duration;
-    const int w = getWidth() - 200;
-    const int x = 170 + (int)std::lround(juce::jlimit(0.0, 1.0, progress) * (double)juce::jmax(0, w));
-    if (x == lastPlayheadX_) return;
-    if (lastPlayheadX_ >= 0) repaint(lastPlayheadX_ - 3, 0, 22, getHeight());
-    repaint(x - 3, 0, 22, getHeight());
-    lastPlayheadX_ = x;
+    return controller.shell().getReportMode() == ReportMode::EngineerDetail;
+}
+
+void DashboardScreen::refreshVerdict()
+{
+    // OVH-1: the number, its band, the counts (from the recommendation list
+    // the score was built from) and "Start here" (the issue Fix top issue
+    // fixes) all come from one place - VerdictModel.h.
+    if (!controller.hasActiveSession() || !controller.hasAnalysis() || controller.currentAnalysis().is_partial) {
+        verdictCard_.setEmpty();
+        return;
+    }
+    const auto& derived = controller.analysis().derivedResultData();
+    const auto issues = controller.issues().list();
+    // RUN-7/8: after a fix the queue describes the current version while the
+    // score and counts are the analysed original's - say which is which.
+    juce::String scope;
+    if (verdict::queueReflectsCheck(issues))
+        scope = TRANS("in the original") + " - " + juce::String(controller.issues().openCount()) + " "
+                + TRANS("open on the current version");
+    verdictCard_.setData(derived.scorecard, verdict::countFindings(derived.recommendations),
+                         verdict::startHere(issues), scope);
+}
+
+void DashboardScreen::updateHero()
+{
+    // UX2-1: the same model the Issues screen's hero draws (HeroSpectrumModel.h).
+    if (!controller.hasActiveSession() || !controller.hasAnalysis() || controller.currentAnalysis().is_partial) {
+        hero_.setModel({}, {}, false);
+        return;
+    }
+    std::optional<GenreEntry> genre;
+    if (const auto* session = controller.getActiveSession())
+        genre = controller.genreDatabase().findById(session->target.primary_genre);
+    const auto issues = controller.issues().list();
+    auto model = hero_spectrum::build(controller.currentAnalysis(), genre, issues,
+                                      controller.analysis().currentVerification(),
+                                      &controller.analysis().genreSpread());
+    // VIZ-N1: the session's first reference track on the same chart.
+    if (const auto* session = controller.getActiveSession(); session != nullptr && !session->target.reference_track_paths.empty()) {
+        const juce::String ref(juce::CharPointer_UTF8(session->target.reference_track_paths.front().c_str()));
+        if (const auto tl = timeline_cache::find(ref))
+            hero_spectrum::attachReference(model, *tl, TRANS("Reference") + ": " + juce::File(ref).getFileNameWithoutExtension());
+        else if (!referenceRequested_) {
+            referenceRequested_ = true;
+            fetchQuietly(*this, controller, [ref] { return timeline_cache::measure(ref) != nullptr; },
+                         [](auto& self, bool ok) { if (ok) self.updateHero(); },
+                         [](auto& self) { self.referenceRequested_ = false; }, true);
+        }
+    }
+    // The fixes the current version is built on, as the expected change.
+    std::vector<float> after(model.spectrum.size(), 0.0f);
+    bool anyAfter = false;
+    for (const auto& issue : issues)
+        if (issue.fixedAmount > 0.0f) {
+            const auto response =
+                hero_spectrum::fixResponse(issue.rec, issue.fixedAmount, model.spectrum, model.sampleRate);
+            for (size_t i = 0; i < after.size() && i < response.size(); ++i) {
+                after[i] += response[i];
+                anyAfter = anyAfter || std::abs(after[i]) > 0.01f;
+            }
+        }
+    if (!anyAfter) after.clear();
+    hero_.setModel(std::move(model), std::move(after), isShowing());
+}
+
+void DashboardScreen::setWaveformOpen(bool open, bool persist)
+{
+    waveformOpen_ = open;
+    waveformToggle_.setButtonText(open ? TRANS("Hide waveform & spectrogram editor")
+                                       : TRANS("Show waveform & spectrogram editor"));
+    waveformToggle_.setToggleState(open, juce::dontSendNotification);
+    if (persist) writePreferenceAsync("dashboard_waveform_open", open ? "1" : "0");
+    layoutZone3();
+    grid.repaint();
 }
 
 std::string DashboardScreen::currentWeightProfileId() const
@@ -648,6 +735,15 @@ void DashboardScreen::onAnalysisUpdate(const AnalysisResult& r)
     pushDataToPanels(r);
     updateHeader();
     updateCompletenessBadge();
+    // A final result ends the main pipeline even when stages were skipped
+    // (no "6 of 6" arrives then): let the bar show its last state, then go.
+    if (!r.is_partial && pipelineProgress_.isVisible())
+        juce::Timer::callAfterDelay(1200, [safeThis = juce::Component::SafePointer<DashboardScreen>(this)]() {
+            if (auto* self = safeThis.getComponent()) {
+                self->pipelineProgress_.setVisible(false);
+                self->resized();
+            }
+        });
 
     // Intake auto-run (spec §1.2): once the main analysis lands, kick off
     // the mix-level service scans without requiring a button press. Once
@@ -720,9 +816,6 @@ void DashboardScreen::refreshDrumsFromStem()
 void DashboardScreen::pushDataToPanels(const AnalysisResult& r)
 {
     lastPushed_ = {controller.hasAnalysis(), controller.analysis().analysisVersion()};
-    // UX-1: the collapsed verdict is the default in Client mode; Engineer
-    // mode opens on the full analysis.
-    isCollapsed_ = controller.shell().getReportMode() == ReportMode::ClientSummary;
     if (auto picked = canonicalIds(essentials::select(r.recommendations)); picked != essentialIds_) {
         for (const auto& member : essentials::select(r.recommendations))
             if (auto it = groupOfMember_.find(member); it != groupOfMember_.end()) it->second->selectMember(member);
@@ -791,11 +884,11 @@ void DashboardScreen::pushDataToPanels(const AnalysisResult& r)
     const bool haveResult = controller.hasAnalysis() && !r.is_partial;
     if (!haveResult) {
         for (auto* t :
-             {&tileIntLufs_, &tileTruePeak_, &tileDynamicRange_, &tilePhase_, &tileClipping_, &tileReadiness_})
+             {&tileIntLufs_, &tileTruePeak_, &tileDynamicRange_, &tilePhase_, &tileClipping_})
             t->setMetric(t->currentLabel(), "-", {}, BadgeStatus::Neutral);
-        scoreCard_.clear();
         mixCraft_.clear();
-        readinessBreakdown_.clear();
+        verdictCard_.setEmpty();
+        updateHero();
         conflictBanner_.setVisible(false);
         return;
     }
@@ -849,23 +942,30 @@ void DashboardScreen::pushDataToPanels(const AnalysisResult& r)
         } else {
             weightProfileCombo_.setSelectedId(1, juce::dontSendNotification);
         }
+        controller.analysis().setScoreWeightProfile(currentWeightProfileId());
     }
 
-    const auto& derived = controller.analysis().derivedResultData(currentWeightProfileId());
+    // OVH-1: one headline - the scorecard's overall score, under the one
+    // weighting choice the store also saves; Mix Craft is its breakdown.
+    const auto& derived = controller.analysis().derivedResultData();
     const MixReport& report = derived.report;
-    const MixScorecard& scorecard = derived.scorecard;
-
-    const auto readinessStatus = report.mastering_readiness_score >= 85.0f   ? BadgeStatus::Pass
-                                 : report.mastering_readiness_score >= 50.0f ? BadgeStatus::Warn
-                                                                             : BadgeStatus::Fail;
-    tileReadiness_.setMetric(TRANS("MASTER READY"),
-                             juce::String(static_cast<int>(std::round(report.mastering_readiness_score))), "/100",
-                             readinessStatus);
-    readinessBreakdown_.setBreakdown(report.penalty_breakdown);
-
-    scoreCard_.setScore(scorecard);
-    mixCraft_.setScorecard(scorecard);
-    verdictCard_.setData(r, report.mastering_readiness_score);
+    mixCraft_.setScorecard(derived.scorecard);
+    {
+        // VIZ-1c: the readiness rows against released tracks of the genre.
+        std::string genreId;
+        juce::String genreName = TRANS("tracks");
+        if (const auto* session = controller.getActiveSession()) {
+            genreId = session->target.primary_genre;
+            if (const auto entry = controller.genreDatabase().findById(genreId))
+                genreName = juce::String(entry->name.empty() ? entry->id : entry->name);
+        }
+        const auto* spread = controller.analysis().genreSpread().find(genreId);
+        if (spread != nullptr && spread->genreId != genreId) genreName = TRANS("tracks");
+        mixCraft_.setSpread(spread != nullptr && !spread->scorecard.empty() ? spread : nullptr, genreName);
+    }
+    refreshVerdict();
+    updateHero();
+    songTimeline_.refresh();
 
     if (!report.conflicts.empty()) {
         conflictBanner_.setText(TRANS("Conflict Warning:") + " " + juce::String(report.conflicts[0].reason),
@@ -885,8 +985,10 @@ void DashboardScreen::updateHeader()
     // UX-5: snapshot / compare / view controls act on a session's results.
     for (juce::Component* c : std::initializer_list<juce::Component*>{
              &compareToggleButton_, &snapshotsButton_, &timelineToggleButton_,
-             &overflowButton_, &shortcutLegendLabel_})
+             &overflowButton_})
         c->setVisible(active);
+    // UI-10: keyboard legend is engineer detail.
+    shortcutLegendLabel_.setVisible(active && engineerDetail());
 
     const bool hasAnal = controller.hasAnalysis();
     snapshotsButton_.setEnabled(hasAnal);
@@ -907,12 +1009,12 @@ void DashboardScreen::updateHeader()
             const auto& r = controller.currentAnalysis();
             if (r.is_partial) {
                 statusLabel.setText(getSpinnerText(TRANS("Deep analysis running")), juce::dontSendNotification);
-            } else if (!r.has_python_analysis()) {
-                statusLabel.setText(TRANS("Analysis complete (fast analysis only - the analysis engine was unreachable)."),
-                                    juce::dontSendNotification);
-                showRerun = true; // offer a one-click deep re-run right where the state is reported
             } else {
-                statusLabel.setText(TRANS("Analysis complete."), juce::dontSendNotification);
+                // OVH-1: worded by the real reason (off / skipped / failed /
+                // engine unavailable), the same lifecycle the sidebar reads.
+                const auto state = controller.analysis().deepPassState();
+                statusLabel.setText(service_status::deepPassLine(state), juce::dontSendNotification);
+                showRerun = service_status::deepPassOffersRerun(state);
             }
         }
         if (showRerun && !btnRerunDeep_.isVisible()) {
@@ -946,137 +1048,56 @@ void DashboardScreen::layoutZone3()
     const int gap = KhensuTheme::cardGap;
     int y = 0;
 
-    // Zone 0.0: verdict card - the scannable headline (readiness %, issue/
-    // strength counts, "start here", Fix CTA) above everything (kimi P1).
-    {
-        const bool showVerdict = controller.hasActiveSession() && controller.hasAnalysis();
-        verdictCard_.setVisible(showVerdict);
-        if (showVerdict) {
-            verdictCard_.setBounds(0, y, w, KhensuVerdictCard::kHeight);
-            y += KhensuVerdictCard::kHeight + gap;
-        }
+    const bool active = controller.hasActiveSession();
+    const bool results = active && controller.hasAnalysis();
 
-        expandButton_.setVisible(isCollapsed_ && showVerdict);
-        if (isCollapsed_ && showVerdict) {
-            expandButton_.setBounds(0, y, w, 40);
-            y += 40 + gap;
-
-            scoreCard_.setVisible(false);
-            mixCraft_.setVisible(false);
-            summary_.setVisible(false);
-            if (dock_ == nullptr || !dock_->isPoppedOut("waveform_editor")) waveformEditor_.setVisible(false);
-            weightProfileCombo_.setVisible(false);
-            for (auto* t :
-                 {&tileIntLufs_, &tileTruePeak_, &tileDynamicRange_, &tilePhase_, &tileClipping_, &tileReadiness_})
-                t->setVisible(false);
-            spectral_.setVisible(false);
-            loudness_.setVisible(false);
-            dynamics_.setVisible(false);
-            stereo_.setVisible(false);
-            fingerprint_.setVisible(false);
-            zone3Tabs_.setVisible(false);
-            for (auto* p : zone3Panels_)
-                p->setVisible(false);
-
-            grid.setSize(w, y);
-            return;
-        }
+    // UX2-1, in reading order: the verdict (one number + "Fix this"), the
+    // hero spectrum with the findings, the readiness breakdown, then the
+    // detailed cards; the measurements and the editor below them.
+    verdictCard_.setVisible(results);
+    if (results) {
+        verdictCard_.setBounds(0, y, w, KhensuVerdictCard::kHeight);
+        y += KhensuVerdictCard::kHeight + gap;
     }
 
-    // Zone 0: hero scorecards - Overall Score (with collapsible bands) and
-    // the Mix Craft category breakdown, side by side above the metrics strip.
-    {
-        scoreCard_.setVisible(controller.hasActiveSession());
-        mixCraft_.setVisible(controller.hasActiveSession());
-        weightProfileCombo_.setVisible(controller.hasActiveSession());
+    hero_.setVisible(results);
+    if (results) {
+        // VIZ-P2: the strip under the spectrum is two rows (measurements,
+        // then the findings), so the hero is taller than the spectrum alone.
+        const int heroH = juce::jlimit(360, 460, w * 34 / 100);
+        hero_.setBounds(0, y, w, heroH);
+        y += heroH + gap;
+    }
 
-        const int col1W = w * 40 / 100;
+    // VIZ-2: where in the song, right under the spectrum.
+    songTimeline_.setVisible(results);
+    if (results) {
+        const int tlH = juce::jlimit(320, 420, w * 28 / 100);
+        songTimeline_.setBounds(0, y, w, tlH);
+        y += tlH + gap;
+    }
+
+    // The readiness breakdown (Mix Craft, with the weighting it is scored
+    // under) beside the Summary - the verdict above carries the one number.
+    mixCraft_.setVisible(active);
+    weightProfileCombo_.setVisible(active);
+    summary_.setVisible(active);
+    if (active) {
+        const int col1W = w * 58 / 100;
         const int col2W = w - col1W - gap;
-        const int comboH = 24;
-        const int rowH = juce::jmax(scoreCard_.preferredHeight() + comboH + 6, mixCraft_.preferredHeight());
-        weightProfileCombo_.setBounds(0, y, col1W, comboH);
-        scoreCard_.setBounds(0, y + comboH + 6, col1W, rowH - comboH - 6);
-        mixCraft_.setBounds(col1W + gap, y, col2W, rowH);
+        const int rowH = mixCraft_.preferredHeight();
+        mixCraft_.setBounds(0, y, col1W, rowH);
+        weightProfileCombo_.setBounds(mixCraft_.weightControlArea() + mixCraft_.getPosition());
+        weightProfileCombo_.toFront(false);
+        summary_.setBounds(col1W + gap, y, col2W, rowH);
         y += rowH + gap;
     }
 
-    // Zone 0.5: Summary of Mix/Master - always visible on the main dashboard,
-    // not tucked behind the Zone 3 Technical/Creative tabs.
-    {
-        const int summaryH = 160;
-        summary_.setVisible(controller.hasActiveSession());
-        summary_.setBounds(0, y, w, summaryH);
-        y += summaryH + gap;
-    }
-
-    // Zone 0.6: waveform & spectrogram editing view (scrub, select, zoom,
-    // annotate) - full width so a song's whole timeline is legible.
-    {
-        const int editorH = dock_ != nullptr ? dock_->state().heightFor("waveform_editor", 300) : 300;
-        const bool floating = dock_ != nullptr && dock_->isPoppedOut("waveform_editor");
-        if (!floating) waveformEditor_.setVisible(controller.hasActiveSession());
-        if (!floating && waveformEditor_.isVisible()) {
-            waveformEditor_.setBounds(0, y, w, editorH);
-            y += editorH + gap;
-        }
-    }
-
-    // Zone 1: critical metrics strip
-    {
-        const int tileH = 88;
-        int tileW = (w - 5 * gap) / 6;
-        int tx = 0;
-        int readinessTileX = 0, readinessTileW = tileW;
-        for (auto* t :
-             {&tileIntLufs_, &tileTruePeak_, &tileDynamicRange_, &tilePhase_, &tileClipping_, &tileReadiness_}) {
-            t->setVisible(controller.hasActiveSession());
-            t->setBounds(tx, y, tileW, tileH);
-            if (t == &tileReadiness_) {
-                readinessTileX = tx;
-                readinessTileW = tileW;
-            }
-            tx += tileW + gap;
-        }
-        y += tileH + gap;
-
-        const int breakdownH = 26;
-        readinessBreakdown_.setVisible(controller.hasActiveSession());
-        readinessBreakdown_.setBounds(readinessTileX, y, readinessTileW, breakdownH);
-        y += breakdownH + gap;
-    }
-
-    // Zone 2: two-column layout for the 5 primary analysis panels
-    {
-        spectral_.setVisible(controller.hasActiveSession());
-        loudness_.setVisible(controller.hasActiveSession());
-        dynamics_.setVisible(controller.hasActiveSession());
-        stereo_.setVisible(controller.hasActiveSession());
-        fingerprint_.setVisible(controller.hasActiveSession());
-
-        const int col1W = w * 55 / 100;
-        const int col2W = w - col1W - gap;
-        const int rightX = col1W + gap;
-        const int zone2Y = y;
-
-        // Fixed heights sized to what each panel actually needs to render its
-        // meters/heat-strips (previously a hardcoded 480px zone-2 budget left
-        // loudness_/dynamics_ with ~40px combined - effectively zero height,
-        // so their meters never had room to draw).
-        const int spectralH = 380;
-        const int loudnessH = 230;
-        const int dynamicsH = 340; // +50 to fit the new crest-factor distribution histogram
-        const int leftColH = spectralH + gap + loudnessH + gap + dynamicsH;
-
-        spectral_.setBounds(0, zone2Y, col1W, spectralH);
-        loudness_.setBounds(0, zone2Y + spectralH + gap, col1W, loudnessH);
-        dynamics_.setBounds(0, zone2Y + spectralH + gap + loudnessH + gap, col1W, dynamicsH);
-
-        const int rightColH = leftColH; // keep both columns the same total height
-        const int halfH = (rightColH - gap) / 2;
-        stereo_.setBounds(rightX, zone2Y, col2W, halfH);
-        fingerprint_.setBounds(rightX, zone2Y + halfH + gap, col2W, halfH);
-
-        y += leftColH + gap;
+    // Detailed cards: the category tabs (Essentials by default) and the grid.
+    detailCaption_.setVisible(active);
+    if (active) {
+        detailCaption_.setBounds(0, y + KhensuTheme::sp2, w, 28);
+        y += 28 + KhensuTheme::sp2 + KhensuTheme::sp2;
     }
 
     // Zone 3: Technical Quality and Creative/Song Structure panels are shown
@@ -1099,7 +1120,8 @@ void DashboardScreen::layoutZone3()
     std::map<juce::Component*, std::string> activeIds;
     for (const auto& id : zone3Order_) {
         if (zone3Visibility_.count(id) && !zone3Visibility_.at(id)) continue;
-        if (!essentialsOnly && !dashboard_category::shownInTab(activeZone3Category_, id)) continue;
+        if (!essentialsOnly && !dashboard_category::shownInTab(activeZone3Category_, id, showAdvancedCards_))
+            continue; // OVH-7: advanced cards join "All" only when shown
         if (essentialsOnly && std::find(essentialIds_.begin(), essentialIds_.end(), id) == essentialIds_.end())
             continue;
         if (dock_ != nullptr && dock_->isPoppedOut(id)) continue; // lives in its own window
@@ -1204,7 +1226,61 @@ void DashboardScreen::layoutZone3()
         }
     }
 
-    grid.setSize(w, y);
+    // Core measurements: the five headline tiles and the primary panels.
+    measurementsCaption_.setVisible(active);
+    if (active) {
+        y += KhensuTheme::sp2;
+        measurementsCaption_.setBounds(0, y, w, 28);
+        y += 28 + KhensuTheme::sp2;
+    }
+    {
+        const int tileH = 88;
+        const int tileW = (w - 4 * gap) / 5;
+        int tx = 0;
+        // VIZ-P1: the hero's tiles are the one place for the analysed values;
+        // this second row repeated them, so it stays hidden.
+        juce::ignoreUnused(tileH, tileW, tx);
+        for (auto* t : {&tileIntLufs_, &tileTruePeak_, &tileDynamicRange_, &tilePhase_, &tileClipping_})
+            t->setVisible(false);
+    }
+    {
+        for (juce::Component* p : std::initializer_list<juce::Component*>{&spectral_, &loudness_, &dynamics_, &stereo_,
+                                                                         &fingerprint_})
+            p->setVisible(active);
+        const int col1W = w * 55 / 100;
+        const int col2W = w - col1W - gap;
+        const int rightX = col1W + gap;
+        // Fixed heights sized to what each panel needs to draw its meters.
+        const int spectralH = 380;
+        const int loudnessH = 230;
+        const int dynamicsH = 340; // fits the crest-factor distribution histogram
+        const int leftColH = spectralH + gap + loudnessH + gap + dynamicsH;
+        spectral_.setBounds(0, y, col1W, spectralH);
+        loudness_.setBounds(0, y + spectralH + gap, col1W, loudnessH);
+        dynamics_.setBounds(0, y + spectralH + gap + loudnessH + gap, col1W, dynamicsH);
+        const int halfH = (leftColH - gap) / 2;
+        stereo_.setBounds(rightX, y, col2W, halfH);
+        fingerprint_.setBounds(rightX, y + halfH + gap, col2W, halfH);
+        if (active) y += leftColH + gap;
+    }
+
+    // The waveform & spectrogram editor: a collapsible section (UX2-1).
+    {
+        const bool floating = dock_ != nullptr && dock_->isPoppedOut("waveform_editor");
+        waveformToggle_.setVisible(active && !floating);
+        if (active && !floating) {
+            waveformToggle_.setBounds(0, y, juce::jmin(w, 300), KhensuTheme::buttonH);
+            y += KhensuTheme::buttonH + gap;
+        }
+        if (!floating) waveformEditor_.setVisible(active && waveformOpen_);
+        if (!floating && waveformEditor_.isVisible()) {
+            const int editorH = dock_ != nullptr ? dock_->state().heightFor("waveform_editor", 300) : 300;
+            waveformEditor_.setBounds(0, y, w, editorH);
+            y += editorH + gap;
+        }
+    }
+
+    grid.setSize(w, active ? y : 0); // no session: nothing to scroll (UX-5)
 
     // Shimmer overlays track their card's bounds so the sweep animation
     // lines up once shown, but visibility itself is NOT set here - it's
@@ -1224,12 +1300,9 @@ void DashboardScreen::layoutZone3()
 
 void DashboardScreen::paint(juce::Graphics& g)
 {
-    double duration = controller.playback().getPlaybackDuration();
-    double progress = duration > 0.0 ? controller.playback().getPlaybackPosition() / duration : -1.0;
-    lastPlayheadX_ = duration > 0.0 ? 170 + (int)std::lround(juce::jlimit(0.0, 1.0, progress) *
-                                                             (double)juce::jmax(0, getWidth() - 200))
-                                    : -1;
-    KhensuLookAndFeel::drawGlassmorphicBackground(g, getLocalBounds(), controller.playback().getWaveformPeaks(), progress);
+    // UI-7: no playhead in the backdrop - playback position shows on the
+    // transport and the waveform only.
+    KhensuLookAndFeel::drawGlassmorphicBackground(g, getLocalBounds(), controller.playback().getWaveformPeaks());
 }
 
 void DashboardScreen::resized()
@@ -1240,21 +1313,27 @@ void DashboardScreen::resized()
     auto headerArea = b.removeFromTop(KhensuTheme::headerH);
     // Clamped (DSK-16): a header narrower than the fixed 525 px of controls
     // used to hand the title a NEGATIVE width.
-    titleLabel.setBounds(headerArea.removeFromLeft(juce::jmax(0, headerArea.getWidth() - 525)));
-    serviceHealthWidget_.setBounds(headerArea.removeFromLeft(110).reduced(2, 4));
-    headerArea.removeFromLeft(10);
-    compareToggleButton_.setBounds(headerArea.removeFromLeft(85).reduced(2, 4));
-    snapshotsButton_.setBounds(headerArea.removeFromLeft(110).reduced(2, 4));
+    // UX2-3: the engine status at the width its words need, never ellipsized.
+    snapshotsButton_.setBounds(headerArea.removeFromRight(110).reduced(2, 4));
+    compareToggleButton_.setBounds(headerArea.removeFromRight(92).reduced(2, 4));
+    headerArea.removeFromRight(KhensuTheme::sp3);
+    serviceHealthWidget_.setBounds(headerArea.removeFromRight(ServiceHealthWidget::preferredWidth()).reduced(0, 6));
+    headerArea.removeFromRight(KhensuTheme::sp3);
+    titleLabel.setBounds(headerArea);
 
     auto statusRow = b.removeFromTop(26); // was 18px - sub-Fitts tap targets
     overflowButton_.setBounds(statusRow.removeFromRight(32));
     statusRow.removeFromRight(6);
     timelineToggleButton_.setBounds(statusRow.removeFromRight(112));
     statusRow.removeFromRight(6);
-    completenessBadge_.setBounds(statusRow.removeFromRight(60));
-    statusRow.removeFromRight(12);
-    shortcutLegendLabel_.setBounds(statusRow.removeFromRight(260));
-    statusRow.removeFromRight(6);
+    if (completenessBadge_.isVisible()) {
+        completenessBadge_.setBounds(statusRow.removeFromRight(84));
+        statusRow.removeFromRight(12);
+    }
+    if (shortcutLegendLabel_.isVisible()) {
+        shortcutLegendLabel_.setBounds(statusRow.removeFromRight(260));
+        statusRow.removeFromRight(6);
+    }
     if (btnRerunDeep_.isVisible()) {
         btnRerunDeep_.setBounds(statusRow.removeFromRight(160).reduced(2, 2));
         statusRow.removeFromRight(6);
@@ -1303,14 +1382,13 @@ void DashboardScreen::resized()
         loadTrackButton_.setBounds(no_session::loadButtonBounds(b));
 
         for (auto* t :
-             {&tileIntLufs_, &tileTruePeak_, &tileDynamicRange_, &tilePhase_, &tileClipping_, &tileReadiness_}) {
+             {&tileIntLufs_, &tileTruePeak_, &tileDynamicRange_, &tilePhase_, &tileClipping_}) {
             t->setMetric(t->currentLabel(), "-", {}, BadgeStatus::Neutral);
             t->setVisible(false); // UX-5: no "--" tiles posing as readings
         }
 
-        scoreCard_.clear();
         mixCraft_.clear();
-        readinessBreakdown_.clear();
+        verdictCard_.setEmpty();
         spectral_.setVisible(false);
         loudness_.setVisible(false);
         dynamics_.setVisible(false);
@@ -1322,15 +1400,7 @@ void DashboardScreen::resized()
     } else {
         warningLabel.setVisible(false);
         loadTrackButton_.setVisible(false);
-        spectral_.setVisible(true);
-        loudness_.setVisible(true);
-        dynamics_.setVisible(true);
-        stereo_.setVisible(true);
-        fingerprint_.setVisible(true);
-        for (auto* t :
-             {&tileIntLufs_, &tileTruePeak_, &tileDynamicRange_, &tilePhase_, &tileClipping_, &tileReadiness_})
-            t->setVisible(true);
-        // Defer zone3Panels_ visibility to layoutZone3() which handles tab-aware visibility.
+        // layoutZone3() owns every section's visibility (UX2-1).
     }
 
     layoutZone3();
@@ -1493,8 +1563,6 @@ void DashboardScreen::setupTileContextMenus()
         {&tilePhase_, "Phase",
          "Stereo phase/correlation health - negative values risk cancellation when the mix is folded to mono."},
         {&tileClipping_, "Clipping", "Whether inter-sample or digital clipping was detected anywhere in the file."},
-        {&tileReadiness_, "Master Readiness",
-         "Rolled-up 0-100 score from every recommender (see the penalty breakdown bar below this tile)."},
     };
 
     for (const auto& m : metas) {
@@ -1567,7 +1635,6 @@ juce::Component* DashboardScreen::panelById(const std::string& id) const
 
 std::vector<std::pair<juce::String, juce::Component*>> DashboardScreen::groupCardsForDiagnostics()
 {
-    isCollapsed_ = false;
     activeZone3Category_ = "All";
     layoutZone3();
     std::vector<std::pair<juce::String, juce::Component*>> out;
@@ -1861,11 +1928,12 @@ void DashboardScreen::updateCompletenessBadge()
         }
     }
     const int pct = applicable > 0 ? (analyzed * 100 / applicable) : 100;
+    // UI-10: the completeness chip is engineer detail.
     completenessBadge_.setText(juce::String(pct) + "% " + TRANS("complete"), juce::dontSendNotification);
     completenessBadge_.setColour(juce::Label::textColourId,
                                  // UX-5: progress, not severity - neutral until done.
                                  pct >= 100 ? KhensuTheme::accentTeal : KhensuTheme::textSecondary);
-    completenessBadge_.setVisible(controller.hasActiveSession());
+    completenessBadge_.setVisible(controller.hasActiveSession() && engineerDetail());
 }
 
 juce::String DashboardScreen::getSpinnerText(const juce::String& base) const

@@ -180,6 +180,7 @@ class ServiceLifecycle final : public IServiceLifecycle {
     // when the Python service is slow or unreachable.
     std::atomic<bool> playheadPollInFlight_{false};
     std::atomic<bool> healthCheckInFlight_{false};
+    int lastLoggedHealth_ = -1; ///< message thread: the last health status written to the log
     std::atomic<bool> eventPollInFlight_{false};
 
     juce::AbstractFifo playheadFifo_{16};

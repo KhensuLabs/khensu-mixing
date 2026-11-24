@@ -75,6 +75,7 @@ class PlaybackService final : public IPlayback {
     void setAbSide(bool showProcessed) override;
     juce::String abProcessedPath() const noexcept override { return source_.processedPath; }
     std::optional<float> abProcessedLufs() const noexcept override { return source_.processedLufs; }
+    AbLevelOffset abLevelOffset() const override;
     void primeAbLoudness(const juce::StringArray& paths, std::function<void(bool allKnown)> onDone) override;
     void learnFromAbPreference(bool preferredProcessed, bool bIsBlindReference = false) override;
     void addAbRenderAppliedListener(void* key, std::function<void()> cb) override
@@ -85,6 +86,7 @@ class PlaybackService final : public IPlayback {
 
     void addRealTimeMeterListener(void* key, MeterCallback cb) override { meterListeners_[key] = std::move(cb); }
     void removeRealTimeMeterListener(void* key) override { meterListeners_.erase(key); }
+    PlaybackMeterTap* meterTap() noexcept override { return &engine_.meterTap(); }
 
     // ---- Owner API (AppController) ----
     void unloadAudioFileForPlayback() { engine_.clearSource(); }
@@ -107,6 +109,15 @@ class PlaybackService final : public IPlayback {
 
   private:
     void measureAbProcessedLufs(const juce::String& path);
+    /// Peaks of `file` for the waveform views, off the message thread.
+    void startWaveformScan(const juce::File& file);
+    /// UI-6: A and B are both loaded in the engine (A main, B alternate),
+    /// so switching sides is a crossfade, not a reload.
+    bool abPairLoaded() const;
+    /// Loads A as the main deck and B as the alternate at the current
+    /// position; false when B could not be loaded.
+    bool loadAbPair();
+    juce::String pairA_, pairB_; ///< the files the A/B pair holds ("" = no pair)
     void seekDaw(float seconds);
     template <typename Map, typename... Args> static void notify(const Map& listeners, const Args&... args)
     {

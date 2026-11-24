@@ -998,7 +998,8 @@ khensu::Result<juce::var, BridgeError> AnalysisApi::analyzePitchAccuracy(const s
     reqObj->setProperty(apif::PitchAccuracyRequest::file_path, juce::String(file_path));
     putReferenceHz(*reqObj, reference_hz);
 
-    return postJson("/analyze/pitch_accuracy", juce::var(reqObj.get()), objectResponse());
+    return postJson("/analyze/pitch_accuracy", juce::var(reqObj.get()),
+                    objectResponse(heavyTimeoutMs(heavy_timeout::kPitchTrackMs, timeout_ms_)));
 }
 
 khensu::Result<juce::var, BridgeError> AnalysisApi::analyzePitchCurve(const std::string& file_path,
@@ -1008,7 +1009,8 @@ khensu::Result<juce::var, BridgeError> AnalysisApi::analyzePitchCurve(const std:
     reqObj->setProperty(apif::PitchCurveRequest::file_path, juce::String(file_path));
     putReferenceHz(*reqObj, reference_hz);
 
-    return postJson("/analyze/pitch_curve", juce::var(reqObj.get()), objectResponse());
+    return postJson("/analyze/pitch_curve", juce::var(reqObj.get()),
+                    objectResponse(heavyTimeoutMs(heavy_timeout::kPitchTrackMs, timeout_ms_)));
 }
 
 khensu::Result<juce::var, BridgeError> AnalysisApi::analyzeTuningReference(const std::string& file_path)
@@ -1016,7 +1018,8 @@ khensu::Result<juce::var, BridgeError> AnalysisApi::analyzeTuningReference(const
     juce::DynamicObject::Ptr reqObj = new juce::DynamicObject();
     reqObj->setProperty(apif::TuningReferenceRequest::file_path, juce::String(file_path));
 
-    return postJson("/analyze/tuning_reference", juce::var(reqObj.get()), objectResponse());
+    return postJson("/analyze/tuning_reference", juce::var(reqObj.get()),
+                    objectResponse(heavyTimeoutMs(heavy_timeout::kPitchTrackMs, timeout_ms_)));
 }
 
 khensu::Result<juce::var, BridgeError> AnalysisApi::analyzeSoundRecreation(const std::string& file_path,

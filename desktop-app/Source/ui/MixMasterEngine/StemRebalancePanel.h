@@ -22,6 +22,7 @@ class StemRebalancePanel final : public PanelCard {
     void resized() override;
     void paint(juce::Graphics& g) override;
     void resetForSession() override;
+    void visibilityChanged() override;
     /// Stem paths present for the active session (tests read it too).
     std::map<std::string, std::string> stemPaths() const;
 
@@ -40,6 +41,9 @@ class StemRebalancePanel final : public PanelCard {
     PanelRunState run_{this, &renderButton_};
     /// The current vocal changed (WF-4): the idle line says which vocal sums.
     ListenerHandle vocalListener_;
+    /// Fires after every separation: Suggest and Render wait for the stems
+    /// (RUN-15 - they stayed disabled after the stems were written).
+    ListenerHandle separationListener_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StemRebalancePanel)
 };

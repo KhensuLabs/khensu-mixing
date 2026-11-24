@@ -1,5 +1,7 @@
 // desktop-app/Source/services/IRenders.h
 #pragma once
+#include <optional>
+#include <utility>
 #include <JuceHeader.h>
 #include <functional>
 #include <vector>
@@ -83,6 +85,10 @@ class IRenders {
         bool genreActionAllowed = false;  ///< ... and the genre call is confident enough
         juce::String abstainedReason;     ///< why it isn't, when it isn't
         juce::String decisionHash;        ///< the model decision that proposed the chain, if any
+        /// VIZ-N3: process only [start, end) seconds (crossfaded in and out,
+        /// the rest copied from the input); nullopt = the whole track.
+        std::optional<std::pair<double, double>> region;
+        juce::String regionLabel; ///< "Chorus 1", for the version's name
     };
     /// Renders a new version of the mix: processes renderInputPath() (WF-1),
     /// writes `<original><outputSuffix>` (unique) beside the original and,

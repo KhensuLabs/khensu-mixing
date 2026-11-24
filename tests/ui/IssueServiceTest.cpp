@@ -529,3 +529,65 @@ TEST_CASE("The issue playlist steps through timed findings in time order (FEAT-8
     CHECK(end == 11.5); // at least two seconds
     CHECK(region(khensu::TimeRange{0.2f, 0.4f}).first == 0.0);
 }
+
+TEST_CASE("IssueService fixes at a chosen amount and reports it on the issue (OVH-6, UI-1)", "[con1][ovh6]")
+{
+    Fixture f;
+    CHECK(f.issues->issue("too_bright_f1")->fixedAmount == 0.0f);
+    bool ok = false;
+    f.issues->fixScaled("too_bright_f1", 0.5f, [&](bool success, juce::String) { ok = success; });
+    CHECK(ok);
+    CHECK(f.issues->issue("too_bright_f1")->fixedAmount == 0.5f);
+    CHECK(f.issues->issue("too_bright_f1")->state == IIssues::State::Done);
+
+    // Nothing to render at 0 %: refused, nothing rendered.
+    const auto before = f.renders.fixed.size();
+    bool refused = false;
+    f.issues->fixScaled("true_peak_over_f1", 0.0f, [&](bool success, juce::String) { refused = !success; });
+    CHECK(refused);
+    CHECK(f.renders.fixed.size() == before);
+    CHECK_FALSE(f.issues->fixInProgress());
+}
+
+TEST_CASE("Issue rows carry one primary action (UI-2)", "[con1][ui2]")
+{
+    using khensu::IssueQueuePanel;
+    IIssues::Issue open;
+    open.recId = "r1";
+    open.renderable = true;
+    CHECK(IssueQueuePanel::primaryLabel(open, 1.0f, false) == "Fix");
+    CHECK(IssueQueuePanel::primaryLabel(open, 0.6f, false) == "Fix 60%");
+    CHECK(IssueQueuePanel::primaryLabel(open, 0.6f, true) == "Keep");
+    IIssues::Issue advice = open;
+    advice.renderable = false;
+    CHECK(IssueQueuePanel::primaryLabel(advice, 1.0f, false).isEmpty());
+    IIssues::Issue done = open;
+    done.state = IIssues::State::Done;
+    CHECK(IssueQueuePanel::primaryLabel(done, 1.0f, false) == "Reopen");
+    CHECK(IssueQueuePanel::severityWord(80.0f) == "Severe");
+    CHECK(IssueQueuePanel::severityWord(40.0f) == "Moderate");
+    CHECK(IssueQueuePanel::severityWord(5.0f) == "Minor");
+}
+
+TEST_CASE("Selecting on the hero selects the row and back (UI-1)", "[con1][ui1]")
+{
+    juce::ScopedJuceInitialiser_GUI init;
+    TwoIssues controller;
+    khensu::IssueQueuePanel panel(controller);
+    panel.setSize(1100, 800);
+    panel.setMonitoringSource([] { return std::string(); });
+    panel.refresh();
+    // The top open issue is selected by default, and the hero follows.
+    CHECK(panel.selectedKey() == "r-sub");
+    CHECK(panel.heroForTesting().selected() == "r-sub");
+    panel.select("r-loud", true);
+    CHECK(panel.heroForTesting().selected() == "r-loud");
+    // The hero's click handler selects the row.
+    REQUIRE(panel.heroForTesting().onFindingClicked);
+    panel.heroForTesting().onFindingClicked("r-sub");
+    CHECK(panel.selectedKey() == "r-sub");
+    // Selection survives a rebuild.
+    panel.refresh();
+    CHECK(panel.selectedKey() == "r-sub");
+    CHECK(panel.amountFor("r-sub") == 1.0f);
+}

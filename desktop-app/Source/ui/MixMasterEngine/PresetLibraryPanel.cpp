@@ -13,7 +13,7 @@ struct PresetLibraryPanel::RowComponent final : public juce::Component {
     std::function<void()> onApply, onDelete;
 
     juce::TextButton applyButton{TRANS("Apply")};
-    juce::TextButton deleteButton{TRANS("x")}; // x
+    juce::TextButton deleteButton{"x"}; // i18n-exempt(symbol; named by setTitle)
 
     RowComponent()
     {
@@ -24,6 +24,8 @@ struct PresetLibraryPanel::RowComponent final : public juce::Component {
         };
         addAndMakeVisible(applyButton);
 
+        deleteButton.setTitle(TRANS("Delete preset"));
+        deleteButton.setTooltip(TRANS("Delete this preset (here and in the plugin's preset menu)"));
         deleteButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
         deleteButton.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentRed);
         deleteButton.onClick = [this] {
@@ -45,8 +47,8 @@ struct PresetLibraryPanel::RowComponent final : public juce::Component {
         g.drawText(row.name, inner.removeFromTop(inner.getHeight() / 2), juce::Justification::centredLeft, true);
         g.setFont(KhensuTheme::labelFont(9.0f));
         g.setColour(KhensuTheme::textTertiary);
-        g.drawText(juce::String(row.effectCount) + " effect(s)  -  " + row.savedAt, inner,
-                   juce::Justification::centredLeft, true);
+        g.drawText(preset_store::describe(row) + (row.savedAt.isNotEmpty() ? "  -  " + row.savedAt.substring(0, 10) : juce::String()),
+                   inner, juce::Justification::centredLeft, true);
     }
 
     void resized() override
@@ -70,9 +72,10 @@ PresetLibraryPanel::PresetLibraryPanel(IAppController& c) : PanelCard(c, "Preset
 {
     applyThemeColours();
     setExplainer(TRANS("Preset Library"),
-                 TRANS("Save the most recently applied DSP chain (from chat, \"Fix This\", or an EQ apply) "
-                 "under a name, then re-apply it to this or a future session without rebuilding it. "
-                 "Presets are stored as JSON on disk, so they survive across sessions and app restarts."));
+                 TRANS("Save the Signal Flow Rack's settings and the most recently applied chain (from chat, Fix, "
+                       "or an EQ apply) under a name, then re-apply it to this or a future session. Presets are "
+                       "shared with the Copilot plugin: one saved here is in its preset menu, and one saved there "
+                       "is listed here."));
 
     nameEditor_.setFont(KhensuTheme::bodyFont(11.0f));
     nameEditor_.setTextToShowWhenEmpty(TRANS("Preset name..."), KhensuTheme::textTertiary);
@@ -82,7 +85,7 @@ PresetLibraryPanel::PresetLibraryPanel(IAppController& c) : PanelCard(c, "Preset
     addAndMakeVisible(saveButton_);
 
     statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
-    statusLabel_.setText(TRANS("Apply a chain (chat, Fix This, EQ) first, then save it here."), juce::dontSendNotification);
+    statusLabel_.setText(TRANS("Saves the rack's settings and the last applied chain."), juce::dontSendNotification);
     addAndMakeVisible(statusLabel_);
 
     viewport_.setViewedComponent(&content_, false);
@@ -94,76 +97,46 @@ PresetLibraryPanel::PresetLibraryPanel(IAppController& c) : PanelCard(c, "Preset
 
 PresetLibraryPanel::~PresetLibraryPanel() = default;
 
-juce::File PresetLibraryPanel::presetDirectory()
+void PresetLibraryPanel::visibilityChanged()
 {
-    auto dir = juce::File(juce::String(AppPaths::dataDirectory())).getChildFile("effect_chain_presets");
-    if (!dir.isDirectory()) dir.createDirectory();
-    return dir;
+    // The plugin may have saved or deleted a preset meanwhile.
+    if (isShowing()) refreshList();
 }
 
 void PresetLibraryPanel::saveCurrentChain()
 {
-    const auto& chain = controller_.renderJobs().lastChain();
-    if (chain.empty()) {
-        statusLabel_.setText(TRANS("No chain applied yet this session - apply one (chat, "
-                             "Fix This, EQ) first."),
-                             juce::dontSendNotification);
-        return;
-    }
-
     juce::String name = nameEditor_.getText().trim();
     if (name.isEmpty()) name = "Chain " + juce::Time::getCurrentTime().formatted("%Y-%m-%d %H%M%S");
-    const juce::String legalName = juce::File::createLegalFileName(name);
-
-    juce::Array<juce::var> effectsArr;
-    for (const auto& fx : chain) {
-        juce::DynamicObject::Ptr fxObj = new juce::DynamicObject();
-        fxObj->setProperty("effect", fx.effect);
-        juce::DynamicObject::Ptr paramsObj = new juce::DynamicObject();
-        for (const auto& [key, value] : fx.parameters)
-            paramsObj->setProperty(key, value);
-        fxObj->setProperty("parameters", juce::var(paramsObj.get()));
-        effectsArr.add(juce::var(fxObj.get()));
-    }
-
-    juce::DynamicObject::Ptr obj = new juce::DynamicObject();
-    obj->setProperty("schema_version", 1);
-    obj->setProperty("name", name);
-    obj->setProperty("saved_at", juce::Time::getCurrentTime().toISO8601(true));
-    obj->setProperty("effects", effectsArr);
-
-    auto file = presetDirectory().getChildFile(legalName + ".json");
-    if (file.replaceWithText(juce::JSON::toString(juce::var(obj.get()), false))) {
-        statusLabel_.setText(TRANS("Saved preset: ") + name, juce::dontSendNotification);
-        nameEditor_.clear();
-        refreshList();
-    } else {
-        statusLabel_.setText(TRANS("Could not write preset file."), juce::dontSendNotification);
-    }
+    // The rack's settings (the plugin's DSP) with the last applied chain.
+    juce::Component::SafePointer<PresetLibraryPanel> self(this);
+    controller_.lifecycle().fetchPluginParams([self, name](const std::map<juce::String, float>& params) {
+        if (self == nullptr) return;
+        const auto& chain = self->controller_.renderJobs().lastChain();
+        if (chain.empty() && params.empty()) {
+            self->statusLabel_.setText(TRANS("Nothing to save yet - apply a chain (chat, Fix, EQ) or connect the "
+                                             "plugin first."),
+                                       juce::dontSendNotification);
+            return;
+        }
+        if (preset_store::save(name, chain, params)) {
+            self->statusLabel_.setText(TRANS("Saved preset: ") + name, juce::dontSendNotification);
+            self->nameEditor_.clear();
+            self->refreshList();
+        } else {
+            self->statusLabel_.setText(TRANS("Could not write preset file."), juce::dontSendNotification);
+        }
+    });
 }
 
 void PresetLibraryPanel::refreshList()
 {
-    presets_.clear();
-    for (const auto& file : presetDirectory().findChildFiles(juce::File::findFiles, false, "*.json")) {
-        auto json = juce::JSON::parse(file.loadFileAsString());
-        auto* obj = json.getDynamicObject();
-        if (obj == nullptr) continue;
-
-        PresetRow row;
-        row.name = obj->getProperty("name").toString();
-        row.fileName = file.getFileNameWithoutExtension();
-        row.savedAt = obj->getProperty("saved_at").toString();
-        if (auto* arr = obj->getProperty("effects").getArray()) row.effectCount = (int)arr->size();
-        presets_.push_back(std::move(row));
-    }
-    std::sort(presets_.begin(), presets_.end(),
-              [](const PresetRow& a, const PresetRow& b) { return a.savedAt > b.savedAt; });
+    presets_ = preset_store::list();
 
     rows_.clear();
     for (const auto& p : presets_) {
         auto rc = std::make_unique<RowComponent>();
         rc->row = p;
+        rc->applyButton.setTitle(TRANS("Apply preset") + " " + p.name);
         rc->onApply = [this, p] { applyPreset(p); };
         rc->onDelete = [this, p] { deletePreset(p); };
         content_.addAndMakeVisible(*rc);
@@ -181,28 +154,16 @@ void PresetLibraryPanel::applyPreset(const PresetRow& row)
         return;
     }
 
-    auto file = presetDirectory().getChildFile(row.fileName + ".json");
-    auto json = juce::JSON::parse(file.loadFileAsString());
-    auto* obj = json.getDynamicObject();
-    if (obj == nullptr) {
-        statusLabel_.setText(TRANS("Preset file is corrupt: ") + row.name, juce::dontSendNotification);
-        return;
-    }
+    // Rack settings: staged in the one plugin chain; the rack applies them (WF-9).
+    const auto params = preset_store::loadParams(row);
+    if (!params.empty()) controller_.lifecycle().stagePluginChain(params, TRANS("Preset %s").replace("%s", row.name));
 
     IRenders::ChainRender render;
-    auto& chain = render.chain;
-    if (auto* arr = obj->getProperty("effects").getArray()) {
-        for (const auto& fxVar : *arr) {
-            ipc::HttpServiceBridge::EffectSpec fx;
-            fx.effect = fxVar["effect"].toString();
-            if (auto* paramsObj = fxVar["parameters"].getDynamicObject())
-                for (const auto& prop : paramsObj->getProperties())
-                    fx.parameters[prop.name.toString()] = (float)(double)prop.value;
-            chain.push_back(std::move(fx));
-        }
-    }
-    if (chain.empty()) {
-        statusLabel_.setText(TRANS("Preset has no effects: ") + row.name, juce::dontSendNotification);
+    render.chain = preset_store::load(row);
+    if (render.chain.empty()) {
+        statusLabel_.setText(params.empty() ? TRANS("Preset has nothing to apply: ") + row.name
+                                            : TRANS("Rack settings staged - apply them on the Signal Flow Rack."),
+                             juce::dontSendNotification);
         return;
     }
 
@@ -211,10 +172,10 @@ void PresetLibraryPanel::applyPreset(const PresetRow& row)
     // A new version (WF-1: stacked on the current one), named uniquely so a
     // fixed "_preset_<name>.wav" never overwrites a referenced render (AUDIT-018).
     render.description = "Preset \"" + row.name + "\"";
-    render.sourceRecommendationId = "preset_" + row.fileName;
+    render.sourceRecommendationId = "preset_" + juce::File::createLegalFileName(row.fileName);
     juce::Component::SafePointer<PresetLibraryPanel> self(this);
     controller_.renders().renderVersion(
-        render, "_preset_" + row.fileName,
+        render, "_preset_" + juce::File::createLegalFileName(row.name),
         [self, name = row.name](IRenders::RenderOutcome outcome, const juce::String& pathOrError, const juce::var&) {
             if (self == nullptr) return;
             juce::String text;
@@ -230,8 +191,7 @@ void PresetLibraryPanel::applyPreset(const PresetRow& row)
 
 void PresetLibraryPanel::deletePreset(const PresetRow& row)
 {
-    auto file = presetDirectory().getChildFile(row.fileName + ".json");
-    if (file.deleteFile()) {
+    if (preset_store::remove(row)) {
         statusLabel_.setText(TRANS("Deleted: ") + row.name, juce::dontSendNotification);
         refreshList();
     }

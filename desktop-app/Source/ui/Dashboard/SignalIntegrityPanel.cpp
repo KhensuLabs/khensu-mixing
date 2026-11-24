@@ -30,8 +30,6 @@ static const juce::String kSignalIntegrityBase =
 // Every cached palette colour on this component, in one place (UI-01).
 void SignalIntegrityPanel::applyThemeColours()
 {
-    scanButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.2f));
-    scanButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
 }
 
 SignalIntegrityPanel::SignalIntegrityPanel(IAppController& c) : PanelCard(c, "Signal Integrity")

@@ -8,6 +8,7 @@
 #include "UpdateInstaller.h"
 #include "PythonServiceManager.h"
 #include <khensu/common/Version.h>
+#include <khensu/dsp/DemoSong.h>
 
 namespace khensu {
 
@@ -60,7 +61,16 @@ class KhensuApplication final : public juce::JUCEApplication {
     bool moreThanOneInstanceAllowed() override
     {
         // The plugin-scan worker (CORE-07) runs beside the open app too.
-        return headless::isHeadlessRequest(getCommandLineParameterArray()) || isScanWorker();
+        return headless::isHeadlessRequest(getCommandLineParameterArray()) || isScanWorker() || demoSongPath().isNotEmpty();
+    }
+
+    /// VIZ-F3: `--write-demo-song=<path>` writes the demo song and exits (the
+    /// screenshot check's full-length track).
+    juce::String demoSongPath()
+    {
+        for (const auto& a : getCommandLineParameterArray())
+            if (a.startsWith("--write-demo-song=")) return a.fromFirstOccurrenceOf("=", false, false).unquoted();
+        return {};
     }
 
     bool isScanWorker()
@@ -81,6 +91,11 @@ class KhensuApplication final : public juce::JUCEApplication {
             for (const auto& a : getCommandLineParameterArray())
                 args.push_back(a.toStdString());
             setApplicationReturnValue(mixerchain::PluginScanner::runScanWorker(args));
+            quit();
+            return;
+        }
+        if (const auto demo = demoSongPath(); demo.isNotEmpty()) {
+            setApplicationReturnValue(demo_song::write(juce::File(demo)) ? 0 : 1);
             quit();
             return;
         }

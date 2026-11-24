@@ -28,9 +28,7 @@ void WaveformEditorPanel::applyThemeColours()
 {
     for (auto* b : {&spectroButton_, &zoomInButton_, &zoomOutButton_, &fitButton_, &zoomSelButton_, &noteButton_,
                     &explainButton_}) {
-        b->setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.15f));
-        b->setColour(juce::TextButton::buttonOnColourId, KhensuTheme::accentTeal.withAlpha(0.45f));
-        b->setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
+        b->setColour(juce::TextButton::buttonOnColourId, KhensuTheme::bgOverlay); // UX2-3: a quiet "on"
         b->setColour(juce::TextButton::textColourOnId, KhensuTheme::textPrimary);
     }
     statusLabel_.setColour(juce::Label::textColourId, KhensuTheme::textTertiary);

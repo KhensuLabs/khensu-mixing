@@ -371,6 +371,26 @@ def check_render_entry_points(errors: list[str]) -> None:
                 )
 
 
+def check_plugin_chain_entry_points(errors: list[str]) -> None:
+    """Desktop surfaces stage a plugin chain; only ServiceLifecycle posts it (WF-9).
+
+    The Mixer Chain panel posted a loaded preset's parameters straight to the
+    plugin, beside the Signal Flow Rack that is meant to be the one editor that
+    applies a chain. A proposal goes through `lifecycle().stagePluginChain`.
+    """
+    call = re.compile(r"\bpostPluginParams\s*\(")
+    allowed = {"ServiceLifecycle.cpp"}
+    for path in (ROOT / "desktop-app" / "Source").rglob("*.cpp"):
+        if path.name in allowed:
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines()):
+            if call.search(line) and not line.lstrip().startswith("//"):
+                errors.append(
+                    f"{path.relative_to(ROOT)}:{i + 1}: posts plugin params directly - stage the "
+                    "chain with lifecycle().stagePluginChain() so the Signal Flow Rack applies it (WF-9)."
+                )
+
+
 def check_experimental_table(errors: list[str]) -> None:
     """Every experimental card has a row in the manual's experimental table (VER-8).
 
@@ -542,6 +562,30 @@ def check_generated_schema(errors: list[str]) -> None:
                       "`python scripts/gen_schema_sql.py`.")
 
 
+def check_benchmark_report(errors: list[str]) -> None:
+    """OVH-10: resources/calibration/BENCHMARK.md is generated from the
+    shipped evidence; regenerate it in memory and compare."""
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "benchmark_report.py"), "--check"], cwd=ROOT,
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode:
+        errors.append("resources/calibration/BENCHMARK.md is stale - run `python scripts/benchmark_report.py` "
+                      "(after `measure_genre_norms.py report` or any change to the genre targets).")
+
+
+def check_measured_loudness(errors: list[str]) -> None:
+    """OVH-5: a genre whose loudness window is marked measured must have the
+    whole-track loudness it was measured from in genre_corpus_stats.json."""
+    import json
+    targets = json.loads((ROOT / "resources/genre_norms/genre_targets.json").read_text(encoding="utf-8"))
+    stats = json.loads((ROOT / "resources/genre_norms/genre_corpus_stats.json").read_text(encoding="utf-8"))
+    for g in targets["genres"]:
+        if "lufs_range" in (g.get("measured") or {}).get("fields", []) and                 "lufs_whole_track" not in stats["genres"].get(g["id"], {}):
+            errors.append(f"genre_targets.json: {g['id']} marks lufs_range measured but genre_corpus_stats.json "
+                          "has no lufs_whole_track for it - run `measure_genre_norms.py apply_loudness`.")
+
+
 # UX-8 / ENG-3: panels publish background results through fetchThenPublish
 # (ui/shared/PanelRunState.h). Hand-rolled epoch checks may only shrink: lower
 # this when a migration removes some, never raise it.
@@ -679,6 +723,7 @@ def main() -> int:
     check_utf8_literals(errors)
     check_hidden_then_shown(errors)
     check_render_entry_points(errors)
+    check_plugin_chain_entry_points(errors)
     check_untranslated_ui_strings(errors)
     check_plugin_service_client(errors)
     check_experimental_table(errors)
@@ -689,6 +734,8 @@ def main() -> int:
     check_generated_issue_codes(errors)
     check_string_zero_decimals(errors)
     check_hand_rolled_fetches(errors)
+    check_benchmark_report(errors)
+    check_measured_loudness(errors)
 
     if errors:
         print("Documentation drift detected:\n")

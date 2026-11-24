@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/Dashboard/SpectrogramPanel.cpp
 #include "SpectrogramPanel.h"
+#include <khensu/analysis/TrackTimeline.h>
 #include "../shared/PanelRunState.h"
 #include "../shared/KhensuLookAndFeel.h"
 #include "../shared/KhensuTheme.h"
@@ -20,11 +21,12 @@ constexpr float kMaxHz = 20000.0f;
 SpectrogramPanel::SpectrogramPanel(IAppController& c) : PanelCard(c, "Spectrogram")
 {
     setExplainer(TRANS("Spectrogram"),
-                 TRANS("Full time x frequency x amplitude view of the mix. Toggle 3D Mode to view "
-                 "the spectrotemporal waterfall terrain. In EQ Terrain mode, visualize dynamic EQ "
-                 "sheets and glowing masking conflict regions.\n\n"
-                 "In 2D mode, frequency-scoped recommendations are washed onto their band with a "
-                 "circled ! chip (red severe, amber moderate, blue minor) - hover to read the note."),
+                 TRANS("The whole song as level over time and frequency, measured in fine detail. Brighter is louder; the "
+                       "colours span the range shown on the button (0 dB is the song's loudest point). The panel at the "
+                       "right is the spectrum at the cursor or playhead against the song's average (dashed). Sections run "
+                       "along the top and findings mark their frequency range at the left edge. Scroll to zoom, drag to "
+                       "pan, double-click for the whole song, click to play from there. 3D Waterfall shows the same data "
+                       "as a terrain."),
                  "spectral_balance");
     setInterceptsMouseClicks(true, true);
 
@@ -35,6 +37,7 @@ SpectrogramPanel::SpectrogramPanel(IAppController& c) : PanelCard(c, "Spectrogra
     toggle3DButton_.onClick = [this]() {
         is3DMode_ = toggle3DButton_.getToggleState();
         toggleEqTerrainButton_.setVisible(is3DMode_);
+        updateModeVisibility();
         updateZoomControl();
         repaint();
     };
@@ -52,6 +55,17 @@ SpectrogramPanel::SpectrogramPanel(IAppController& c) : PanelCard(c, "Spectrogra
 
     resetZoomButton_.onClick = [this] { resetZoom(); };
     addChildComponent(resetZoomButton_);
+
+    addAndMakeVisible(hires_);
+    hires_.onSeek = [this](double sec) {
+        controller_.playback().setPlaybackPosition(sec);
+        if (!controller_.playback().isPlaying()) controller_.playback().playAudio();
+    };
+    hires_.playheadSeconds = [this] {
+        return controller_.playback().getPlaybackDuration() > 0.0 ? controller_.playback().getPlaybackPosition() : -1.0;
+    };
+    hires_.isPlaying = [this] { return controller_.playback().isPlaying(); };
+    updateModeVisibility();
 
     camera3D_.pitch = 0.5f;
     camera3D_.yaw = -0.4f;
@@ -77,6 +91,11 @@ void SpectrogramPanel::setData(const AnalysisResult& r)
     }
     std::sort(annotations_.begin(), annotations_.end(),
               [](const FreqAnnotation& a, const FreqAnnotation& b) { return a.severity < b.severity; });
+    std::vector<HiResSpectrogramView::FindingBand> bands;
+    for (const auto& a : annotations_)
+        bands.push_back({a.low_hz, a.high_hz, a.severity, a.label});
+    hires_.setFindings(std::move(bands));
+    hires_.setSections(r.section_analysis ? r.section_analysis->sections : std::vector<SectionData>{});
     hoveredAnnotation_ = -1;
 
     fetchSpectrogramIfNeeded();
@@ -101,40 +120,77 @@ void SpectrogramPanel::fetchSpectrogramIfNeeded()
     const juce::String path(files.front().path);
     if (path.isEmpty() || path == lastFetchedPath_) return;
     lastFetchedPath_ = path;
+    frames_.clear(); // a new file: never show the previous one's spectrogram meanwhile
+    imageDirty_ = true;
 
     struct Fetched {
         std::vector<std::vector<float>> frames;
         std::vector<float> edges;
         float duration = 0.0f;
+        std::shared_ptr<const TrackTimeline> detailed;
     };
-    fetchQuietly(*this, controller_, [path]() -> std::optional<Fetched> {
-        ipc::HttpServiceBridge bridge;
-        auto result = bridge.analyzeSpectrotemporal(path.toStdString(), 48, 400);
-        if (!result.is_ok()) return std::nullopt;
-
-        const auto& r = result.value();
-        std::vector<std::vector<float>> frames;
-        frames.reserve(r.frames.size());
-        for (const auto& frame : r.frames)
-            frames.push_back(toFloats(frame));
-        std::vector<float> edges = toFloats(r.band_edges_hz);
-        const float duration = (float)r.duration_sec;
-
-        return Fetched{std::move(frames), std::move(edges), duration};
-    }, [](SpectrogramPanel& self, std::optional<Fetched>&& fetched) {
-        if (!fetched) return;
-        auto& [frames, edges, duration] = *fetched;
-        self.frames_ = std::move(frames);
-        self.bandEdgesHz_ = std::move(edges);
-        self.durationSec_ = duration;
-        self.viewStartSec_ = 0.0f;
-        self.viewEndSec_ = duration;
-        self.viewMinHz_ = kMinHz;
-        self.viewMaxHz_ = kMaxHz;
-        self.imageDirty_ = true;
-        self.updateZoomControl();
-        self.repaint();
-    });
+    hires_.setTimeline(nullptr);
+    hires_.setStatus(TRANS("Measuring the spectrogram..."));
+    // VIZ-P7: measured natively (khensu/analysis/TrackTimeline.h), so the
+    // card never waits on the engine. It used to fetch once from the service
+    // and, if that one request failed, kept saying "Run analysis" for good.
+    fetchState_ = FetchState::Measuring;
+    fetchQuietly(
+        *this, controller_,
+        [path]() -> std::optional<Fetched> {
+            TrackTimelineOptions opt;
+            opt.bands = 48;
+            opt.maxFrames = 400;
+            const auto tl = measureTrackTimelineFile(path.toStdString(), opt);
+            if (tl.spectrogramDb.empty() || tl.bandHz.size() < 2) return std::nullopt;
+            // Normalise to 0..1 over the track's own 60 dB below its 99th percentile.
+            std::vector<float> all;
+            for (const auto& row : tl.spectrogramDb)
+                all.insert(all.end(), row.begin(), row.end());
+            std::nth_element(all.begin(), all.begin() + static_cast<long>(all.size() * 99 / 100), all.end());
+            const float top = all[all.size() * 99 / 100], floor = top - 60.0f;
+            std::vector<std::vector<float>> frames;
+            frames.reserve(tl.spectrogramDb.size());
+            for (const auto& row : tl.spectrogramDb) {
+                std::vector<float> f(row.size());
+                for (size_t b = 0; b < row.size(); ++b)
+                    f[b] = juce::jlimit(0.0f, 1.0f, (row[b] - floor) / (top - floor));
+                frames.push_back(std::move(f));
+            }
+            // Band edges: the analyser's log grid (centres at (b + 0.5) / bands).
+            std::vector<float> edges;
+            const double lo = 30.0, hi = std::min(16000.0, tl.sampleRate * 0.49);
+            const int bands = static_cast<int>(tl.bandHz.size());
+            for (int b = 0; b <= bands; ++b)
+                edges.push_back(static_cast<float>(lo * std::pow(hi / lo, static_cast<double>(b) / bands)));
+            auto detailed = std::make_shared<const TrackTimeline>(
+                measureTrackTimelineFile(path.toStdString(), HiResSpectrogramView::measuringOptions()));
+            return Fetched{std::move(frames), std::move(edges), static_cast<float>(tl.durationSec),
+                           detailed->spectrogramDb.empty() ? nullptr : detailed};
+        },
+        [](SpectrogramPanel& self, std::optional<Fetched>&& fetched) {
+            if (!fetched) {
+                self.fetchState_ = FetchState::Failed;
+                self.hires_.setStatus(TRANS("The spectrogram could not be measured for this file."));
+                self.lastFetchedPath_.clear(); // the next analysis update tries again
+                self.repaint();
+                return;
+            }
+            auto& [frames, edges, duration, detailed] = *fetched;
+            self.hires_.setTimeline(detailed);
+            self.fetchState_ = FetchState::Ready;
+            self.frames_ = std::move(frames);
+            self.bandEdgesHz_ = std::move(edges);
+            self.durationSec_ = duration;
+            self.viewStartSec_ = 0.0f;
+            self.viewEndSec_ = duration;
+            self.viewMinHz_ = kMinHz;
+            self.viewMaxHz_ = kMaxHz;
+            self.imageDirty_ = true;
+            self.updateZoomControl();
+            self.repaint();
+        },
+        nullptr, true);
 }
 
 juce::Rectangle<float> SpectrogramPanel::plotArea() const
@@ -220,13 +276,18 @@ void SpectrogramPanel::paint(juce::Graphics& g)
     PanelCard::paint(g);
     auto plot = plotArea();
 
-    if (frames_.empty()) {
+    if (frames_.empty() && !hires_.isVisible()) {
         g.setColour(KhensuTheme::textSecondary);
         g.setFont(KhensuTheme::bodyFont(12.0f));
-        g.drawText("Run analysis to see the spectrogram.", bodyArea(), juce::Justification::centred, false);
+        const juce::String text = fetchState_ == FetchState::Measuring ? TRANS("Measuring the spectrogram...")
+                                  : fetchState_ == FetchState::Failed  ? TRANS("The spectrogram could not be measured for this file.")
+                                  : controller_.hasAnalysis()          ? TRANS("Measuring the spectrogram...")
+                                                                       : TRANS("Run analysis to see the spectrogram.");
+        g.drawText(text, bodyArea(), juce::Justification::centred, false);
         return;
     }
 
+    if (frames_.empty()) return;
     if (is3DMode_) {
         if (showEqTerrain_) {
             draw3DEqTerrain(g, plot);
@@ -236,6 +297,8 @@ void SpectrogramPanel::paint(juce::Graphics& g)
         drawHoverReadout(g, plot);
         return;
     }
+
+    if (hires_.isVisible()) return; // VIZ-S1: the detailed view draws the 2D spectrogram
 
     // Traditional 2D Heatmap Mode
     if (imageDirty_ || image_.getWidth() != (int)plot.getWidth() || image_.getHeight() != (int)plot.getHeight()) {
@@ -526,8 +589,20 @@ void SpectrogramPanel::draw3DEqTerrain(juce::Graphics& g, const juce::Rectangle<
     g.restoreState();
 }
 
+void SpectrogramPanel::updateModeVisibility()
+{
+    hires_.setVisible(!is3DMode_);
+    resized();
+    repaint();
+}
+
 void SpectrogramPanel::resized()
 {
+    {
+        auto body = bodyArea();
+        body.removeFromTop(24);
+        hires_.setBounds(body);
+    }
     auto r = bodyArea().removeFromTop(20);
     toggle3DButton_.setBounds(r.removeFromLeft(90));
     toggleEqTerrainButton_.setBounds(r.removeFromLeft(110).withX(toggle3DButton_.getRight() + 6));

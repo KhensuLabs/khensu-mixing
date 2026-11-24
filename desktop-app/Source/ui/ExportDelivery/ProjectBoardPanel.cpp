@@ -1,5 +1,8 @@
 // desktop-app/Source/ui/ExportDelivery/ProjectBoardPanel.cpp
 #include "ProjectBoardPanel.h"
+#include "../shared/FixDifferenceView.h"
+#include "../shared/PanelRunState.h"
+#include "../shared/TimelineCache.h"
 #include "../../IAppController.h"
 #include "../shared/ButtonRole.h"
 
@@ -27,6 +30,7 @@ ProjectBoardPanel::ProjectBoardPanel(IAppController& c) : PanelCard(c, TRANS("Pr
     projectBox_.setTooltip(TRANS("The project this track belongs to. Choosing one moves the track into it."));
     projectBox_.onChange = [this] { onProjectChosen(); };
     addAndMakeVisible(projectBox_);
+    addChildComponent(album_);
 
     newButton_.setTooltip(TRANS("Make a new project with this track as its first track."));
     newButton_.onClick = [this] { promptNewProject(); };
@@ -103,6 +107,7 @@ void ProjectBoardPanel::publish(project_tracks::Snapshot snap, const std::string
                              juce::dontSendNotification);
     }
     repaint();
+    refreshAlbum(); // VIZ-N2
 }
 
 void ProjectBoardPanel::rebuildProjectBox()
@@ -196,7 +201,47 @@ juce::Rectangle<int> ProjectBoardPanel::listArea() const
     auto b = bodyArea();
     b.removeFromTop(KhensuTheme::buttonHSmall + KhensuTheme::sp2); // project row
     b.removeFromTop(16 + KhensuTheme::sp1);                        // status line
+    if (album_.isVisible()) b.removeFromBottom(juce::jlimit(180, 280, b.getHeight() / 2) + KhensuTheme::sp2);
     return b;
+}
+
+void ProjectBoardPanel::refreshAlbum()
+{
+    album_.setVisible(snapshot_.current.has_value() && snapshot_.tracks.size() >= 2);
+    resized();
+    if (!album_.isVisible()) return;
+    struct Item {
+        juce::String name, path;
+    };
+    std::vector<Item> items;
+    for (const auto& t : snapshot_.tracks)
+        items.push_back({t.name, t.masterMissing ? juce::String() : t.masterPath});
+    album_.setStatus(TRANS("Measuring the album..."));
+    const int request = ++albumRequest_;
+    fetchQuietly(
+        *this, controller_,
+        [items] {
+            std::vector<album_consistency::TrackData> tracks;
+            std::vector<float> bandHz;
+            for (const auto& it : items) {
+                album_consistency::TrackData d;
+                d.name = it.name;
+                if (const auto tl = timeline_cache::measure(it.path)) {
+                    d.lufs = album_consistency::integratedLufs(*tl);
+                    d.truePeak = tl->maxTruePeakDbtp;
+                    d.bandDb = fix_difference::longTermBandDb(*tl);
+                    if (bandHz.empty()) bandHz = tl->bandHz;
+                    if (d.bandDb.size() != bandHz.size()) d.bandDb.clear();
+                }
+                tracks.push_back(std::move(d));
+            }
+            return album_consistency::build(std::move(tracks), std::move(bandHz));
+        },
+        [request](ProjectBoardPanel& self, album_consistency::Model m) {
+            if (request != self.albumRequest_) return; // a newer project / track list since
+            self.album_.setModel(std::move(m));
+        },
+        nullptr, true);
 }
 
 int ProjectBoardPanel::rowAt(juce::Point<int> p) const
@@ -283,6 +328,7 @@ void ProjectBoardPanel::resized()
     projectBox_.setBounds(row);
     b.removeFromTop(KhensuTheme::sp2);
     statusLabel_.setBounds(b.removeFromTop(16));
+    if (album_.isVisible()) album_.setBounds(b.removeFromBottom(juce::jlimit(180, 280, b.getHeight() / 2)));
 }
 
 } // namespace khensu

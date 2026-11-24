@@ -81,6 +81,13 @@ class KhensuLookAndFeel final : public juce::LookAndFeel_V4 {
     void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPosProportional,
                           float rotaryStartAngle, float rotaryEndAngle, juce::Slider& slider) override;
 
+    /// Linear sliders from the live theme (a thin track, the accent fill up
+    /// to the value, a round thumb). JUCE's default read colour IDs this
+    /// look-and-feel never set, so the Issues screen's Fix amount showed a
+    /// thumb with no track.
+    void drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPos, float minSliderPos,
+                          float maxSliderPos, juce::Slider::SliderStyle style, juce::Slider& slider) override;
+
     // Colour palette lives in KhensuTheme (single source of truth). The
     // former KhensuLookAndFeel::* colour statics were retired onto it.
 

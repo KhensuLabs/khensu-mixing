@@ -211,8 +211,8 @@ void AiDetectionScreen::runScan()
         postIfCurrent(self, work, [result](AiDetectionScreen& panel) {
             if (result.is_err()) {
                 panel.statusLabel_.setText(TRANS("Scan failed."), juce::dontSendNotification);
-                panel.errorState_.setError("Could not reach the analysis service.",
-                                           "Make sure the local service is running, then retry.");
+                const auto hint = classifyServiceError(result.error()); // the real cause, not always "unreachable"
+                panel.errorState_.setError(hint.message, hint.remedy);
                 panel.errorState_.setVisible(true);
                 panel.resized();
                 panel.repaint();

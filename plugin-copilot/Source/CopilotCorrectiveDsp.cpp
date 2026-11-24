@@ -9,7 +9,18 @@ float loadParam(const std::atomic<float>* value) noexcept
 }
 
 bool loadSwitch(const std::atomic<float>* value) noexcept { return loadParam(value) > 0.5f; }
+
+/// A null binding (direct test callers) falls back to `fallback`.
+float loadOr(const std::atomic<float>* value, float fallback) noexcept
+{
+    return value != nullptr ? value->load(std::memory_order_relaxed) : fallback;
+}
 } // namespace
+
+int CopilotCorrectiveDsp::bandShape(const std::atomic<float>* type) noexcept
+{
+    return juce::jlimit(0, 2, juce::roundToInt(loadParam(type)));
+}
 
 void CopilotCorrectiveDsp::prepareToPlay(double sampleRate, int samplesPerBlock, int preparedChannels)
 {
@@ -25,6 +36,7 @@ void CopilotCorrectiveDsp::prepareToPlay(double sampleRate, int samplesPerBlock,
     peak_.prepare(spec);
     peak2_.prepare(spec);
     peak3_.prepare(spec);
+    deessSplit_.prepare(spec);
     comp_.prepare(spec);
     crossover_.prepare(spec);
     compLow_.prepare(spec);
@@ -35,6 +47,9 @@ void CopilotCorrectiveDsp::prepareToPlay(double sampleRate, int samplesPerBlock,
     highBandBuffer_.setSize(preparedChannels_, blockSize);
     stageDry_.setSize(preparedChannels_, kControlBlockSamples);
     compAlt_.setSize(preparedChannels_, kControlBlockSamples);
+    deessHigh_.setSize(preparedChannels_, kControlBlockSamples);
+    deessAttack_ = static_cast<float>(1.0 - std::exp(-1.0 / (kDeessAttackSeconds * sampleRate_)));
+    deessRelease_ = static_cast<float>(1.0 - std::exp(-1.0 / (kDeessReleaseSeconds * sampleRate_)));
     outGain_.prepare(spec);
     dryWet_.prepare(spec);
     dryWet_.setMixingRule(juce::dsp::DryWetMixingRule::linear);
@@ -65,6 +80,13 @@ void CopilotCorrectiveDsp::prepareToPlay(double sampleRate, int samplesPerBlock,
     initSmooth(smCrossoverLowFreq_, parameters_.crossoverLowFreq);
     initSmooth(smCrossoverHighFreq_, parameters_.crossoverHighFreq);
     initSmooth(smChainMix_, parameters_.chainMix);
+    smDeessFreq_.reset(sampleRate_, kParamSmoothingSeconds);
+    smDeessFreq_.setCurrentAndTargetValue(loadOr(parameters_.deessFreq, 6500.0f));
+    smDeessThresh_.reset(sampleRate_, kParamSmoothingSeconds);
+    smDeessThresh_.setCurrentAndTargetValue(loadOr(parameters_.deessThreshDb, -30.0f));
+    smDeessRange_.reset(sampleRate_, kParamSmoothingSeconds);
+    smDeessRange_.setCurrentAndTargetValue(loadOr(parameters_.deessRangeDb, 6.0f));
+    eqShape_ = {bandShape(parameters_.eqType), bandShape(parameters_.eq2Type), bandShape(parameters_.eq3Type)};
     // A null chain-mix binding (direct test callers) means fully wet.
     if (parameters_.chainMix == nullptr) smChainMix_.setCurrentAndTargetValue(1.0f);
 
@@ -72,7 +94,7 @@ void CopilotCorrectiveDsp::prepareToPlay(double sampleRate, int samplesPerBlock,
     // stage on must not fade it in on the first block.
     const float fadeStep =
         1.0f / static_cast<float>(juce::jmax(1, juce::roundToInt(sampleRate_ * kStageFadeSeconds)));
-    for (auto* fade : {&hpfFade_, &lpfFade_, &eqFade_, &eq2Fade_, &eq3Fade_, &compFade_, &multibandFade_})
+    for (auto* fade : {&hpfFade_, &lpfFade_, &eqFade_, &eq2Fade_, &eq3Fade_, &compFade_, &multibandFade_, &deessFade_})
         fade->step = fadeStep;
     hpfFade_.snap(loadSwitch(parameters_.hpfOn));
     lpfFade_.snap(loadSwitch(parameters_.lpfOn));
@@ -81,6 +103,7 @@ void CopilotCorrectiveDsp::prepareToPlay(double sampleRate, int samplesPerBlock,
     eq3Fade_.snap(loadSwitch(parameters_.eq3On));
     compFade_.snap(loadSwitch(parameters_.compOn));
     multibandFade_.snap(loadSwitch(parameters_.compMultiband));
+    deessFade_.snap(loadSwitch(parameters_.deessOn));
 
     advanceSmoothers(0);
     updateCoefficients(true);
@@ -106,17 +129,22 @@ void CopilotCorrectiveDsp::updateCoefficients(bool force) noexcept
 
     if (force || smHpfFreq_.isSmoothing()) applyCoefficientValues(hpf_, AC::makeHighPass(sampleRate_, freq(smHpfFreq_)));
     if (force || smLpfFreq_.isSmoothing()) applyCoefficientValues(lpf_, AC::makeLowPass(sampleRate_, freq(smLpfFreq_)));
+    // A band's shape (OVH-8): bell, low shelf or high shelf.
+    const auto band = [&](int shape, const juce::SmoothedValue<float>& f, const juce::SmoothedValue<float>& qv,
+                          const juce::SmoothedValue<float>& gainDb) {
+        const float gain = juce::Decibels::decibelsToGain(gainDb.getCurrentValue());
+        if (shape == 1) return AC::makeLowShelf(sampleRate_, freq(f), q(qv), gain);
+        if (shape == 2) return AC::makeHighShelf(sampleRate_, freq(f), q(qv), gain);
+        return AC::makePeakFilter(sampleRate_, freq(f), q(qv), gain);
+    };
     if (force || smEqFreq_.isSmoothing() || smEqGainDb_.isSmoothing() || smEqQ_.isSmoothing())
-        applyCoefficientValues(peak_, AC::makePeakFilter(sampleRate_, freq(smEqFreq_), q(smEqQ_),
-                                                         juce::Decibels::decibelsToGain(smEqGainDb_.getCurrentValue())));
+        applyCoefficientValues(peak_, band(eqShape_[0], smEqFreq_, smEqQ_, smEqGainDb_));
     if (force || smEq2Freq_.isSmoothing() || smEq2GainDb_.isSmoothing() || smEq2Q_.isSmoothing())
-        applyCoefficientValues(peak2_,
-                               AC::makePeakFilter(sampleRate_, freq(smEq2Freq_), q(smEq2Q_),
-                                                  juce::Decibels::decibelsToGain(smEq2GainDb_.getCurrentValue())));
+        applyCoefficientValues(peak2_, band(eqShape_[1], smEq2Freq_, smEq2Q_, smEq2GainDb_));
     if (force || smEq3Freq_.isSmoothing() || smEq3GainDb_.isSmoothing() || smEq3Q_.isSmoothing())
-        applyCoefficientValues(peak3_,
-                               AC::makePeakFilter(sampleRate_, freq(smEq3Freq_), q(smEq3Q_),
-                                                  juce::Decibels::decibelsToGain(smEq3GainDb_.getCurrentValue())));
+        applyCoefficientValues(peak3_, band(eqShape_[2], smEq3Freq_, smEq3Q_, smEq3GainDb_));
+    if (force || smDeessFreq_.isSmoothing())
+        applyCoefficientValues(deessSplit_, AC::makeLowPass(sampleRate_, freq(smDeessFreq_), 0.7071f));
 }
 
 void CopilotCorrectiveDsp::advanceSmoothers(int numSamples)
@@ -144,10 +172,20 @@ void CopilotCorrectiveDsp::advanceSmoothers(int numSamples)
     filtersMoved |= advance(smEq3Freq_, loadParam(parameters_.eq3Freq));
     filtersMoved |= advance(smEq3GainDb_, loadParam(parameters_.eq3GainDb));
     filtersMoved |= advance(smEq3Q_, loadParam(parameters_.eq3Q));
+    filtersMoved |= advance(smDeessFreq_, loadOr(parameters_.deessFreq, 6500.0f));
+    // A shape change rebuilds the band at once (a switch, not a ramp).
+    const std::array<int, 3> shapes{bandShape(parameters_.eqType), bandShape(parameters_.eq2Type),
+                                    bandShape(parameters_.eq3Type)};
+    if (shapes != eqShape_) {
+        eqShape_ = shapes;
+        filtersMoved = true;
+    }
     // A ramp that just finished reports isSmoothing() == false, so rebuild
     // every filter whenever any of them moved this sub-block.
     if (filtersMoved) updateCoefficients(true);
 
+    advance(smDeessThresh_, loadOr(parameters_.deessThreshDb, -30.0f));
+    advance(smDeessRange_, juce::jmax(0.0f, loadOr(parameters_.deessRangeDb, 6.0f)));
     advance(smCompThresh_, loadParam(parameters_.compThreshDb));
     advance(smCompRatio_, loadParam(parameters_.compRatio));
     advance(smCompAttack_, loadParam(parameters_.compAttackMs));
@@ -189,6 +227,10 @@ void CopilotCorrectiveDsp::readStageTargets() noexcept
     target(eqFade_, loadSwitch(parameters_.eqOn), [this] { peak_.reset(); });
     target(eq2Fade_, loadSwitch(parameters_.eq2On), [this] { peak2_.reset(); });
     target(eq3Fade_, loadSwitch(parameters_.eq3On), [this] { peak3_.reset(); });
+    target(deessFade_, loadSwitch(parameters_.deessOn), [this] {
+        deessSplit_.reset();
+        deessEnv_ = 0.0f;
+    });
     target(compFade_, loadSwitch(parameters_.compOn), [this] {
         comp_.reset();
         compLow_.reset();
@@ -215,6 +257,8 @@ void CopilotCorrectiveDsp::reset() noexcept
     peak_.reset();
     peak2_.reset();
     peak3_.reset();
+    deessSplit_.reset();
+    deessEnv_ = 0.0f;
     comp_.reset();
     crossover_.reset();
     compLow_.reset();
@@ -274,6 +318,41 @@ void CopilotCorrectiveDsp::processCompressor(juce::dsp::AudioBlock<float>& block
     block.add(highSub);
 }
 
+void CopilotCorrectiveDsp::processDeEsser(juce::dsp::AudioBlock<float>& block) noexcept
+{
+    const auto channels = block.getNumChannels();
+    const auto n = block.getNumSamples();
+    juce::dsp::AudioBlock<float> lowAll(deessHigh_);
+    auto low = lowAll.getSubsetChannelBlock(0, channels).getSubBlock(0, n);
+    low.copyFrom(block);
+    {
+        juce::dsp::ProcessContextReplacing<float> context(low);
+        deessSplit_.process(context);
+    }
+    const float threshold = smDeessThresh_.getCurrentValue();
+    const float range = smDeessRange_.getCurrentValue();
+    const float slope = 1.0f - 1.0f / kDeessRatio;
+    for (size_t i = 0; i < n; ++i) {
+        // Linked detector: the louder channel's high band (x - LP).
+        float peak = 0.0f;
+        for (size_t c = 0; c < channels; ++c)
+            peak = juce::jmax(peak, std::abs(block.getChannelPointer(c)[i] - low.getChannelPointer(c)[i]));
+        deessEnv_ += (peak > deessEnv_ ? deessAttack_ : deessRelease_) * (peak - deessEnv_);
+        const float levelDb = 20.0f * std::log10(deessEnv_ + 1.0e-9f);
+        const float gr = juce::jlimit(0.0f, range, (levelDb - threshold) * slope);
+        if (gr <= 0.0f) continue; // idle: the input passes untouched
+        deessBlockMaxGr_ = juce::jmax(deessBlockMaxGr_, gr);
+        const float g = std::exp(-gr * 0.11512925f); // dB -> gain
+        for (size_t c = 0; c < channels; ++c) {
+            float& x = block.getChannelPointer(c)[i];
+            const float lp = low.getChannelPointer(c)[i];
+            x = lp + g * (x - lp);
+        }
+    }
+    // A non-finite input (contained by the processor) must not stick here.
+    if (!std::isfinite(deessEnv_)) deessEnv_ = 0.0f;
+}
+
 void CopilotCorrectiveDsp::processSubBlock(juce::dsp::AudioBlock<float> block)
 {
     const int n = static_cast<int>(block.getNumSamples());
@@ -291,7 +370,36 @@ void CopilotCorrectiveDsp::processSubBlock(juce::dsp::AudioBlock<float> block)
     runStage(eqFade_, block, iirStage(peak_));
     runStage(eq2Fade_, block, iirStage(peak2_));
     runStage(eq3Fade_, block, iirStage(peak3_));
-    runStage(compFade_, block, [this](juce::dsp::AudioBlock<float>& b) {
+    runStage(deessFade_, block, [this](juce::dsp::AudioBlock<float>& b) { processDeEsser(b); });
+    bool compRan = false;
+    runStage(compFade_, block, [this, &compRan](juce::dsp::AudioBlock<float>& b) {
+        // VIZ-6b: the stage's reduction = input power / output power (the
+        // compressor has no make-up gain), and its input level.
+        compRan = true;
+        double inSq = 0.0;
+        const auto nch = b.getNumChannels(), ns = b.getNumSamples();
+        for (size_t ch = 0; ch < nch; ++ch) {
+            const float* x = b.getChannelPointer(ch);
+            for (size_t i = 0; i < ns; ++i) inSq += static_cast<double>(x[i]) * x[i];
+        }
+        struct Measure {
+            CopilotCorrectiveDsp& self;
+            juce::dsp::AudioBlock<float>& blk;
+            double in;
+            ~Measure()
+            {
+                double outSq = 0.0;
+                for (size_t ch = 0; ch < blk.getNumChannels(); ++ch) {
+                    const float* y = blk.getChannelPointer(ch);
+                    for (size_t i = 0; i < blk.getNumSamples(); ++i) outSq += static_cast<double>(y[i]) * y[i];
+                }
+                const double count = static_cast<double>(blk.getNumChannels() * blk.getNumSamples());
+                const float grDb = in > 1e-12 && outSq > 1e-12 ? static_cast<float>(10.0 * std::log10(in / outSq)) : 0.0f;
+                self.compReductionDb_.store(juce::jmax(0.0f, grDb), std::memory_order_relaxed);
+                self.compInputDb_.store(count > 0.0 && in > 1e-12 ? static_cast<float>(10.0 * std::log10(in / count)) : -120.0f,
+                                        std::memory_order_relaxed);
+            }
+        } measure{*this, b, inSq};
         if (multibandFade_.silent()) {
             processCompressor(b, false);
             return;
@@ -316,6 +424,10 @@ void CopilotCorrectiveDsp::processSubBlock(juce::dsp::AudioBlock<float> block)
             for (size_t i = 0; i < samples; ++i) single[i] += mix[i] * (multi[i] - single[i]);
         }
     });
+    if (!compRan) {
+        compReductionDb_.store(0.0f, std::memory_order_relaxed);
+        compInputDb_.store(-120.0f, std::memory_order_relaxed);
+    }
     // The multiband ramp only advances while the compressor runs; when the
     // compressor is off, land the switch at its target immediately.
     if (compFade_.silent()) multibandFade_.value = multibandFade_.target;
@@ -344,6 +456,7 @@ void CopilotCorrectiveDsp::process(juce::AudioBuffer<float>& buffer, bool bypass
     smChainMix_.skip(numSamples);
     dryWet_.setWetMixProportion(smChainMix_.getCurrentValue());
     dryWet_.pushDrySamples(processBlock);
+    deessBlockMaxGr_ = 0.0f;
 
     for (int start = 0; start < numSamples; start += kControlBlockSamples) {
         const auto len = static_cast<size_t>(juce::jmin(kControlBlockSamples, numSamples - start));
@@ -351,6 +464,7 @@ void CopilotCorrectiveDsp::process(juce::AudioBuffer<float>& buffer, bool bypass
     }
 
     dryWet_.mixWetSamples(processBlock);
+    deessReductionDb_.store(deessBlockMaxGr_, std::memory_order_relaxed);
 }
 
 } // namespace khensu

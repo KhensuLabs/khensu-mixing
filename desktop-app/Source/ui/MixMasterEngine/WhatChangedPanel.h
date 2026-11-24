@@ -50,6 +50,7 @@ class WhatChangedPanel final : public PanelCard {
     std::vector<NoteRow> noteRows_;
     juce::String diffedPair_; ///< "before|after" guard against re-fetch
     bool fetchInFlight_ = false;
+    bool afterPickedByUser_ = false;
     bool populatingCombos_ = false;
     /// Re-applies every cached palette colour. Called at construction and on
     /// each theme change.

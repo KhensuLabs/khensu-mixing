@@ -149,6 +149,35 @@ class RenderJobManager final : public juce::ChangeBroadcaster, private juce::Tim
     /// keep the decision provenance.
     const juce::String& lastChainDecisionHash() const noexcept { return lastChainDecisionHash_; }
 
+    /// OVH-9: what a render done in this process (no service) produced.
+    /// `ok` -> outputPathOrError is the rendered file; else the error, empty
+    /// when it stopped because it was cancelled.
+    struct LocalRenderOutcome {
+        bool ok = false;
+        juce::String outputPathOrError;
+        juce::var fullResult; ///< the service's RenderJobResult shape
+    };
+    /// Does the render on a worker; must poll `stop` and return soon after it
+    /// turns true (temp files removed, nothing written).
+    using LocalRenderWork = std::function<LocalRenderOutcome(const std::atomic<bool>& stop)>;
+
+    /// OVH-9: runs `work` on this manager's own pool as one of its jobs, so a
+    /// render done without the service is listed, cancellable (cancelJob /
+    /// cancelAll set its stop flag) and drained on destruction like any other,
+    /// and finishes through the same path - onRenderCompleted, the guardrail
+    /// alert, then `onDone` on the message thread. A result that arrives after
+    /// its job was cancelled is discarded and its output file deleted.
+    void startLocalRender(const juce::String& description, const juce::String& inputPath,
+                          const juce::String& sessionId, const juce::String& sourceRecommendationId,
+                          LocalRenderWork work, Callback onDone);
+
+    /// Records `chain` as lastChain() (every chain render, service or local).
+    void rememberChain(const std::vector<ipc::HttpServiceBridge::EffectSpec>& chain, const juce::String& decisionHash)
+    {
+        lastChain_ = chain;
+        lastChainDecisionHash_ = decisionHash;
+    }
+
     void startGraphRender(const juce::String& description, const juce::String& filePath, const juce::String& outputPath,
                           const juce::var& branches, const juce::var& post, bool normalize,
                           const juce::String& sessionId, const juce::String& sourceRecommendationId, Callback onDone);
@@ -209,6 +238,7 @@ class RenderJobManager final : public juce::ChangeBroadcaster, private juce::Tim
         std::shared_ptr<std::atomic<bool>> streaming = std::make_shared<std::atomic<bool>>(false);
         std::shared_ptr<std::atomic<bool>> stop = std::make_shared<std::atomic<bool>>(false);
         juce::uint32 localId = 0; // stable handle before/independent of jobId
+        bool local = false;       ///< OVH-9: rendered in-process (no jobId, never polled)
         // Bounds how long a job can sit "stuck" on a poll error before it's
         // surfaced as a service-loss failure instead of polling forever
         // (frontend-review-2026-07-17.md P1).

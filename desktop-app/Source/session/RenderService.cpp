@@ -309,29 +309,177 @@ void RenderService::restoreRenderTreeNode(int nodeIndex)
     notify(renderTreeListeners_);
 }
 
+RenderJobManager::Callback RenderService::chainCompletion(const juce::String& sessionId, const juce::String& inputPath,
+                                                         bool asVersion, RenderDone onDone)
+{
+    juce::WeakReference<RenderService> self(this);
+    return [self, onDone, sessionId, inputPath, asVersion](bool ok, const juce::String& pathOrError,
+                                                           const juce::var& fullResult) {
+        const auto report = [&](RenderOutcome outcome, const juce::String& text) {
+            if (onDone) onDone(outcome, text, fullResult);
+        };
+        if (self == nullptr) return report(RenderOutcome::Failed, "Window closed before the render finished.");
+        if (!ok) return report(pathOrError.isEmpty() ? RenderOutcome::Cancelled : RenderOutcome::Failed, pathOrError);
+        // AUDIT-002: a render of song A never lands in song B.
+        if (sessionId.isEmpty() || self->sessions_.activeSessionId() != sessionId)
+            return report(RenderOutcome::SessionChanged, pathOrError);
+        if (asVersion) self->registerRenderOf(pathOrError, inputPath, sessionId);
+        report(RenderOutcome::Rendered, pathOrError);
+    };
+}
+
+bool RenderService::shouldRenderNatively(bool serviceUp, const std::vector<ipc::HttpServiceBridge::EffectSpec>& chain)
+{
+    return !serviceUp && dsp::OfflineChainRenderer::canRender(nativeChain(chain));
+}
+
+std::vector<dsp::ChainStageSpec>
+RenderService::nativeChain(const std::vector<ipc::HttpServiceBridge::EffectSpec>& chain)
+{
+    std::vector<dsp::ChainStageSpec> out;
+    out.reserve(chain.size());
+    for (const auto& e : chain) {
+        dsp::ChainStageSpec s;
+        s.effect = e.effect.toStdString();
+        for (const auto& [name, value] : e.parameters) s.parameters[name.toStdString()] = value;
+        out.push_back(std::move(s));
+    }
+    return out;
+}
+
+juce::var RenderService::nativeRenderResult(const dsp::OfflineRenderResult& result, const juce::String& outputPath)
+{
+    const auto strings = [](const std::vector<std::string>& v) {
+        juce::Array<juce::var> a;
+        for (const auto& s : v) a.add(juce::String(juce::CharPointer_UTF8(s.c_str())));
+        return juce::var(a);
+    };
+    const auto metrics = [](const dsp::RenderLevels& l) {
+        juce::DynamicObject::Ptr m = new juce::DynamicObject();
+        m->setProperty(apif::GuardrailMetrics::true_peak_dbtp, std::round(l.truePeakDbtp * 100.0) / 100.0);
+        m->setProperty(apif::GuardrailMetrics::mono_low_corr, std::round(l.monoLowCorrelation * 1000.0) / 1000.0);
+        return juce::var(m.get());
+    };
+    juce::DynamicObject::Ptr guard = new juce::DynamicObject();
+    guard->setProperty(apif::RenderGuardrail::ok, result.guardrailOk);
+    guard->setProperty(apif::RenderGuardrail::matched_gain_db, result.matchedGainDb);
+    guard->setProperty(apif::RenderGuardrail::before, metrics(result.before));
+    guard->setProperty(apif::RenderGuardrail::after, metrics(result.after));
+    guard->setProperty(apif::RenderGuardrail::blocks, strings(result.blocks));
+    guard->setProperty(apif::RenderGuardrail::warnings, strings(result.warnings));
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    o->setProperty(apif::RenderJobResult::status, "success");
+    o->setProperty(apif::RenderJobResult::output_path, outputPath);
+    o->setProperty(apif::RenderJobResult::applied_effects, strings(result.applied));
+    o->setProperty(apif::RenderJobResult::skipped_effects, juce::Array<juce::var>());
+    o->setProperty(apif::RenderJobResult::guardrail, juce::var(guard.get()));
+    o->setProperty("renderer", "native"); // not a service field: which engine rendered it
+    return juce::var(o.get());
+}
+
 void RenderService::startChain(const ChainRender& render, const juce::String& inputPath,
                                const juce::String& outputPath, bool asVersion, RenderDone onDone)
 {
+    // OVH-9: without the engine, render what the native renderer covers here
+    // rather than queue a render nothing will answer.
+    const bool serviceUp = !serviceAvailable || serviceAvailable();
+    if (render.region) return startRegionChain(render, inputPath, outputPath, asVersion, std::move(onDone));
+    if (shouldRenderNatively(serviceUp, render.chain))
+        return startNativeChain(render, inputPath, outputPath, asVersion, std::move(onDone));
     const juce::String sessionId = sessions_.activeSessionId();
-    juce::WeakReference<RenderService> self(this);
-    renderJobs_.startChainRender(
-        render.description, inputPath, outputPath, render.chain, sessionId, render.sourceRecommendationId,
-        [self, onDone, sessionId, inputPath, asVersion](bool ok, const juce::String& pathOrError,
-                                                        const juce::var& fullResult) {
-            const auto report = [&](RenderOutcome outcome, const juce::String& text) {
-                if (onDone) onDone(outcome, text, fullResult);
-            };
-            if (self == nullptr) return report(RenderOutcome::Failed, "Window closed before the render finished.");
-            if (!ok)
-                return report(pathOrError.isEmpty() ? RenderOutcome::Cancelled : RenderOutcome::Failed, pathOrError);
-            // AUDIT-002: a render of song A never lands in song B.
-            if (sessionId.isEmpty() || self->sessions_.activeSessionId() != sessionId)
-                return report(RenderOutcome::SessionChanged, pathOrError);
-            if (asVersion) self->registerRenderOf(pathOrError, inputPath, sessionId);
-            report(RenderOutcome::Rendered, pathOrError);
+    renderJobs_.startChainRender(render.description, inputPath, outputPath, render.chain, sessionId,
+                                 render.sourceRecommendationId,
+                                 chainCompletion(sessionId, inputPath, asVersion, std::move(onDone)),
+                                 render.genreRelative, render.genreActionAllowed, render.abstainedReason,
+                                 render.targetStem, render.decisionHash);
+}
+
+void RenderService::startRegionChain(const ChainRender& render, const juce::String& inputPath,
+                                     const juce::String& outputPath, bool asVersion, RenderDone onDone)
+{
+    // VIZ-N3: one section with the chain, the rest of the track copied from
+    // the input, crossfaded at both edges (the service's section render).
+    const juce::String sessionId = sessions_.activeSessionId();
+    renderJobs_.rememberChain(render.chain, render.decisionHash);
+    ipc::HttpServiceBridge::SectionChainSpec spec;
+    spec.label = render.regionLabel.isNotEmpty() ? render.regionLabel : juce::String("region");
+    spec.startSec = render.region->first;
+    spec.endSec = render.region->second;
+    spec.effects = render.chain;
+    renderJobs_.startLocalRender(
+        render.description, inputPath, sessionId, render.sourceRecommendationId,
+        [inputPath, outputPath, spec, sessionId, rec = render.sourceRecommendationId](const std::atomic<bool>& stop) {
+            RenderJobManager::LocalRenderOutcome outcome;
+            ipc::HttpServiceBridge bridge;
+            const auto started = bridge.startSectionChainJob(inputPath, outputPath, {spec}, 80.0, sessionId, rec);
+            if (started.is_err()) {
+                outcome.outputPathOrError = juce::String(started.error().message);
+                return outcome;
+            }
+            const auto jobId = started.value();
+            for (int polls = 0; polls < 3600 * 4; ++polls) {
+                if (stop.load()) {
+                    bridge.cancelSectionChainJob(jobId);
+                    return outcome; // a cancel: ok = false, no error
+                }
+                const auto st = bridge.getSectionChainJobStatus(jobId);
+                if (st.is_ok()) {
+                    const auto& v = st.value();
+                    if (v.status == "completed") {
+                        outcome.ok = true;
+                        outcome.outputPathOrError = v.outputPath.isNotEmpty() ? v.outputPath : outputPath;
+                        juce::DynamicObject::Ptr full = new juce::DynamicObject();
+                        full->setProperty("output_path", outcome.outputPathOrError);
+                        full->setProperty("status", "success");
+                        full->setProperty("guardrail", v.guardrail);
+                        outcome.fullResult = juce::var(full.get());
+                        return outcome;
+                    }
+                    if (v.status == "failed" || v.status == "cancelled") {
+                        outcome.outputPathOrError = v.error.isNotEmpty() ? v.error : juce::String("Section render failed");
+                        return outcome;
+                    }
+                }
+                juce::Thread::sleep(250);
+            }
+            outcome.outputPathOrError = "Section render timed out";
+            return outcome;
         },
-        render.genreRelative, render.genreActionAllowed, render.abstainedReason, render.targetStem,
-        render.decisionHash);
+        chainCompletion(sessionId, inputPath, asVersion, std::move(onDone)));
+}
+
+void RenderService::startNativeChain(const ChainRender& render, const juce::String& inputPath,
+                                     const juce::String& outputPath, bool asVersion, RenderDone onDone)
+{
+    const juce::String sessionId = sessions_.activeSessionId();
+    renderJobs_.rememberChain(render.chain, render.decisionHash);
+    juce::Logger::writeToLog("RenderService: the analysis engine is not up - rendering natively: " +
+                             render.description);
+    renderJobs_.startLocalRender(
+        render.description, inputPath, sessionId, render.sourceRecommendationId,
+        [inputPath, outputPath, chain = nativeChain(render.chain)](const std::atomic<bool>& stop) {
+            dsp::OfflineRenderOptions options;
+            options.shouldCancel = [&stop] { return stop.load(); };
+            const auto result =
+                dsp::OfflineChainRenderer::renderFile(juce::File(inputPath), juce::File(outputPath), chain, options);
+            RenderJobManager::LocalRenderOutcome outcome;
+            switch (result.status) {
+            case dsp::OfflineRenderResult::Status::Rendered:
+                outcome.ok = true;
+                outcome.outputPathOrError = outputPath;
+                outcome.fullResult = nativeRenderResult(result, outputPath);
+                break;
+            case dsp::OfflineRenderResult::Status::Cancelled:
+                break; // ok = false with an empty error: a cancel
+            case dsp::OfflineRenderResult::Status::NeedsEngine:
+            case dsp::OfflineRenderResult::Status::Failed:
+                outcome.outputPathOrError = juce::String(juce::CharPointer_UTF8(result.error.c_str()));
+                if (outcome.outputPathOrError.isEmpty()) outcome.outputPathOrError = "Render failed";
+                break;
+            }
+            return outcome;
+        },
+        chainCompletion(sessionId, inputPath, asVersion, std::move(onDone)));
 }
 
 juce::File RenderService::renderVersion(const ChainRender& render, const juce::String& outputSuffix,

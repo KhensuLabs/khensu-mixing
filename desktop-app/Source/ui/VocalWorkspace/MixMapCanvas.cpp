@@ -1,4 +1,5 @@
 // desktop-app/Source/ui/VocalWorkspace/MixMapCanvas.cpp
+#include "../shared/ServiceErrorHint.h"
 #include "MixMapCanvas.h"
 #include "../shared/PanelRunState.h"
 #include "../../IAppController.h"
@@ -115,7 +116,7 @@ void MixMapCanvas::fetch()
     }, [](MixMapCanvas& self, auto&& fetched) {
         auto& [masking, energy] = fetched;
         if (masking.is_err() && energy.is_err()) {
-            self.statusLabel_.setText(TRANS("Mix map unavailable: ") + juce::String(masking.error().message),
+            self.statusLabel_.setText(TRANS("Mix map unavailable: ") + serviceErrorLine(masking.error()),
                                        juce::dontSendNotification);
             return;
         }

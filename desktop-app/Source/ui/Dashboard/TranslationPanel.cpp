@@ -69,8 +69,6 @@ TranslationPanel::TranslationPanel(IAppController& c) : PanelCard(c, "Translatio
                                                                 {&hearEarbudsButton_, "earbuds"},
                                                                 {&hearCarButton_, "car"},
                                                                 {&hearClubButton_, "club"}}) {
-        btn->setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.12f));
-        btn->setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
         juce::String dev(device);
         btn->onClick = [this, dev] { auditionDevice(dev); };
         addAndMakeVisible(*btn);

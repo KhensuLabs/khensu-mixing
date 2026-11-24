@@ -70,6 +70,24 @@ struct KhensuTheme {
     static juce::Colour textTertiary;  // captions, disabled
     static juce::Colour textAccent;    // links, active values
 
+    // ── Data visualisation (VIZ-F2) ──────────────────────────────────
+    // One job per colour: categorical = identity (fixed slot order, never
+    // cycled), sequential = magnitude, diverging = polarity. The values come
+    // from khensu::ui::viz (shared-core/include/khensu/ui/VizPalette.h), the
+    // steps for the current theme - colour-blind checked in VizPaletteTest.
+    // Severity keeps accentRed / Amber / Blue / Green; never use a viz colour
+    // for severity or a severity colour for a series.
+    static juce::Colour vizCategory(int slot);   ///< slot 0..7
+    static juce::Colour vizSequential(float t);  ///< t 0..1 (magnitude)
+    static juce::Colour vizDiverging(float t);   ///< t -1..1 (polarity)
+    static juce::Colour vizSpreadOuter;  ///< released tracks, p10-p90 band
+    static juce::Colour vizSpreadInner;  ///< released tracks, p25-p75 band
+    static juce::Colour vizMedian;       ///< released tracks' median line
+    static juce::Colour vizTrack;        ///< "this track" (the measured line / dot)
+    static juce::Colour vizReference;    ///< a reference track (categorical slot 6, violet)
+    static juce::Colour vizGrid;         ///< chart gridline
+    static juce::Colour vizAxis;         ///< chart baseline / axis
+
     // ── Spacing (px) ─────────────────────────────────────────────────
     static constexpr int sp1 = 4;
     static constexpr int sp2 = 8;
@@ -78,9 +96,9 @@ struct KhensuTheme {
     static constexpr int sp5 = 24;
     static constexpr int sp6 = 32;
     static constexpr int sp7 = 48;
-    static constexpr int panelPadding = 16;
-    static constexpr int cardGap = 12;
-    static constexpr int sectionGap = 24;
+    static constexpr int panelPadding = 24;
+    static constexpr int cardGap = 16;
+    static constexpr int sectionGap = 32;
     static constexpr int navItemH = 44;
     static constexpr int sidebarW = 200;
     static constexpr int transportH = 56;
@@ -103,17 +121,21 @@ struct KhensuTheme {
     static juce::Font uiFont(float size, int style = juce::Font::plain);
 
     // Named type scale (pt sizes) - use these instead of ad-hoc literals so
-    // the hierarchy stays consistent. Roughly a 1.25 modular scale.
+    // the hierarchy stays consistent. UI-4: four steps - 28 metric, 17 title,
+    // 13 body, 11 label - so a measured value is the largest text on its card.
     static constexpr float kFontMetric = 28.0f; // hero numeric readouts
-    static constexpr float kFontH1 = 18.0f;     // screen / card titles
-    static constexpr float kFontH2 = 15.0f;     // sub-headers
-    static constexpr float kFontBody = 12.0f;   // body copy
+    static constexpr float kFontH1 = 17.0f;     // screen / card titles
+    static constexpr float kFontH2 = 13.0f;     // sub-headers (body size, semibold)
+    static constexpr float kFontBody = 13.0f;   // body copy
     static constexpr float kFontLabel = 11.0f;  // labels / axes
-    static constexpr float kFontCaption = 9.0f; // captions / fine print
+    static constexpr float kFontCaption = 11.0f; // captions (the 11 px floor)
 
     static juce::Font bodyFont(float size = kFontBody);
     static juce::Font labelFont(float size = 13.0f);
-    static juce::Font metricFont(float size = kFontMetric); // tabular nums
+    static juce::Font metricFont(float size = kFontMetric); // tabular figures
+    /// Every number on screen (UI-4): a face whose digits are all one width,
+    /// so a changing value never jitters and columns of figures line up.
+    static juce::Font numericFont(float size = kFontBody, int style = juce::Font::plain);
     static juce::Font monoFont(float size = kFontLabel);
     static juce::Font sectionHeaderFont(); // kFontLabel; sentence/Title case (ALL CAPS retired)
 

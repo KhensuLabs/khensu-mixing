@@ -107,6 +107,31 @@ def apply_offline_env(env: MutableMapping[str, str], settings: dict, *,
         _set_offline(env)
 
 
+#: Where numba caches librosa's compiled kernels, under the service config
+#: dir (FN2-3). numba's default is beside librosa in site-packages - the
+#: installed runtime's folder, which this user often cannot write (then every
+#: launch recompiles), and a cache several processes write at once can be
+#: left with variants that crash the process on load.
+NUMBA_CACHE_SUBDIR = ("cache", "numba")
+
+
+def apply_numba_cache_env(env: MutableMapping[str, str], config_dir: Path | None = None) -> None:
+    """Point NUMBA_CACHE_DIR at ``<config dir>/cache/numba`` unless it is
+    already set (an explicit value wins). numba reads it when it is first
+    imported, so this runs before any app module is."""
+    if env.get("NUMBA_CACHE_DIR"):
+        return
+    if config_dir is None:
+        from khensu_services.common.config import config_dir as _config_dir
+        config_dir = _config_dir()
+    path = Path(config_dir).joinpath(*NUMBA_CACHE_SUBDIR)
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return  # numba falls back to its own default; never block startup
+    env["NUMBA_CACHE_DIR"] = str(path)
+
+
 def bootstrap_online_allowed() -> bool:
     """Whether first-run bootstrap may download packages (AUDIT-077).
 
@@ -211,6 +236,10 @@ def run_service(host: str = "127.0.0.1", port: int = 47239) -> None:
         log_level="warning",
         timeout_graceful_shutdown=lifecycle.GRACEFUL_REQUEST_TIMEOUT_SEC,
     )
+    # RUN-14: a client that drops before its accept completes must not close
+    # the listening socket (asyncio's proactor did, leaving a deaf service).
+    from khensu_services.common.win_accept import harden_proactor_accept
+    harden_proactor_accept()
     server = uvicorn.Server(config)
     lifecycle.set_server(server)
     lifecycle.start_exit_watchdog(server)
@@ -274,6 +303,13 @@ if __name__ == "__main__":
     # ── Normal startup ────────────────────────────────────────────────────────
     # At this point we are running from the installed runtime or dev venv.
     sys.path.insert(0, str(HERE))
+
+    # numba's kernel cache in a per-user writable folder, before anything
+    # imports numba (librosa does).
+    try:
+        apply_numba_cache_env(os.environ)
+    except Exception:
+        pass  # never block startup on the cache location
 
     # Apply the HF/transformers offline env from settings BEFORE importing any
     # app module that pulls in huggingface libs (they read these at import time).

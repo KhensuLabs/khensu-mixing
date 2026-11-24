@@ -10,6 +10,7 @@
 // THREAD_CONTEXT(AnyThread) - pure formatting.
 #pragma once
 #include <JuceHeader.h>
+#include <khensu/ipc/HttpServiceBridge.h>
 #include <khensu/ipc/ILocalServiceBridge.h>
 
 namespace khensu {
@@ -50,6 +51,15 @@ inline ServiceErrorHint classifyServiceError(const ipc::BridgeError& e)
     using Kind = ipc::BridgeError::Kind;
     switch (e.kind) {
     case Kind::ServiceUnavailable:
+        // VIZ-U5: a card must not say "unreachable" while the header says the
+        // engine runs. A refused identity check is a busy or starting engine;
+        // a failed request to a verified engine is that request's failure.
+        if (juce::String(e.message).containsIgnoreCase("identity not verified"))
+            return {"The analysis engine is starting or busy.",
+                    "This card tries again when the engine answers, or press Retry."};
+        if (ipc::HttpServiceBridge::serviceIdentityRequired() && ipc::HttpServiceBridge::serviceIdentityVerified())
+            return {"The analysis engine didn't answer this request.",
+                    "The engine is running - press Retry."};
         return {"The analysis engine isn't reachable.",
                 "The notice at the top shows its state; it can be restarted from there or with "
                 "\"Restart analysis service\" (Ctrl+K)."};

@@ -390,3 +390,51 @@ TEST_CASE("AnalysisController: without a stored pass it analyses; a multi-file s
     REQUIRE(pumpUntil([&] { return last.has_value(); }));
     CHECK(loads == 1); // an aggregate of two files is no single file's stored pass
 }
+
+TEST_CASE("AnalysisController: an engine known to be starting is not waited for (FN2-2b)",
+          "[analysiscontroller][fn2-2b]")
+{
+    // The lifecycle says Starting (a first launch): the native pass is the
+    // final result at once - complete, the engine's inputs marked unanswered -
+    // instead of after the 8 s wait for an engine that is still booting.
+    khensu::GenreDatabase genres;
+    auto calls = quietEngine();
+    std::atomic<int> deepCalls{0};
+    calls.available = [] { return false; };
+    calls.knownNotReady = [] { return true; };
+    calls.deep = [&deepCalls](const std::string&, const khensu::DeepAnalysisJobHooks&) {
+        ++deepCalls;
+        return khensu::DeepAnalysisJobResult{};
+    };
+    AnalysisController controller(genres, nullptr, calls);
+    TempTrack track;
+    std::optional<AnalysisResult> final;
+    int partials = 0;
+    const auto t0 = juce::Time::getMillisecondCounter();
+    controller.analyzeSession(track.session("s-cold"), [&](const AnalysisResult& r) {
+        if (r.is_partial) ++partials;
+        else final = r;
+    });
+    REQUIRE(pumpUntil([&] { return final.has_value(); }));
+    const auto elapsed = juce::Time::getMillisecondCounter() - t0;
+    INFO("native result after " << elapsed << " ms");
+    CHECK(elapsed < 5000); // the wait alone was 8000 ms
+    CHECK_FALSE(final->analysis_failed);
+    CHECK_FALSE(final->is_partial);
+    CHECK_FALSE(final->has_python_analysis());
+    CHECK((final->inputs_failed & khensu::analysis_inputs::kDeep) != 0);
+    CHECK(final->has_fast_analysis());
+    CHECK(partials == 1);
+    CHECK(deepCalls == 0);
+
+    // Unknown (no lifecycle verdict) still probes and waits; Running goes on.
+    khensu::service_ready::EngineGate gate;
+    CHECK_FALSE(khensu::service_ready::engineKnownNotReady(&gate));
+    gate.publish(khensu::service_ready::EngineGate::State::Starting);
+    CHECK(khensu::service_ready::engineKnownNotReady(&gate));
+    gate.publish(khensu::service_ready::EngineGate::State::Down);
+    CHECK(khensu::service_ready::engineKnownNotReady(&gate));
+    gate.publish(khensu::service_ready::EngineGate::State::Running);
+    CHECK_FALSE(khensu::service_ready::engineKnownNotReady(&gate));
+    CHECK_FALSE(khensu::service_ready::engineKnownNotReady(nullptr));
+}

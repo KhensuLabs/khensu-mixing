@@ -47,21 +47,16 @@ void MetricTileComponent::paint(juce::Graphics& g)
 
     auto b = getLocalBounds().reduced(KhensuTheme::sp2);
 
-    // Background glow behind value
-    juce::Colour glowCol = KhensuTheme::colourForStatus(status_);
-    juce::ColourGradient glow(glowCol.withAlpha(0.12f), (float)b.getCentreX(), (float)b.getCentreY(),
-                              juce::Colours::transparentBlack, (float)b.getCentreX(), (float)b.getBottom(), true);
-    g.setGradientFill(glow);
-    g.fillRect(b);
-
-    // Label (top, ALL CAPS)
+    // UI-3: no status glow behind the value - colour is the small status
+    // dot below, and only that.
+    // Label (top, sentence case - ALL CAPS retired)
     g.setFont(KhensuTheme::sectionHeaderFont());
     g.setColour(KhensuTheme::textSecondary);
-    g.drawText(label_.toUpperCase(), b.removeFromTop(16), juce::Justification::centredLeft, true);
+    g.drawText(label_, b.removeFromTop(16), juce::Justification::centredLeft, true);
 
     // Value + unit (centre)
     auto valueArea = b.removeFromTop(36);
-    g.setFont(KhensuTheme::metricFont(28.0f));
+    g.setFont(KhensuTheme::metricFont(KhensuTheme::kFontMetric)); // tabular figures (UI-4)
     g.setColour(KhensuTheme::textPrimary);
     // Draw value right-aligned, unit below/right
     int valueW = (int)(getWidth() * 0.72f);
@@ -75,12 +70,12 @@ void MetricTileComponent::paint(juce::Graphics& g)
     juce::Colour sc = KhensuTheme::colourForStatus(status_);
     g.setColour(sc);
     g.fillEllipse((float)statusArea.getX(), (float)statusArea.getCentreY() - 3.0f, 6.0f, 6.0f);
-    const char* words[] = {"PASS", "WARN", "FAIL", "-"};
+    const char* words[] = {NEEDS_TRANS("In range"), NEEDS_TRANS("Check"), NEEDS_TRANS("Out of range"), "-"};
     int idx = (int)status_;
     if (idx < 0 || idx > 3) idx = 3;
-    g.setFont(KhensuTheme::labelFont(10.0f));
-    g.setColour(sc);
-    g.drawText(words[idx], statusArea.withLeft(statusArea.getX() + 10), juce::Justification::centredLeft, false);
+    g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
+    g.setColour(KhensuTheme::textSecondary);
+    g.drawText(juce::translate(words[idx]), statusArea.withLeft(statusArea.getX() + 10), juce::Justification::centredLeft, false);
 }
 
 } // namespace khensu

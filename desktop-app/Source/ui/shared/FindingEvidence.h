@@ -8,6 +8,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "../../BundledResources.h"
+#include <algorithm>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -17,6 +18,15 @@ namespace khensu::finding_evidence {
 
 struct Detection {
     juce::String defect;
+    double rate = 0.0;
+    int tracks = 0;
+};
+
+/// OVH-6: a finding the app's own Fix raised on the corpus where it was
+/// not there before (resources/calibration/finding_evidence.json
+/// fix.side_effects; absent in older tables).
+struct SideEffect {
+    juce::String code;
     double rate = 0.0;
     int tracks = 0;
 };
@@ -37,6 +47,8 @@ struct Entry {
     double fixClearsRate = -1.0;
     int fixTried = 0;
     bool adviceOnly = false;
+    /// OVH-6: what the Fix introduced, most frequent first (may be empty).
+    std::vector<SideEffect> sideEffects;
 };
 
 inline std::map<juce::String, Entry> parse(const juce::var& doc)
@@ -60,6 +72,14 @@ inline std::map<juce::String, Entry> parse(const juce::var& doc)
                 e.fixTried = (int)fix["tried"];
                 e.adviceOnly = (bool)fix["advice_only"];
                 if (e.fixTried > 0) e.fixClearsRate = (double)fix["clears_rate"];
+                if (auto* effects = fix["side_effects"].getArray())
+                    for (const auto& se : *effects) {
+                        const auto code = se["code"].toString();
+                        if (code.isEmpty() || (double)se["rate"] <= 0.0) continue;
+                        e.sideEffects.push_back({code, (double)se["rate"], (int)se["tracks"]});
+                    }
+                std::stable_sort(e.sideEffects.begin(), e.sideEffects.end(),
+                                 [](const SideEffect& a, const SideEffect& b) { return a.rate > b.rate; });
             }
             out[p.name.toString()] = std::move(e);
         }
@@ -112,6 +132,52 @@ inline juce::String describe(const juce::String& issueCode)
     const auto& t = table();
     const auto it = t.find(issueCode);
     return it == t.end() ? juce::String() : describe(it->second);
+}
+
+/// "low_end_light" -> "Low end light": an issue code as a reader sees it.
+inline juce::String readableCode(const juce::String& code)
+{
+    // Units and abbreviations keep their capitals ("lufs_too_quiet" ->
+    // "LUFS too quiet", "dc_offset" -> "DC offset").
+    static const std::pair<const char*, const char*> kAcronyms[] = {
+        {"lufs", "LUFS"}, {"lra", "LRA"}, {"dc", "DC"}, {"ms", "M/S"}, {"eq", "EQ"}, {"ai", "AI"}};
+    juce::StringArray words = juce::StringArray::fromTokens(code.replaceCharacter('_', ' ').trim(), " ", "");
+    for (auto& w : words)
+        for (const auto& [from, to] : kAcronyms)
+            if (w == from) w = to;
+    auto out = words.joinIntoString(" ");
+    return out.isEmpty() ? out : out.substring(0, 1).toUpperCase() + out.substring(1);
+}
+
+/// OVH-6: one line that predicts the Fix before it renders, from what the
+/// app's own Fix did on released tracks with the defect injected:
+/// "Fix clears this on 78% of 100 released tracks tested; may introduce:
+/// Low end light (12%)". Empty when the finding's fix was never measured.
+inline juce::String predictFix(const Entry& e)
+{
+    juce::String s;
+    if (e.fixClearsRate >= 0.0 && e.fixTried > 0)
+        s = TRANS("Fix clears this on %r% of %t released tracks tested")
+                .replace("%r", juce::String(juce::roundToInt(e.fixClearsRate * 100.0)))
+                .replace("%t", juce::String(e.fixTried));
+    else if (e.adviceOnly)
+        return TRANS("Advice only on released tracks - the fix is made at the source");
+    else
+        return {};
+    juce::StringArray effects;
+    for (const auto& se : e.sideEffects) {
+        if (effects.size() >= 2) break;
+        effects.add(readableCode(se.code) + " (" + juce::String(juce::roundToInt(se.rate * 100.0)) + "%)");
+    }
+    if (!effects.isEmpty()) s << "; " << TRANS("may introduce:") << " " << effects.joinIntoString(", ");
+    return s;
+}
+
+inline juce::String predictFix(const juce::String& issueCode)
+{
+    const auto& t = table();
+    const auto it = t.find(issueCode);
+    return it == t.end() ? juce::String() : predictFix(it->second);
 }
 
 } // namespace khensu::finding_evidence

@@ -4,10 +4,12 @@
 #include <functional>
 #include <optional>
 #include <vector>
+#include "AbLevelOffset.h"
 
 namespace khensu {
 
 struct AnalysisResult;
+class PlaybackMeterTap;
 
 /// Playback and the loudness-matched A/B (ENG-1). The transport, what it has
 /// loaded (original, A/B render, soloed stem, preview), the matched gain and
@@ -56,6 +58,8 @@ class IPlayback {
     virtual void setAbSide(bool showProcessed) = 0;
     virtual juce::String abProcessedPath() const noexcept = 0;
     virtual std::optional<float> abProcessedLufs() const noexcept = 0;
+    /// UI-6: B's loudness against A's and whether playback matches them.
+    virtual AbLevelOffset abLevelOffset() const = 0;
     /// Measures each file's LUFS into the A/B cache; onDone(allKnown) on the
     /// message thread (DSK-08).
     virtual void primeAbLoudness(const juce::StringArray& paths, std::function<void(bool allKnown)> onDone) = 0;
@@ -69,6 +73,9 @@ class IPlayback {
     using MeterCallback = std::function<void(float lp, float rp, float momLufs, float stLufs, float corr, float width)>;
     virtual void addRealTimeMeterListener(void* key, MeterCallback cb) = 0;
     virtual void removeRealTimeMeterListener(void* key) = 0;
+    /// UI-5: the tap on what the desktop plays (MeterBridge reads it); null
+    /// without an audio engine.
+    virtual PlaybackMeterTap* meterTap() noexcept = 0;
 };
 
 } // namespace khensu

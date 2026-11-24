@@ -1,4 +1,5 @@
 // desktop-app/Source/ui/MixMasterEngine/ProvenanceTimelinePanel.cpp
+#include "../shared/ServiceErrorHint.h"
 #include "ProvenanceTimelinePanel.h"
 #include "../shared/PanelRunState.h"
 #include "../shared/KhensuLookAndFeel.h"
@@ -95,7 +96,7 @@ void ProvenanceTimelinePanel::exportStoryboard()
             }, [outPath](ProvenanceTimelinePanel& panel, auto&& result) {
                 if (result.is_err())
                     panel.controller_.shell().showServiceError("Storyboard export failed: " +
-                                                       juce::String(result.error().message));
+                                                       serviceErrorLine(result.error()));
                 else
                     panel.controller_.shell().showServiceError("Storyboard saved: " + outPath);
             });

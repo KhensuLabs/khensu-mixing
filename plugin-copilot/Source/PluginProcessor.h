@@ -17,6 +17,9 @@
 #include "live/CopilotLiveAnalyzer.h"
 #include "automation/FixAutomation.h"
 #include "ara/AraSession.h"
+#include "CopilotPresets.h"
+#include "CopilotUndoHistory.h"
+#include <khensu/mixerchain/RecommendationDspMapper.h>
 #include <atomic>
 #include <array>
 #include <functional>
@@ -107,11 +110,65 @@ class KhensuCopilotProcessor final : public juce::AudioProcessor,
     juce::AudioProcessorARAExtension* getARAClientExtensions() override { return this; }
 #endif
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram(int) override {}
-    const juce::String getProgramName(int) override { return "Default"; }
+    // ---- UI-9: factory presets as host programs ------------------------------
+    int getNumPrograms() override { return copilot::presets::numFactoryPresets(); }
+    int getCurrentProgram() override { return currentProgram_.load(std::memory_order_relaxed); }
+    /// Loads factory preset `index` into every DSP parameter (the ones it
+    /// does not name return to their defaults). No locks or allocation, so a
+    /// host may call it from any thread.
+    void setCurrentProgram(int index) override;
+    const juce::String getProgramName(int index) override;
     void changeProgramName(int, const juce::String&) override {}
+
+    /// Loads factory preset `index` as the user's choice: one undo step
+    /// ("Preset: Club master"). THREAD_CONTEXT(UIThread).
+    void loadProgramFromUi(int index);
+
+    // ---- UI-9 / FN2-5: user presets (shared chain presets) and A/B snapshots --
+    /// Name of the preset the parameters were last loaded from ("" = none).
+    juce::String getCurrentPresetName() const;
+    /// The shared per-user preset folder (<data dir>/presets, FN2-5), which
+    /// the desktop rack reads too.
+    juce::File getUserPresetDirectory() const;
+    void setUserPresetDirectoryForTesting(const juce::File& dir) { userPresetDirOverride_ = dir; }
+    /// Where pre-FN2-5 XML presets were kept (<data dir>/Copilot Presets).
+    juce::File getLegacyUserPresetDirectory() const;
+    void setLegacyUserPresetDirectoryForTesting(const juce::File& dir) { legacyPresetDirOverride_ = dir; }
+    /// The user presets, re-read from the folder (after migrating any legacy
+    /// ones), sorted by name. THREAD_CONTEXT(UIThread).
+    std::vector<khensu::presets::ListedPreset> listUserPresets() const;
+    /// Saves every DSP parameter as a user preset `name` (a desktop preset of
+    /// that name keeps its desktop-only stages). THREAD_CONTEXT(UIThread).
+    bool saveUserPreset(const juce::String& name, juce::String& error);
+    /// Loads a user preset file (as host gestures, one undo step).
+    /// Parameters it does not name return to their defaults; desktop-only
+    /// stages are ignored. THREAD_CONTEXT(UIThread).
+    bool loadUserPreset(const juce::File& file, juce::String& error);
+    /// The two parameter snapshots: 0 = A, 1 = B. The active one IS the
+    /// live parameters; the other is held until switched to.
+    int getActiveSnapshot() const noexcept { return activeSnapshot_.load(std::memory_order_relaxed); }
+    /// Keeps the live values as the active snapshot and loads the other one
+    /// (one undo step; undo switches back). THREAD_CONTEXT(UIThread).
+    void switchSnapshot(int slot);
+
+    /// UX2-6b: the parameter undo history (message thread only).
+    copilot::ParamUndoHistory& undoHistory() noexcept { return undoHistory_; }
+    /// Copies the active snapshot over the other (A -> B when A is active).
+    void copyActiveSnapshotToOther();
+
+    // ---- UI-8: editor view, persisted per instance ----------------------------
+    enum class ViewSize { Small = 0, Medium = 1, Large = 2 };
+    struct EditorViewState {
+        bool compact = false;
+        ViewSize size = ViewSize::Medium;
+        int tab = 0;
+        bool operator==(const EditorViewState& o) const noexcept
+        {
+            return compact == o.compact && size == o.size && tab == o.tab;
+        }
+    };
+    EditorViewState getEditorViewState() const noexcept;
+    void setEditorViewState(const EditorViewState& state);
 
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
@@ -142,6 +199,19 @@ class KhensuCopilotProcessor final : public juce::AudioProcessor,
     float getShortTermLufs() const noexcept { return realtimeTelemetry_.snapshot().short_term_lufs; }
     float getCorrelation() const noexcept { return realtimeTelemetry_.snapshot().correlation; }
     float getStereoWidth() const noexcept { return realtimeTelemetry_.snapshot().width; }
+    float getIntegratedLufs() const noexcept { return realtimeTelemetry_.snapshot().integrated_lufs; }
+    /// UI-5: restarts the integrated loudness (any thread).
+    void resetIntegratedLoudness() noexcept { realtimeTelemetry_.requestIntegratedReset(); }
+    /// UI-5: the highest true peak per channel since the previous call (UI thread).
+    void takeTruePeaks(float& leftDbtp, float& rightDbtp) noexcept { realtimeTelemetry_.takeTruePeaks(leftDbtp, rightDbtp); }
+    /// UI-5: the output for the vectorscope (audio thread fills, UI drains).
+    ui::StereoSampleRing& getScopeRing() noexcept { return realtimeTelemetry_.scopeRing(); }
+    /// OVH-8: the de-esser's gain reduction in the last block (dB).
+    float getDeessReductionDb() const noexcept { return correctiveDsp_.lastDeessReductionDb(); }
+    /// VIZ-6b: live gain reduction for the DSP tab's module drawings.
+    float getCompReductionDb() const noexcept { return correctiveDsp_.lastCompReductionDb(); }
+    float getCompInputDb() const noexcept { return correctiveDsp_.lastCompInputDb(); }
+    float getLimiterReductionDb() const noexcept { return outputStage_.lastLimiterReductionDb(); }
     float getBpm() const noexcept { return realtimeTelemetry_.getBpm(); }
     double getLoopBeats() const noexcept { return realtimeTelemetry_.getLoopBeats(); }
     bool isHostLooping() const noexcept { return realtimeTelemetry_.isLooping(); }
@@ -270,13 +340,24 @@ class KhensuCopilotProcessor final : public juce::AudioProcessor,
         static constexpr const char* limThreshDb = "lim_thresh_db";
         static constexpr const char* chainMix = "chain_mix";
         static constexpr const char* bypass = "bypass";
+        // OVH-8 (state v3): appended to the layout, so v2 projects load with
+        // these at their defaults. Same strings as mixerchain::DspParamIdsV3.
+        static constexpr const char* eqType = "eq_type";   ///< 0 bell, 1 low shelf, 2 high shelf
+        static constexpr const char* eq2Type = "eq2_type";
+        static constexpr const char* eq3Type = "eq3_type";
+        static constexpr const char* deessOn = "deess_on";
+        static constexpr const char* deessFreq = "deess_freq";
+        static constexpr const char* deessThreshDb = "deess_thresh_db";
+        static constexpr const char* deessRangeDb = "deess_range_db";
+        /// The Apply-top-fix Amount, 0..1: re-applies the live fix as it moves.
+        static constexpr const char* fixAmount = "fix_amount";
     };
 
     // The built-in DSP-chain params that the AI mixer-chain generator or
     // suggestion auto-apply can write. chain_mix and bypass are chain-level
     // controls, not individual DSP stages, so they're excluded and never get
     // an AI-set dot.
-    static constexpr int kNumDspParams = 30;
+    static constexpr int kNumDspParams = 37;
     static constexpr std::array<const char*, kNumDspParams> kDspParamIds{{ParamIDs::hpfOn,
                                                                           ParamIDs::hpfFreq,
                                                                           ParamIDs::lpfOn,
@@ -306,7 +387,36 @@ class KhensuCopilotProcessor final : public juce::AudioProcessor,
                                                                           ParamIDs::crossoverHighFreq,
                                                                           ParamIDs::outGainDb,
                                                                           ParamIDs::limOn,
-                                                                          ParamIDs::limThreshDb}};
+                                                                          ParamIDs::limThreshDb,
+                                                                          ParamIDs::eqType,
+                                                                          ParamIDs::eq2Type,
+                                                                          ParamIDs::eq3Type,
+                                                                          ParamIDs::deessOn,
+                                                                          ParamIDs::deessFreq,
+                                                                          ParamIDs::deessThreshDb,
+                                                                          ParamIDs::deessRangeDb}};
+
+    // ---- OVH-8: the live top fix ------------------------------------------------
+    struct LiveFixResult {
+        mixerchain::MappedFix mapped; ///< what the fix maps to at the current amount
+        bool applied = false;         ///< false when blocked or nothing mapped
+        juce::String blockedReason;   ///< why it was not applied ("" when applied)
+    };
+    /// Why `rec` is not applied automatically ("" when safe_to_auto_apply).
+    static juce::String autoApplyBlockReason(const Recommendation& rec);
+    /// Applies `rec` to the built-in chain at the current fix_amount (as host
+    /// gestures) and keeps it live: moving fix_amount re-applies it over the
+    /// values the parameters had before the fix. With `requireSafe`, a finding
+    /// not marked safe_to_auto_apply is only mapped, not applied.
+    /// THREAD_CONTEXT(UIThread).
+    LiveFixResult applyLiveFix(const Recommendation& rec, bool requireSafe = true);
+    /// Re-applies the live fix at the current fix_amount. THREAD_CONTEXT(UIThread).
+    void reapplyLiveFix();
+    /// Forgets the live fix (the parameters stay as they are).
+    void clearLiveFix();
+    bool hasLiveFix() const noexcept { return liveFixActive_.load(std::memory_order_acquire); }
+    std::string getLiveFixId() const;
+    float getFixAmount() const noexcept { return pFixAmount_ != nullptr ? pFixAmount_->load(std::memory_order_relaxed) : 1.0f; }
 
     /// Set a parameter by ID from the UI thread (normalises and notifies host).
     void setParamFromUi(const char* paramId, float plainValue);
@@ -376,8 +486,11 @@ class KhensuCopilotProcessor final : public juce::AudioProcessor,
     float getParamPlain(const std::string& paramId) const;
 
     /// Root plugin-state version written by getStateInformation (PLG-23).
-    /// 1 = legacy (no version property); 2 = adds instance id and Mix role.
-    static constexpr int kStateVersion = 2;
+    /// 1 = legacy (no version property); 2 = adds instance id and Mix role;
+    /// 3 = adds the EQ shapes, the de-esser and fix_amount (new parameters,
+    /// default when absent), the editor view, the program / preset name and
+    /// the A/B snapshot (UI-8, UI-9, OVH-8).
+    static constexpr int kStateVersion = 3;
     /// Version of the embedded hosted-chain node.
     static constexpr int kHostedChainVersion = 1;
     /// Upgrades a state tree saved by an older version, in place. The single
@@ -391,6 +504,8 @@ class KhensuCopilotProcessor final : public juce::AudioProcessor,
 
   private:
     juce::AudioProcessorValueTreeState apvts_;
+    /// UX2-6b: after apvts_, whose parameters it listens to.
+    copilot::ParamUndoHistory undoHistory_{*this};
     CopilotRealtimeTelemetry realtimeTelemetry_;
     copilot::CaptureRecorder capture_; ///< FEAT-7
 
@@ -435,6 +550,46 @@ class KhensuCopilotProcessor final : public juce::AudioProcessor,
     std::atomic<float>* pOutGainDb_ = nullptr;
     std::atomic<float>* pLimOn_ = nullptr;
     std::atomic<float>* pLimThreshDb_ = nullptr;
+    std::atomic<float>* pEqType_ = nullptr;
+    std::atomic<float>* pEq2Type_ = nullptr;
+    std::atomic<float>* pEq3Type_ = nullptr;
+    std::atomic<float>* pDeessOn_ = nullptr;
+    std::atomic<float>* pDeessFreq_ = nullptr;
+    std::atomic<float>* pDeessThreshDb_ = nullptr;
+    std::atomic<float>* pDeessRangeDb_ = nullptr;
+    std::atomic<float>* pFixAmount_ = nullptr;
+    int fixAmountParamIndex_ = -1;
+
+    // ---- OVH-8 live fix (message thread, except the flags) ----
+    Recommendation liveFix_;
+    std::map<std::string, float> liveFixBase_; ///< plain values before the fix
+    std::atomic<bool> liveFixActive_{false};
+    std::atomic<bool> pendingFixReapply_{false};
+    float readPlain(const char* paramId) const noexcept;
+
+    // ---- UI-9 programs / presets / snapshots ----
+    std::atomic<int> currentProgram_{0};
+    /// Per factory preset, every snapshot parameter's normalised value -
+    /// resolved in the constructor so setCurrentProgram never allocates.
+    std::vector<std::vector<std::pair<juce::RangedAudioParameter*, float>>> programValues_;
+    /// The parameters a preset or snapshot covers: every DSP id + chain mix.
+    std::vector<juce::RangedAudioParameter*> snapshotParams_;
+    juce::String presetName_;
+    mutable juce::CriticalSection presetLock_; ///< guards presetName_ and otherSnapshot_
+    std::atomic<int> activeSnapshot_{0};
+    std::vector<float> otherSnapshot_; ///< plain values of snapshotParams_; empty = not taken yet
+    juce::File userPresetDirOverride_;
+    juce::File legacyPresetDirOverride_;
+    void switchSnapshotNow(int slot);
+    std::vector<float> captureSnapshot() const;
+    void loadSnapshot(const std::vector<float>& plainValues);
+    juce::String snapshotToString(const std::vector<float>& plainValues) const;
+    std::vector<float> snapshotFromString(const juce::String& text) const;
+
+    // ---- UI-8 editor view ----
+    std::atomic<bool> viewCompact_{false};
+    std::atomic<int> viewSize_{1};
+    std::atomic<int> viewTab_{0};
 
     // One flag per entry in kDspParamIds - true while that param's current
     // value was set by the AI (chain-gen or suggestion auto-apply) and has

@@ -35,7 +35,7 @@
 <!-- Project -->
 ![Python deps](https://img.shields.io/badge/python%20deps-16%20base%20%2F%2039%20with%20extras-4299e1)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20in%20v1.1-555555)
-![Status](https://img.shields.io/badge/release-v1.0.2-2ea44f)
+![Status](https://img.shields.io/badge/release-v1.0.4-2ea44f)
 ![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
 
 **🎚️ An explainable mixing and mastering assistant that runs on your own machine.**
@@ -44,7 +44,7 @@ Khensu listens to a mix or a master and tells you what is wrong, why it matters 
 
 🔒 **Local-first.** All audio processing happens on your computer. The few online features (song identification, a cloud chat model, model downloads, update checks) can each be switched off in Settings, and one master switch turns them all off.
 
-> 🚀 **v1.0.2, Windows first.** Download it from the public [releases page](https://github.com/KhensuLabs/khensu-mixing/releases/latest). macOS has an installer build (`packaging/macos/`, `release-macos.yml`) that becomes a verified release in v1.1.
+> 🚀 **v1.0.4, Windows first.** Download it from the public [releases page](https://github.com/KhensuLabs/khensu-mixing/releases/latest). macOS has an installer build (`packaging/macos/`, `release-macos.yml`) that becomes a verified release in v1.1.
 >
 > **How this is verified.** Every number in the badges comes from local runs of `scripts/verify_all.ps1`. It builds everything and runs the three Catch2 suites, the full pytest suite with the analyzer golden gate, pluginval in fixed and random order, a Debug run with its debug output captured, an installer smoke test (silent install, version and secret checks, uninstall) and the doc-drift, lint and string-template gates. Last full pass: 2026-11-22, for v1.0.2. An 8-hour soak (786 analyse / fix / delete cycles) kept memory, handles and GUI objects flat.
 
@@ -108,6 +108,15 @@ Khensu listens to a mix or a master and tells you what is wrong, why it matters 
 - **References.** Keep a library of your own reference tracks - tag them and give each a genre, then filter by either - find the ones nearest your mix or search them by description ("warm, wide, slow"), and make one the session's reference - the comparison updates at once. Fit a readable EQ and compressor chain toward a reference or toward your genre, with an amount control and the predicted per-band result before anything renders.
 - **Where you sit in your genre.** The Genre Fit card shows, for loudness, crest, brightness, tilt, low end and width, where your mix falls among released tracks of the genre - measured, with the number of tracks behind it.
 - **Trust.** Every measurement carries a value, a confidence and a quality flag. A clipped signal marks its loudness reading unreliable, and recommendations built on shaky numbers are down-weighted and say so.
+
+### 📈 Seeing it
+
+- **Against released tracks, not one target line.** The tonal-balance chart draws where released tracks of the genre sit - their middle 50 % and 80 %, measured with the app's own analyzer - and colours your curve where it leaves them (red: more energy, blue: less). Every measurement tile has a strip of dots, one per released track, with "Louder than 92 % of released Glitch Hop"; the readiness categories sit against the same spread.
+- **Where in the song.** One time axis for the sections, waveform, short-term and momentary loudness (true-peak overs marked where they happen), the spectrogram and every finding that happens at a moment, with **Play this moment**. Click to seek, scroll to zoom.
+- **What a fix changed, measured.** The difference spectrum and the difference in loudness over time against the original, a small difference sparkline on every version in the render tree, and an A/B toggle that glides the spectrum between the two.
+- **Live.** A GPU-composited scrolling spectrogram of what is playing with the findings' frequency bands across it, stereo width per octave beside the vectorscope, and each module of the signal chain drawn - EQ curves, the compressor's transfer curve and gain reduction, the limiter's reduction history - in the app and in the plugin.
+- **Stems and albums.** Each stem's energy over time as a streamgraph, a frequency x time masking map for any pair, and an album chart of every track's loudness and tonal balance.
+- **One chart toolkit and palette**: every chart reads out the exact value under the pointer; colours are colour-blind checked and severity keeps its own. A shareable **visual report** puts the key charts in one HTML page, and a built-in demo song fills the screens on first run.
 
 ### 💿 Mastering and delivery
 

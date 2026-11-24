@@ -121,6 +121,12 @@ void KhensuLookAndFeel::applyThemeColours()
     setColour(juce::Slider::backgroundColourId, KhensuTheme::bgSurface);
     setColour(juce::Slider::rotarySliderFillColourId, KhensuTheme::accentTeal);
     setColour(juce::Slider::rotarySliderOutlineColourId, KhensuTheme::borderSubtle);
+    // Value boxes beside sliders: JUCE's default was white text, invisible
+    // on the Light theme's surfaces (the Issues screen's Fix amount).
+    setColour(juce::Slider::textBoxTextColourId, KhensuTheme::textPrimary);
+    setColour(juce::Slider::textBoxBackgroundColourId, KhensuTheme::bgRaised);
+    setColour(juce::Slider::textBoxOutlineColourId, KhensuTheme::borderSubtle);
+    setColour(juce::Slider::textBoxHighlightColourId, KhensuTheme::accentTealDim);
 }
 
 juce::Font KhensuLookAndFeel::getLabelFont(juce::Label& label)
@@ -135,7 +141,8 @@ juce::Font KhensuLookAndFeel::getLabelFont(juce::Label& label)
     static const juce::String uiFace = khensu::KhensuTheme::uiFont(13.0f).getTypefaceName();
     static const juce::String monoFace = khensu::KhensuTheme::monoFont(13.0f).getTypefaceName();
     const auto face = font.getTypefaceName();
-    if (face == uiFace || face == monoFace)
+    static const juce::String numericFace = khensu::KhensuTheme::numericFont(13.0f).getTypefaceName(); // UI-4
+    if (face == uiFace || face == monoFace || face == numericFace)
         return font.withHeight(std::max(font.getHeight(), khensu::KhensuTheme::kMinTextPx));
     return khensu::KhensuTheme::uiFont(13.0f, juce::Font::plain);
 }
@@ -240,6 +247,45 @@ void KhensuLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& butt
                      button.getHeight() - (yIndent * 2), juce::Justification::centred, 1, 0.85f);
 }
 
+void KhensuLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
+                                         float minSliderPos, float maxSliderPos, juce::Slider::SliderStyle style,
+                                         juce::Slider& slider)
+{
+    if (style != juce::Slider::LinearHorizontal && style != juce::Slider::LinearVertical) {
+        juce::LookAndFeel_V4::drawLinearSlider(g, x, y, width, height, sliderPos, minSliderPos, maxSliderPos, style,
+                                               slider);
+        return;
+    }
+    const bool horizontal = style == juce::Slider::LinearHorizontal;
+    const auto bounds = juce::Rectangle<int>(x, y, width, height).toFloat();
+    const float track = 4.0f;
+    const auto centre = bounds.getCentre();
+    const auto start = horizontal ? juce::Point<float>(bounds.getX(), centre.y) : juce::Point<float>(centre.x, bounds.getBottom());
+    const auto end = horizontal ? juce::Point<float>(bounds.getRight(), centre.y) : juce::Point<float>(centre.x, bounds.getY());
+    const auto value = horizontal ? juce::Point<float>(sliderPos, centre.y) : juce::Point<float>(centre.x, sliderPos);
+    const float alpha = slider.isEnabled() ? 1.0f : 0.4f;
+
+    juce::Path back;
+    back.startNewSubPath(start);
+    back.lineTo(end);
+    g.setColour(KhensuTheme::borderActive.withMultipliedAlpha(alpha));
+    g.strokePath(back, juce::PathStrokeType(track, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    juce::Path fill;
+    fill.startNewSubPath(start);
+    fill.lineTo(value);
+    g.setColour(KhensuTheme::accentTeal.withMultipliedAlpha(alpha));
+    g.strokePath(fill, juce::PathStrokeType(track, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    const float thumb = juce::jmin(14.0f, (horizontal ? bounds.getHeight() : bounds.getWidth()) - 2.0f);
+    g.setColour(KhensuTheme::textPrimary.withMultipliedAlpha(alpha));
+    g.fillEllipse(juce::Rectangle<float>(thumb, thumb).withCentre(value));
+    if (slider.hasKeyboardFocus(true)) {
+        g.setColour(KhensuTheme::focusRing);
+        g.drawEllipse(juce::Rectangle<float>(thumb + 4.0f, thumb + 4.0f).withCentre(value), 1.5f);
+    }
+}
+
 void KhensuLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
                                          float sliderPosProportional, float rotaryStartAngle, float rotaryEndAngle,
                                          juce::Slider& slider)
@@ -338,19 +384,10 @@ void KhensuLookAndFeel::drawGlassmorphicBackground(juce::Graphics& g, juce::Rect
         g.setColour(KhensuTheme::accentTeal.withAlpha(0.06f));
         g.strokePath(p, juce::PathStrokeType(1.0f));
 
-        // Draw playhead cursor line
-        if (playbackProgress >= 0.0 && playbackProgress <= 1.0) {
-            float playheadX = startX + (float)playbackProgress * w;
-
-            // Draw a glowing vertical playhead bar (single accent: teal)
-            juce::ColourGradient cg(KhensuTheme::accentTeal.withAlpha(0.20f), playheadX, 0.0f,
-                                    juce::Colours::transparentBlack, playheadX + 15.0f, 0.0f, false);
-            cg.addColour(0.5, KhensuTheme::accentTeal.withAlpha(0.4f));
-            cg.addColour(0.8, KhensuTheme::accentTeal.withAlpha(0.20f));
-
-            g.setGradientFill(cg);
-            g.fillRect(playheadX - 1.5f, 0.0f, 3.0f, (float)bounds.getHeight());
-        }
+        // UI-7: no full-height playhead line here. It swept across every
+        // card while playing - motion that explained nothing. The playback
+        // position shows on the transport and the waveform only.
+        juce::ignoreUnused(playbackProgress);
     }
 }
 
@@ -571,12 +608,11 @@ void KhensuLookAndFeel::drawAppBackground(juce::Graphics& g, juce::Rectangle<int
         g.fillRect(b);
     }
 
-    // Aurora orbs: subtle and STATIC (no animation - the animated neon orbs were
-    // retired in the kimi audit; these are low-alpha depth cues, not the old
-    // glow). Teal top-left, magenta top-right, a fainter teal low-centre. In the
-    // Light theme they're softer still so they don't muddy white surfaces.
+    // One faint, static light source top-left (UI-3): the studio look is a
+    // near-monochrome base with one accent. The magenta and low-centre aurora
+    // orbs were decoration with a second hue; they are gone.
     const bool light = KhensuTheme::currentTheme() == KhensuTheme::Theme::Light;
-    const float orbAlpha = light ? 0.05f : 0.11f;
+    const float orbAlpha = light ? 0.02f : 0.035f;
     const float span = juce::jmax(w, h);
 
     auto orb = [&g](juce::Colour c, float cx, float cy, float r, float a) {
@@ -588,8 +624,6 @@ void KhensuLookAndFeel::drawAppBackground(juce::Graphics& g, juce::Rectangle<int
     };
 
     orb(KhensuTheme::accentTeal, w * 0.02f, -h * 0.06f, span * 0.42f, orbAlpha);
-    orb(KhensuTheme::accentMagenta, w * 0.99f, -h * 0.02f, span * 0.40f, orbAlpha * 0.9f);
-    orb(KhensuTheme::accentTeal, w * 0.55f, h * 1.06f, span * 0.46f, orbAlpha * 0.7f);
 }
 
 juce::Image KhensuLookAndFeel::renderBlurredBackdrop(juce::Rectangle<int> regionInAppSpace,

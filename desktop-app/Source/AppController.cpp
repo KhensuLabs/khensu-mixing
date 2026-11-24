@@ -1,4 +1,5 @@
 #include "AppController.h"
+#include <khensu/dsp/DemoSong.h>
 #include "BundledResources.h"
 #include "session/KeyedListeners.h"
 #include "ui/shared/AbxTrialOverlay.h"
@@ -35,6 +36,7 @@
 #include "ui/ExportDelivery/ExportScreen.h"
 #include "ui/Copilot/CopilotScreen.h"
 #include "ui/Issues/IssuesScreen.h"
+#include "analysis/ResultDerivedData.h" // UX2-4: the sidebar's readiness
 #include "ui/ReferenceLibrary/ReferenceLibraryScreen.h"
 #include "session/WorkspaceRecoveryState.h"
 #include "ui/Settings/SettingsScreen.h"
@@ -110,7 +112,11 @@ AppController::AppController() : commandPaletteController_(*this, *this), playba
     midi2DeviceManager_ = std::make_unique<Midi2DeviceManager>();
     macroRouter_ = std::make_unique<MacroControlRouter>(*this, *midi2DeviceManager_);
 
-    // Apply our custom look and feel globally
+    // Apply our custom look and feel globally - as the app default too, so a
+    // component built before it is attached (an issue row's Fix amount
+    // slider) takes the theme's colours instead of JUCE's stock ones, whose
+    // white value text was invisible on the Light theme.
+    juce::LookAndFeel::setDefaultLookAndFeel(&lookAndFeel);
     setLookAndFeel(&lookAndFeel);
 
     setWantsKeyboardFocus(true);
@@ -170,6 +176,9 @@ void AppController::wireServiceCallbacks()
         // clears the check.
         analysis_.verifyRender(renders_.currentRenderPath());
     };
+    // OVH-9: while the engine is not Running, native-renderable fixes render
+    // in-process (the service stays the renderer whenever it is up).
+    renders_.serviceAvailable = [this] { return lifecycle_.getPythonServiceStatus() == PythonStatus::Running; };
     // Stem separation's stage-6 progress drives the intake HUD and the
     // pipeline-progress listeners; vocal strategy/macro edits are persisted.
     stems_.onStemProgress = [this](const std::string& stage, int idx, int total) {
@@ -182,6 +191,10 @@ void AppController::wireServiceCallbacks()
     // meters, reasoning events and reports reach the UI through these
     // (ENG-1 stage C4). Wired before launch() so its first status lands.
     lifecycle_.onStatusChanged = [this](PythonStatus status, int restartAttempt) {
+        // OVH-1: the lifecycle's status is the one answer to "is the engine
+        // there" - the deep pass reads it, and a pass skipped for want of the
+        // engine re-runs once it is Running.
+        analysis_.setEngineStatus(status);
         sidebar_.setPythonStatus(status, restartAttempt);
         updateServiceBanner(status, restartAttempt);
     };
@@ -377,6 +390,9 @@ void AppController::buildScreens()
     if (listRecentSessions(1).empty()) {
         juce::Timer::callAfterDelay(1100, [safe = juce::Component::SafePointer<AppController>(this)]() {
             if (auto* self = safe.getComponent()) {
+                // VIZ-U2: the first impression is a full screen - the demo
+                // song opens as a sample session (once).
+                self->openDemoSessionOnFirstRun();
                 // First run: goal -> target -> suggested chain, unless the
                 // user already finished or skipped it once.
                 auto done = self->sessionManager().getUserPreference("onboarding_profile");
@@ -401,14 +417,28 @@ void AppController::buildScreens()
 void AppController::buildChrome()
 {
     addAndMakeVisible(playbackBar);
-    mixHealthRollupStrip_.onChipClicked = [this](int metricIndex) { showHealthMetricReasoning(metricIndex); };
+    sessionStateStrip_.onFigureClicked = [this](int index) {
+        switch (index) {
+        case SessionStateStrip::kVersion: showScreen(ScreenType::MixMaster); break;
+        case SessionStateStrip::kIssues:
+        case SessionStateStrip::kFixCheck: showScreen(ScreenType::Issues); break;
+        case SessionStateStrip::kTarget: showScreen(ScreenType::Intake); break;
+        default: showScreen(ScreenType::Dashboard); break;
+        }
+    };
+    // RUN-7: the sidebar's readiness follows the verdict card, which refreshes
+    // on every issue change (it showed 89 beside the card's 88).
+    issues().addIssuesListener(&sessionStateStrip_, [this] { updateSessionStatusLabel(); });
+    renders().addRenderTreeListener(&sessionStateStrip_, [this] { refreshSessionStateStrip(); });
     // UX-5: both are session-only chrome; updateSessionChrome() shows them.
-    addChildComponent(mixHealthRollupStrip_);
+    addChildComponent(sessionStateStrip_);
+    addChildComponent(abControlStrip_);
     addChildComponent(sessionHealthStrip_);
 
     // Global intake-progress HUD (spec §9.1): hidden until a pass starts;
     // clicking it jumps to the Dashboard so panels can be watched populate.
     intakeProgressHud_.setVisible(false);
+    intakeProgressHud_.setDetailed(reportMode_ == ReportMode::EngineerDetail);
     intakeProgressHud_.onClicked = [this] { showScreen(ScreenType::Dashboard); };
     addChildComponent(intakeProgressHud_);
 
@@ -457,6 +487,8 @@ AppController::~AppController()
     // torn down, so a queued/running background job never touches a
     // half-destroyed AppController (BackgroundRunner::shutdown).
     runner_.shutdown();
+    issues().removeIssuesListener(&sessionStateStrip_);
+    renders().removeRenderTreeListener(&sessionStateStrip_);
 
     // Destroy the overlays and screens NOW, while every controller member is
     // still alive. Their destructors deregister from controller-owned
@@ -493,6 +525,7 @@ AppController::~AppController()
 
     // Clean up look and feel
     setLookAndFeel(nullptr);
+    juce::LookAndFeel::setDefaultLookAndFeel(nullptr); // before lookAndFeel is destroyed
 }
 
 void AppController::timerCallback()
@@ -525,12 +558,8 @@ void AppController::timerCallback()
         }
     }
 
-    // ---- Ambient playhead backdrop animation repaint when playing ----
-    // DSK-05: only the Dashboard backdrop animates (its playhead line), so
-    // only that column repaints - the old root repaint() redrew every
-    // visible child of every screen at 20 Hz.
-    if (playback_.isPlaying() && currentScreen == ScreenType::Dashboard && dashboardScreen != nullptr)
-        dashboardScreen->repaintPlayhead();
+    // UI-7: the Dashboard backdrop no longer draws a playhead, so nothing
+    // repaints there while playing (the transport and waveform show position).
 }
 
 void AppController::paint(juce::Graphics& g)
@@ -560,13 +589,18 @@ void AppController::resized()
     sidebar_.setBounds(b.removeFromLeft(KhensuTheme::sidebarW));
 
     // Top: Mix Health rollup strip + Report Mode toggle (visible on all screens, 26px height)
-    auto topStrip = b.removeFromTop(26);
-    reportModeButton_.setBounds(topStrip.removeFromRight(140).reduced(4, 2));
-    mixHealthRollupStrip_.setBounds(topStrip);
+    // UI-6: tall enough for the A | B control beside the health figures.
+    auto topStrip = b.removeFromTop(kTopStripH);
+    reportModeButton_.setBounds(topStrip.removeFromRight(148).reduced(KhensuTheme::sp1, KhensuTheme::sp2));
+    if (abControlStrip_.isVisible()) {
+        topStrip.removeFromRight(KhensuTheme::sp3);
+        abControlStrip_.setBounds(topStrip.removeFromRight(juce::jmin(470, topStrip.getWidth() / 2)));
+    }
+    sessionStateStrip_.setBounds(topStrip);
 
     // Global intake-progress HUD (spec §9.1): pinned above the content on
     // every screen while active; zero-height when hidden.
-    if (intakeProgressHud_.isVisible()) intakeProgressHud_.setBounds(b.removeFromTop(IntakeProgressHud::kHeight));
+    if (intakeProgressHud_.isVisible()) intakeProgressHud_.setBounds(b.removeFromTop(intakeProgressHud_.preferredHeight()));
 
     // Crash / update notices take a row only while one is showing.
     if (noticeBar_.isVisible()) noticeBar_.setBounds(b.removeFromTop(AppNoticeBar::kHeight));
@@ -782,6 +816,12 @@ void AppController::layoutCoach()
                                                coachCard_->getWidth(), coachCard_->getHeight()));
 }
 
+void AppController::showIssue(const std::string& key)
+{
+    showScreen(ScreenType::Issues);
+    if (issuesScreen) issuesScreen->selectIssue(key);
+}
+
 void AppController::runCoreVerb(CoreVerb verb)
 {
     switch (verb) {
@@ -864,6 +904,8 @@ void AppController::setReportMode(ReportMode mode)
 {
     if (mode == reportMode_) return;
     reportMode_ = mode;
+    // UI-10: the six-stage strip is engineer detail; otherwise one calm line.
+    intakeProgressHud_.setDetailed(reportMode_ == ReportMode::EngineerDetail);
     applyReportModeButtonStyle();
     notifyKeyedListeners(reportModeListeners_, reportMode_);
 }
@@ -882,9 +924,10 @@ void AppController::applyReportModeButtonStyle()
 {
     const bool engineer = reportMode_ == ReportMode::EngineerDetail;
     reportModeButton_.setButtonText(engineer ? TRANS("Engineer Detail") : TRANS("Client Summary"));
-    const juce::Colour modeColour = engineer ? KhensuTheme::accentTeal : KhensuTheme::accentAmber;
-    reportModeButton_.setColour(juce::TextButton::buttonColourId, modeColour.withAlpha(0.18f));
-    reportModeButton_.setColour(juce::TextButton::textColourOffId, modeColour);
+    // UX2-3: a neutral secondary button - the label says the mode; amber /
+    // teal fills read as a warning and a second accent.
+    reportModeButton_.removeColour(juce::TextButton::buttonColourId);
+    reportModeButton_.removeColour(juce::TextButton::textColourOffId);
 }
 
 std::vector<std::pair<juce::String, std::function<void()>>> AppController::navigationCommands()
@@ -1218,16 +1261,96 @@ void AppController::hideReferenceTrackRitual()
     }
 }
 
+void AppController::openDemoSessionOnFirstRun()
+{
+    // --screenshot / --ui-bench / --a11y-audit own the session (and the store's first run).
+    for (const auto& a : juce::JUCEApplicationBase::getCommandLineParameterArray())
+        if (a.startsWith("--screenshot") || a.startsWith("--ui-bench") || a.startsWith("--a11y-audit")
+            || a.startsWith("--soak-audio"))
+            return;
+    auto offered = sessionManager().getUserPreference("demo_session_offered");
+    if (offered.is_ok() && !offered.value().empty()) return;
+    sessionManager().setUserPreference("demo_session_offered", "1");
+    const auto file = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                          .getChildFile("KhensuMixing")
+                          .getChildFile("demo")
+                          .getChildFile("Khensu Demo Song.wav");
+    juce::Component::SafePointer<AppController> self(this);
+    runInBackground([self, file] {
+        const bool ok = file.existsAsFile() || demo_song::write(file);
+        juce::MessageManager::callAsync([self, file, ok] {
+            if (self == nullptr || !ok || self->hasActiveSession()) return;
+            AudioFileRef ref;
+            ref.id = juce::Uuid().toString().toStdString();
+            ref.path = file.getFullPathName().toStdString();
+            ref.format = "wav";
+            CreativeTarget target;
+            target.primary_genre = "synthpop";
+            target.playback_intent = "streaming";
+            if (self->startSession(TRANS("Demo song"), {ref}, target)) {
+                AppNoticeBar::Notice n;
+                n.id = "demo_session";
+                n.text = TRANS("This is a demo song, made by Khensu to show what the analysis finds. Load your own "
+                               "track with Open (Ctrl+O).");
+                self->noticeBar_.post(std::move(n));
+            }
+        });
+    });
+}
+
+void AppController::refreshSessionStateStrip()
+{
+    SessionStateStrip::State st;
+    st.hasSession = hasActiveSession();
+    if (st.hasSession) {
+        st.versionNode = renders().currentRenderTreeNode();
+        st.versionCount = static_cast<int>(renders().renderTree().size());
+        for (const auto& i : issues().list()) {
+            if (i.check == IIssues::Check::Resolved) ++st.resolved;
+            else if (i.check == IIssues::Check::Improved) ++st.improved;
+            else if (i.check == IIssues::Check::Worse || i.check == IIssues::Check::New) ++st.worse;
+            if (i.check != IIssues::Check::None) st.checked = true;
+            if (i.settled() || i.rec.type == RecommendationType::Strength) continue;
+            if (i.rec.severity >= 66.0f) ++st.severe;
+            else if (i.rec.severity >= 33.0f) ++st.moderate;
+            else ++st.minor;
+        }
+        if (const auto* s = getActiveSession()) {
+            juce::String genre = juce::String(s->target.primary_genre);
+            if (auto entry = analysis_.genreDatabase().findById(s->target.primary_genre); entry && !entry->name.empty())
+                genre = juce::String(entry->name);
+            juce::StringArray parts;
+            if (genre.isNotEmpty()) parts.add(genre);
+            if (!s->target.playback_intent.empty())
+                parts.add(juce::String(s->target.playback_intent).substring(0, 1).toUpperCase()
+                          + juce::String(s->target.playback_intent).substring(1));
+            st.target = parts.isEmpty() ? TRANS("No genre set") : parts.joinIntoString(", ");
+        }
+        st.analysis = analysisState_ == SessionStateStrip::State::Analysis::None && hasAnalysis()
+                          ? SessionStateStrip::State::Analysis::Ready
+                          : analysisState_;
+    }
+    sessionStateStrip_.setState(st);
+}
+
 void AppController::updateSessionStatusLabel()
 {
+    refreshSessionStateStrip();
     if (hasActiveSession()) {
         auto* s = getActiveSession();
         juce::String genre = s ? juce::String(s->target.primary_genre) : juce::String();
+        if (s != nullptr) // the genre's display name, not its id (UX2-4)
+            if (auto entry = analysis_.genreDatabase().findById(s->target.primary_genre); entry && !entry->name.empty())
+                genre = juce::String(entry->name);
         sidebar_.setSessionName(s ? juce::String(s->name) : juce::String(), genre);
-        sidebar_.setAnalysisStatus(hasAnalysis() ? "Ready" : "Pending", hasAnalysis());
+        sidebar_.setAnalysisStatus(hasAnalysis() ? TRANS("Ready") : TRANS("Pending"), hasAnalysis());
+        // UX2-4: the session block's readiness - the verdict's one number.
+        const bool scored = hasAnalysis() && !currentAnalysis().is_partial;
+        sidebar_.setReadiness(scored ? analysis_.derivedResultData().scorecard.overall_score : 0.0f, scored);
     } else {
         sidebar_.setSessionName({}, {});
-        sidebar_.setAnalysisStatus("No session", false);
+        sidebar_.setAnalysisStatus(TRANS("No session"), false);
+        sidebar_.setReadiness(0.0f, false);
     }
     updateSessionChrome();
 }
@@ -1314,22 +1437,19 @@ void AppController::applyResultsGate(AnalysisService::ResultsGate gate)
     using ResultsGate = AnalysisService::ResultsGate;
     switch (gate) {
     case ResultsGate::Analyzing:
-        mixHealthRollupStrip_.setEmpty();
+        analysisState_ = SessionStateStrip::State::Analysis::Analysing;
+        refreshSessionStateStrip();
         resultsOverlay_.setMode(AnalysisPendingOverlay::Mode::Analyzing);
         break;
     case ResultsGate::Cancelled:
+        analysisState_ = hasAnalysis() ? SessionStateStrip::State::Analysis::Ready : SessionStateStrip::State::Analysis::None;
+        refreshSessionStateStrip();
         resultsOverlay_.setMode(AnalysisPendingOverlay::Mode::Cancelled);
         break;
     case ResultsGate::Open:
         if (hasAnalysis()) {
-            float lo = -18.0f, hi = -9.0f;
-            if (sessions_.state().session)
-                if (auto genreEntry =
-                        analysis_.genreDatabase().findById(sessions_.state().session->target.primary_genre)) {
-                    lo = genreEntry->lufs_range_min;
-                    hi = genreEntry->lufs_range_max;
-                }
-            mixHealthRollupStrip_.updateData(currentAnalysis(), lo, hi);
+            analysisState_ = SessionStateStrip::State::Analysis::Ready;
+            refreshSessionStateStrip();
             updateSessionStatusLabel(); // "Ready"
         }
         if (stemsAutoStartPending_) {

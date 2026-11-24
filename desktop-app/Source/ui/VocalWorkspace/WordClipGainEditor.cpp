@@ -1,4 +1,5 @@
 // desktop-app/Source/ui/VocalWorkspace/WordClipGainEditor.cpp
+#include "../shared/ServiceErrorHint.h"
 #include "WordClipGainEditor.h"
 #include "../shared/PanelRunState.h"
 #include "../../IAppController.h"
@@ -113,7 +114,7 @@ void WordClipGainEditor::transcribe()
             panel.peaks_ = std::move(peaks);
             panel.durationSec_ = duration;
             if (result.is_err()) {
-                panel.statusLabel_.setText(TRANS("Transcription failed: ") + juce::String(result.error().message),
+                panel.statusLabel_.setText(TRANS("Transcription failed: ") + serviceErrorLine(result.error()),
                                            juce::dontSendNotification);
                 panel.repaint();
                 return;
@@ -163,7 +164,7 @@ void WordClipGainEditor::render()
         auto result = bridge.postAnalyzeJson("/render/word_clip_gain", juce::var(body.get()));
         postIfCurrent(self, work, [result, scope, sessionId, target](WordClipGainEditor& panel) {
             if (result.is_err()) {
-                panel.statusLabel_.setText(TRANS("Render failed: ") + juce::String(result.error().message),
+                panel.statusLabel_.setText(TRANS("Render failed: ") + serviceErrorLine(result.error()),
                                            juce::dontSendNotification);
                 return;
             }

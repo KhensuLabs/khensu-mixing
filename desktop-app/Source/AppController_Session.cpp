@@ -303,7 +303,8 @@ void AppController::resetSessionScopedState()
     // The reference track (cleared without an autosave, AUDIT-039), the
     // in-flight analysis and its result, and the gate state (DSK-02).
     analysis_.resetForSession();
-    mixHealthRollupStrip_.setEmpty();
+    analysisState_ = SessionStateStrip::State::Analysis::None;
+    refreshSessionStateStrip();
     intakeProgressHud_.reset();
     // The A/B, preview and loaded file of the old session; an in-flight peak
     // scan of the old file is dropped.

@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/Dashboard/EmotionalArcPanel.h
 #pragma once
+#include "../shared/HoverCells.h"
 #include <JuceHeader.h>
 #include <khensu/analysis/AnalysisResult.h>
 #include "../shared/PanelCard.h"
@@ -15,8 +16,11 @@ class IAppController;
 /// highlighted with a dashed outline, so a stagnant verse/chorus that never
 /// actually lifts is visible at a glance instead of hidden in the single
 /// whole-track energy/mood values SongInfoPanel already shows.
-class EmotionalArcPanel final : public PanelCard {
+class EmotionalArcPanel final : public PanelCard, public juce::SettableTooltipClient {
   public:
+    /// VIZ-U3: the readout under the pointer.
+    void mouseMove(const juce::MouseEvent& e) override { hover_.update(*this, e.position); }
+    void mouseExit(const juce::MouseEvent&) override { setTooltip({}); }
     explicit EmotionalArcPanel(IAppController& c);
     void setData(const AnalysisResult& r);
     void paint(juce::Graphics& g) override;
@@ -29,6 +33,7 @@ class EmotionalArcPanel final : public PanelCard {
     bool hasData_ = false;
     bool analysisExists_ = false; ///< an analysis ran but produced no arc -> "needs deep analysis"
 
+    mutable HoverCells hover_; ///< VIZ-U3, filled in paint()
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EmotionalArcPanel)
 };
 

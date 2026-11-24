@@ -129,3 +129,8 @@ bench-results/
 
 # The maintainer's local AI-agent guide (kept out of the repository since v1.0.0)
 CLAUDE.md
+
+# OVH-2 listener study: only the clip manifest and the pair design are committed
+/study/*
+!/study/manifest.json
+!/study/pairs.json

@@ -9,7 +9,7 @@ endif()
 
 juce_add_gui_app(KhensuDesktop
     PRODUCT_NAME "Khensu Mixing"
-    VERSION      "1.0.2"
+    VERSION      "1.0.4"
     BUNDLE_ID    "com.khensu.mixing.desktop"
     COMPANY_NAME "Khensu"
     # The app icon from its 4K master (Explorer, taskbar, window; the macOS .icns);
@@ -112,6 +112,8 @@ target_sources(KhensuDesktop PRIVATE
     Source/ui/shared/SpectrogramImage.cpp
     Source/ui/shared/TimelineComponent.cpp
     Source/ui/shared/PlaybackTransportBar.cpp
+    Source/ui/shared/TransportWaveform.cpp  # UX2-5
+    Source/ui/shared/MeterBridge.cpp  # UI-5 desktop meter bridge
     Source/ui/shared/GoniometerComponent.cpp
     Source/ui/shared/SonicOrbitComponent.cpp
     Source/ui/shared/MultiBandGoniometerComponent.cpp
@@ -120,6 +122,13 @@ target_sources(KhensuDesktop PRIVATE
     Source/ui/shared/StereoFieldVizComponent.cpp
     Source/ui/shared/PanelCard.cpp
     Source/ui/shared/IssueQueuePanel.cpp
+    Source/ui/shared/HeroSpectrumView.cpp  # UI-1
+    Source/ui/shared/SongTimelineView.cpp  # VIZ-2
+    Source/ui/shared/HiResSpectrogramView.cpp  # VIZ-S1
+    Source/ui/shared/FixDifferenceView.cpp  # VIZ-3a
+    Source/ui/shared/LiveSpectrogramView.cpp  # VIZ-4a
+    Source/ui/shared/StemViz.cpp  # VIZ-5
+    Source/ui/Dashboard/SongTimelineCard.cpp  # VIZ-2
     Source/ui/shared/SessionCommentsLane.cpp  # CE-COL-1
     Source/ui/shared/RevisionReportView.cpp  # CE-COL-1 / FEAT-9
     Source/ui/shared/RecommendationCard.cpp
@@ -252,6 +261,8 @@ target_sources(KhensuDesktop PRIVATE
     Source/ui/ExportDelivery/FormatPanel.cpp
     Source/ui/ExportDelivery/AlbumAssemblyPanel.cpp
     Source/ui/ExportDelivery/ProjectBoardPanel.cpp
+    Source/ui/ExportDelivery/AlbumConsistencyView.cpp  # VIZ-N2
+    Source/ui/ExportDelivery/VisualReport.cpp  # VIZ-N5
     Source/ui/ExportDelivery/MasterAssistantPanel.cpp
     Source/ui/ExportDelivery/AlbumMasterDialog.cpp
     Source/ui/ExportDelivery/BatchRenderPanel.cpp

@@ -121,6 +121,8 @@ std::vector<IIssues::Issue> IssueService::list() const
         issue.code = issueCodeOf(rec, result.file_id);
         issue.rec = rec;
         issue.renderable = hasRenderableChain(rec);
+        for (const auto& [path, fixRender] : fixRenders_)
+            if (fixRender.kept && fixRender.recId == rec.id) issue.fixedAmount += fixRender.amount;
         if (auto it = rows_.find(rec.id); it != rows_.end()) issue.state = stateOf(it->second);
         if (check != nullptr)
             if (const auto* c = check->find(issue.code)) issue.check = checkOf(c->outcome);
@@ -211,10 +213,16 @@ void IssueService::fixScaled(const std::string& recId, float amount, Done onDone
         if (onDone) onDone(false, TRANS("That finding is no longer in the analysis."));
         return;
     }
+    amount = juce::jlimit(0.0f, 1.0f, amount);
+    if (amount <= 0.0f) {
+        if (onDone) onDone(false, TRANS("A fix at 0% changes nothing - raise the amount."));
+        return;
+    }
     fixInFlight_ = true; // before the call: a refusal answers synchronously
     juce::WeakReference<IssueService> self(this);
     renders_.applyRecommendationChain(
-        amount == 1.0f ? *rec : scaledRecommendation(*rec, amount), [self, recId, onDone, generation = generation_](bool ok, juce::String pathOrError) {
+        amount == 1.0f ? *rec : scaledRecommendation(*rec, amount),
+        [self, recId, amount, onDone, generation = generation_](bool ok, juce::String pathOrError) {
             auto* s = self.get();
             if (s != nullptr && s->generation_ != generation) {
                 // The session changed underneath (REF-2): nothing to record.
@@ -227,12 +235,66 @@ void IssueService::fixScaled(const std::string& recId, float amount, Done onDone
                     // The render is now the current version (and the A/B's B
                     // side): a kept fix. The check (FEAT-1) says whether it
                     // worked.
-                    s->fixRenders_[pathOrError] = FixRender{recId, true};
+                    s->fixRenders_[pathOrError] = FixRender{recId, true, amount};
                     s->record(recId, true, /*learn*/ true, "Fixed via the issue queue (rendered)");
                 }
             }
             if (onDone) onDone(ok, pathOrError);
         });
+}
+
+void IssueService::fixInRegion(const std::string& recId, double startSec, double endSec, const juce::String& label,
+                               Done onDone)
+{
+    if (fixInFlight_) {
+        if (onDone) onDone(false, TRANS("Another fix is still rendering. Try again when it finishes."));
+        return;
+    }
+    if (!analysis_.hasAnalysis() || !(endSec > startSec)) {
+        if (onDone) onDone(false, TRANS("Analyze the session first."));
+        return;
+    }
+    const Recommendation* rec = nullptr;
+    for (const auto& r : analysis_.currentAnalysis().recommendations)
+        if (r.id == recId) rec = &r;
+    if (rec == nullptr) {
+        if (onDone) onDone(false, TRANS("That finding is no longer in the analysis."));
+        return;
+    }
+    IRenders::ChainRender render;
+    render.chain = buildRecommendationChain(*rec);
+    if (render.chain.empty()) {
+        if (onDone) onDone(false, TRANS("This finding has no one-click fix to render."));
+        return;
+    }
+    const juce::String shortId = juce::String(rec->id).substring(0, 8);
+    render.description = TRANS("Fix") + " " + shortId + " (" + label + ")";
+    render.sourceRecommendationId = juce::String(rec->id);
+    render.region = std::make_pair(startSec, endSec);
+    render.regionLabel = label;
+    fixInFlight_ = true;
+    juce::WeakReference<IssueService> self(this);
+    const auto suffix = "_fix_" + shortId + "_" + label.removeCharacters(" ").toLowerCase().substring(0, 16);
+    const auto out = renders_.renderVersion(
+        render, suffix,
+        [self, recId, onDone, generation = generation_](IRenders::RenderOutcome outcome, const juce::String& pathOrError,
+                                                         const juce::var&) {
+            auto* s = self.get();
+            const bool ok = outcome == IRenders::RenderOutcome::Rendered;
+            if (s != nullptr && s->generation_ != generation) {
+                if (onDone) onDone(false, TRANS("The session changed before the fix finished."));
+                return;
+            }
+            if (s != nullptr) {
+                s->fixInFlight_ = false;
+                if (ok) {
+                    s->fixRenders_[pathOrError] = FixRender{recId, true, 1.0f};
+                    s->record(recId, true, /*learn*/ true, "Fixed in one section via the issue queue (rendered)");
+                }
+            }
+            if (onDone) onDone(ok, ok ? pathOrError : pathOrError.isNotEmpty() ? pathOrError : TRANS("The fix did not render."));
+        });
+    if (out == juce::File()) fixInFlight_ = false; // refused synchronously (onDone already ran)
 }
 
 bool IssueService::fixTopIssue(Done onDone)
@@ -242,7 +304,7 @@ bool IssueService::fixTopIssue(Done onDone)
         return true;
     }
     for (const auto& i : list())
-        if (!i.settled() && i.renderable && !i.recId.empty()) {
+        if (i.topFixCandidate()) {
             fix(i.recId, std::move(onDone));
             return true;
         }

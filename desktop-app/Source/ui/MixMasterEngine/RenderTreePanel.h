@@ -9,6 +9,7 @@
 // .khensu bundle; versions saved in an earlier run are listed below the live
 // tree and restore with one click. Right-click a node for the actions.
 #pragma once
+#include <set>
 #include <JuceHeader.h>
 #include "../shared/ListenerHandle.h"
 #include "../shared/PanelCard.h"
@@ -19,7 +20,7 @@ namespace khensu {
 
 class IAppController;
 
-class RenderTreePanel final : public PanelCard {
+class RenderTreePanel final : public PanelCard, public juce::SettableTooltipClient {
   public:
     explicit RenderTreePanel(IAppController& c);
     ~RenderTreePanel() override;
@@ -54,7 +55,14 @@ class RenderTreePanel final : public PanelCard {
     juce::String headerText() const;
 
     std::vector<NodeLayout> layout_;
-    int rowH_ = 22;
+    int rowH_ = 28;
+    /// VIZ-N4: each version's measured difference spectrum against the
+    /// original, drawn as a sparkline at the row's end (filled in lazily).
+    std::map<juce::String, std::vector<double>> diffByPath_;
+    std::set<juce::String> diffPending_;
+    void requestDiff(const juce::String& path);
+    void paintDiff(juce::Graphics& g, juce::Rectangle<float> r, const std::vector<double>& diffDb) const;
+    void mouseMove(const juce::MouseEvent& e) override;
     int savedHeaderY_ = -1;
 
     std::map<juce::String, VersionInfo> versionsByPath_;

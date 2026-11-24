@@ -25,22 +25,24 @@ double contrastRatio(juce::Colour first, juce::Colour second)
 
 TEST_CASE("KhensuTheme colour tokens", "[theme]")
 {
-    SECTION("bgVoid is near-black (Aurora Glass)") { REQUIRE(khensu::KhensuTheme::bgVoid == juce::Colour(0xff050608)); }
+    SECTION("bgVoid is near-black graphite (UI-3)") { REQUIRE(khensu::KhensuTheme::bgVoid == juce::Colour(0xff0b0c0e)); }
     SECTION("accentTeal is correct (Aurora Glass cyan)")
     {
         REQUIRE(khensu::KhensuTheme::accentTeal == juce::Colour(0xff22d3c5));
     }
     SECTION("accentTealDim has 20% alpha") { REQUIRE(khensu::KhensuTheme::accentTealDim.getAlpha() == 0x33); }
-    SECTION("accentMagenta is the Aurora co-accent")
+    SECTION("accentMagenta stays a categorical data colour")
     {
         REQUIRE(khensu::KhensuTheme::accentMagenta == juce::Colour(0xfff0308f));
     }
-    SECTION("borderSubtle has ~7% alpha") { REQUIRE(khensu::KhensuTheme::borderSubtle.getAlpha() == 0x12); }
+    SECTION("borderSubtle has ~8% alpha") { REQUIRE(khensu::KhensuTheme::borderSubtle.getAlpha() == 0x14); }
     SECTION("spacing base unit is 8")
     {
         REQUIRE(khensu::KhensuTheme::sp2 == 8);
         REQUIRE(khensu::KhensuTheme::sp3 == 12);
-        REQUIRE(khensu::KhensuTheme::panelPadding == 16);
+        REQUIRE(khensu::KhensuTheme::panelPadding == 24); // UI-4: generous padding
+        REQUIRE(khensu::KhensuTheme::cardGap == 16);
+        REQUIRE(khensu::KhensuTheme::sectionGap == 32);
     }
 }
 
@@ -178,4 +180,23 @@ TEST_CASE("KhensuTheme zone colour for status", "[theme]")
     {
         REQUIRE(khensu::KhensuTheme::colourForStatus(khensu::BadgeStatus::Fail) == khensu::KhensuTheme::accentRed);
     }
+}
+
+TEST_CASE("KhensuTheme type scale is four steps with an 11 px floor (UI-4)", "[theme]")
+{
+    using khensu::KhensuTheme;
+    CHECK(KhensuTheme::kFontMetric == 28.0f);
+    CHECK(KhensuTheme::kFontH1 == 17.0f);
+    CHECK(KhensuTheme::kFontBody == 13.0f);
+    CHECK(KhensuTheme::kFontLabel == 11.0f);
+    CHECK(KhensuTheme::kMinTextPx == 11.0f);
+    CHECK(KhensuTheme::numericFont(8.0f).getHeight() >= KhensuTheme::kMinTextPx);
+}
+
+TEST_CASE("KhensuTheme numeric font draws every digit at one width (UI-4)", "[theme]")
+{
+    const auto font = khensu::KhensuTheme::numericFont(13.0f);
+    const float one = juce::GlyphArrangement::getStringWidth(font, "1111");
+    const float eight = juce::GlyphArrangement::getStringWidth(font, "8888");
+    CHECK(std::abs(one - eight) < 0.5f);
 }

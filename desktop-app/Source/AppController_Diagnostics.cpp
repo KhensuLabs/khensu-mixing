@@ -70,7 +70,7 @@ std::vector<IDiagnosticsHost::Screen> AppController::diagnosticScreens()
 
 void AppController::publishAnalysisForDiagnostics(const AnalysisResult& result)
 {
-    mixHealthRollupStrip_.updateData(result);
+    refreshSessionStateStrip();
     analysis_.analysisModel().setResult(result);
 }
 
@@ -81,7 +81,14 @@ bool AppController::startDiagnosticSession(const juce::File& audio)
     ref.path = audio.getFullPathName().toStdString();
     ref.format = audio.getFileExtension().trimCharactersAtStart(".").toLowerCase().toStdString();
     suppressCoach_ = true; // a throwaway session, not the user's first (UX-15)
-    return startSession("screenshot check", {ref}, CreativeTarget{});
+    CreativeTarget target;
+    // VIZ-F3: the demo song is synthpop - with its genre the screenshots
+    // show the genre window and the released-track spread.
+    if (audio.getFileName().startsWithIgnoreCase("demo-song") || audio.getFileName().startsWithIgnoreCase("Khensu Demo")) {
+        target.primary_genre = "synthpop";
+        target.playback_intent = "streaming";
+    }
+    return startSession("screenshot check", {ref}, target);
 }
 
 void AppController::deleteDiagnosticSession(std::function<void()> done)
@@ -135,6 +142,24 @@ int AppController::showExportStepForDiagnostics(int step)
     if (exportScreen == nullptr) return 0;
     exportScreen->showStep(step);
     return ExportScreen::kStepCount;
+}
+
+int AppController::showMixMasterViewForDiagnostics(int view)
+{
+    showScreen(ScreenType::MixMaster);
+    if (mixMasterScreen == nullptr) return 0;
+    mixMasterScreen->showView(view);
+    return MixMasterScreen::kViewCount;
+}
+
+void AppController::playForDiagnostics(double fromSec, bool play)
+{
+    if (!play) {
+        playback().stopAudio();
+        return;
+    }
+    playback().setPlaybackPosition(fromSec);
+    playback().playAudio();
 }
 
 void AppController::fixTopIssueForDiagnostics(std::function<void(bool, juce::String)> done)

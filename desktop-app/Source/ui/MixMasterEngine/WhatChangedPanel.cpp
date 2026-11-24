@@ -47,6 +47,7 @@ WhatChangedPanel::WhatChangedPanel(IAppController& c) : PanelCard(c, "What Chang
     };
     afterCombo_.onChange = [this]() {
         if (!populatingCombos_) {
+            afterPickedByUser_ = true; // from now on keep this pick
             diffedPair_ = "";
             refresh();
         }
@@ -106,7 +107,10 @@ void WhatChangedPanel::populateCombos()
     else
         beforeCombo_.setSelectedId(1, juce::dontSendNotification);
 
-    if (afterCombo_.indexOfItemId(selectedAfter) >= 0)
+    // RUN-11: "after" follows the current version until the user picks one -
+    // keeping the launch-time "Original Mix" compared the original with itself
+    // after a fix.
+    if (afterPickedByUser_ && afterCombo_.indexOfItemId(selectedAfter) >= 0)
         afterCombo_.setSelectedId(selectedAfter, juce::dontSendNotification);
     else {
         // Default after to the current tree tip (the node currently active),

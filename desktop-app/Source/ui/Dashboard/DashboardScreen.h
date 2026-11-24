@@ -35,7 +35,6 @@
 #include "WaveformEditorPanel.h"
 #include "../shared/PanelDockManager.h"
 #include "EqCurvePanel.h"
-#include "ScoreCardPanel.h"
 #include "SpatialAudioPanel.h"
 #include "DrumPatternPanel.h"
 #include "LoudnessCurvePanel.h"
@@ -56,6 +55,8 @@
 #include "ReferenceSpectralDeltaPanel.h"
 #include "RecreateSoundPanel.h"
 #include "KhensuVerdictCard.h"
+#include "../shared/HeroSpectrumView.h"
+#include "SongTimelineCard.h"
 #include "../shared/ServiceHealthWidget.h"
 #include "ArrangementPanel.h"
 #include "DepthLadderPanel.h"
@@ -63,7 +64,6 @@
 #include "PanBalancePanel.h"
 #include "SectionReadinessPanel.h"
 #include "MixCraftPanel.h"
-#include "ReadinessBreakdownBar.h"
 #include "IssueHeatmapPanel.h"
 #include "WorkspaceLayout.h"
 #include "DashboardLayoutPanel.h"
@@ -133,13 +133,6 @@ class DashboardScreen final : public juce::Component, public juce::DragAndDropCo
     void resized() override;
     void visibilityChanged() override;
 
-    /// The verdict card's "Fix top issue", also F and the palette (UX-11).
-
-    /// DSK-05: during playback only the playhead column of the backdrop
-    /// changes. AppController's 50 ms tick calls this instead of repainting
-    /// the whole window (which repainted every visible child at 20 Hz).
-    void repaintPlayhead();
-
   private:
     /// S4 session-reset fan-out: every panel forgets the previous session,
     /// auto-scan bookkeeping and snapshots reset (DSK-02/-03/-04).
@@ -151,7 +144,11 @@ class DashboardScreen final : public juce::Component, public juce::DragAndDropCo
     /// (pools already drained) it writes synchronously.
     void writePreferenceAsync(const std::string& key, const std::string& value);
     std::string currentWeightProfileId() const;
-    int lastPlayheadX_ = -1;
+    /// UI-10: keyboard legend, completeness chip and per-stage bar are
+    /// shown only in Engineer Detail.
+    bool engineerDetail() const;
+    /// OVH-1: the verdict from the derived data and the issue queue.
+    void refreshVerdict();
     bool prefsLoaded_ = false;
     void onAnalysisUpdate(const AnalysisResult& r);
     void pushDataToPanels(const AnalysisResult& r);
@@ -206,6 +203,9 @@ class DashboardScreen final : public juce::Component, public juce::DragAndDropCo
     juce::Label completenessBadge_;
     bool confidenceOverlayEnabled_ = false;
     void toggleConfidenceOverlay(bool enabled);
+    // OVH-7 (agent D): "Show advanced cards" in the overflow menu - the
+    // Advanced category's cards join "All" (dashboard_show_advanced pref).
+    bool showAdvancedCards_ = false;
 
     // Overflow menu: Customize Layout / Tune Weights / Confidence Overlay -
     // consolidated here instead of each being its own button, since the
@@ -289,11 +289,20 @@ class DashboardScreen final : public juce::Component, public juce::DragAndDropCo
 
     // Zone 0: hero scorecards, above the critical metrics strip
     KhensuVerdictCard verdictCard_; // kimi P1: headline readiness verdict
-    bool isCollapsed_ = true;
-    juce::TextButton expandButton_;
+    // UX2-1: the Issues screen's hero spectrum under the verdict - the
+    // findings drawn where they live; a marker opens it on the Issues screen.
+    HeroSpectrumView hero_;
+    bool referenceRequested_ = false; ///< VIZ-N1: measuring the reference once
+    SongTimelineCard songTimeline_{controller}; ///< VIZ-2 where in the song
+    void updateHero();
     ServiceHealthWidget serviceHealthWidget_;
-    ScoreCardPanel scoreCard_;
     MixCraftPanel mixCraft_;
+    // UX2-1: quiet captions over the detail sections, and the waveform /
+    // spectrogram editor as a collapsible section at the bottom.
+    juce::Label detailCaption_, measurementsCaption_;
+    juce::TextButton waveformToggle_;
+    bool waveformOpen_ = false;
+    void setWaveformOpen(bool open, bool persist);
 
     int spinnerTick_ = 0; ///< Advances on each partial update to animate the status spinner
 
@@ -338,14 +347,8 @@ class DashboardScreen final : public juce::Component, public juce::DragAndDropCo
     MetricTileComponent tileDynamicRange_;
     MetricTileComponent tilePhase_;
     MetricTileComponent tileClipping_;
-    // Rolls up every recommender's findings into one 0-100 score (see
-    // MixReportBuilder::computeReadiness) so "is this ready to master" has a
-    // single always-visible answer instead of requiring a trip through the
-    // full export report.
-    MetricTileComponent tileReadiness_;
-    // Shows which of the 5 readiness-penalty terms is dominating the score,
-    // directly under the readiness tile.
-    ReadinessBreakdownBar readinessBreakdown_;
+    // OVH-1: the "MASTER READY" tile and its penalty bar are gone - they
+    // repeated the headline with a second number and other thresholds.
 
     // App-wide Compare toggle: generalizes ReferenceComparePanel's per-dimension
     // delta pattern into Loudness/Dynamics/Spectral/Stereo panel bodies.
@@ -378,6 +381,7 @@ class DashboardScreen final : public juce::Component, public juce::DragAndDropCo
     ListenerHandle reportModeListener_; ///< UX-1: Client mode collapses to the verdict
     ListenerHandle serviceRecoveredListener_;
     ListenerHandle vocalAnalysisListener_;
+    ListenerHandle issuesListener_; ///< OVH-1: "Start here" follows the issue queue
 
     // Declared last - see ThemeListener's note on member ordering.
     ThemeListener themeListener_{[this] {

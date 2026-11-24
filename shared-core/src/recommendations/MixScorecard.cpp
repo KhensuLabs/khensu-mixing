@@ -226,7 +226,16 @@ MixScorecard buildMixScorecard(const AnalysisResult& result, const GenreEntry& g
         const float normalizedWeight = availableWeight > 0.0f ? c.weight / availableWeight : 0.0f;
         overall += normalizedWeight * c.score;
     }
-    sc.overall_score = std::clamp(overall, 0.0f, 100.0f);
+    sc.uncapped_score = std::clamp(overall, 0.0f, 100.0f);
+    for (const auto& rec : recommendations) {
+        if (rec.type == RecommendationType::Strength) continue;
+        if (rec.severity >= MixScorecard::kSevereSeverity) ++sc.severe_open;
+        else if (rec.severity >= MixScorecard::kModerateSeverity) ++sc.moderate_open;
+    }
+    float cap = 100.0f;
+    if (sc.severe_open > 0) cap = MixScorecard::kSevereCap;
+    else if (sc.moderate_open > 0) cap = MixScorecard::kModerateCap;
+    sc.overall_score = std::min(sc.uncapped_score, cap);
     sc.completeness = static_cast<float>(availableCount) / static_cast<float>(sc.categories.size());
 
     // Strongest / Improve tags - only meaningful across categories that scored.
@@ -265,6 +274,13 @@ MixScorecard buildMixScorecard(const AnalysisResult& result, const GenreEntry& g
     } else {
         sc.tier_label = MixScorecard::kTierEarlyStage;
         sc.tier_audience = "Well outside the genre targets across most dimensions";
+    }
+    if (sc.capped()) {
+        const int n = sc.severe_open > 0 ? sc.severe_open : sc.moderate_open;
+        const std::string kind = sc.severe_open > 0 ? "severe" : "moderate";
+        sc.tier_audience = "Capped by " + std::to_string(n) + " " + kind + (n == 1 ? " issue" : " issues") + " - " +
+                           std::to_string(static_cast<int>(std::lround(sc.uncapped_score))) + " without " +
+                           (n == 1 ? "it" : "them");
     }
 
     return sc;

@@ -1,4 +1,5 @@
 // desktop-app/Source/ui/Copilot/FeedbackDecoderPanel.cpp
+#include "../shared/ServiceErrorHint.h"
 #include "FeedbackDecoderPanel.h"
 #include "../../IAppController.h"
 #include "../shared/KhensuLookAndFeel.h"
@@ -65,7 +66,7 @@ void FeedbackDecoderPanel::decode()
             if (self == nullptr) return;
             self->decodeButton_.setEnabled(true);
             if (result.is_err()) {
-                self->statusLabel_.setText(TRANS("Decode failed: ") + juce::String(result.error().message),
+                self->statusLabel_.setText(TRANS("Decode failed: ") + serviceErrorLine(result.error()),
                                            juce::dontSendNotification);
                 return;
             }

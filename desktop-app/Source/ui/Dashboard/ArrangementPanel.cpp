@@ -17,8 +17,6 @@ static const char* kElementLabels[5] = {"FOUNDATION", "RHYTHM", "PAD", "LEAD", "
 // Every cached palette colour on this component, in one place (UI-01).
 void ArrangementPanel::applyThemeColours()
 {
-    analyzeButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.2f));
-    analyzeButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
 }
 
 ArrangementPanel::ArrangementPanel(IAppController& c) : PanelCard(c, "Arrangement Elements")

@@ -97,8 +97,8 @@ def list_tests(exe: str, spec: str | None) -> list[str]:
 
 def escape_name(name: str) -> str:
     # Catch2 test-spec metacharacters: brackets start tags, commas separate
-    # specs, backslash escapes, '*' is a wildcard.
-    return re.sub(r"([\[\],\\*])", r"\\\1", name)
+    # specs, backslash escapes, '*' is a wildcard, '"' quotes a name.
+    return re.sub(r"([\[\],\\*\"])", r"\\\1", name)
 
 
 def main() -> int:

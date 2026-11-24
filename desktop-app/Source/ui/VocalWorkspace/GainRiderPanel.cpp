@@ -1,4 +1,5 @@
 // desktop-app/Source/ui/VocalWorkspace/GainRiderPanel.cpp
+#include "../shared/ServiceErrorHint.h"
 #include "GainRiderPanel.h"
 #include "../shared/PanelRunState.h"
 #include "../../IAppController.h"
@@ -69,7 +70,7 @@ void GainRiderPanel::computeRide()
         auto result = bridge.analyzeGainRider(target.toStdString(), -18.0f, false);
         postIfCurrent(self, work, [result](GainRiderPanel& panel) {
             if (result.is_err()) {
-                panel.statusLabel_.setText(TRANS("Analysis failed: ") + juce::String(result.error().message),
+                panel.statusLabel_.setText(TRANS("Analysis failed: ") + serviceErrorLine(result.error()),
                                            juce::dontSendNotification);
                 return;
             }
@@ -129,7 +130,7 @@ void GainRiderPanel::renderRide()
         auto result = bridge.postAnalyzeJson("/analyze/gain_rider", juce::var(body.get()));
         postIfCurrent(self, work, [result, scope, sessionId, target](GainRiderPanel& panel) {
             if (result.is_err()) {
-                panel.statusLabel_.setText(TRANS("Render failed: ") + juce::String(result.error().message),
+                panel.statusLabel_.setText(TRANS("Render failed: ") + serviceErrorLine(result.error()),
                                            juce::dontSendNotification);
                 return;
             }

@@ -1,6 +1,7 @@
 // desktop-app/Source/ui/shared/KhensuTheme.cpp
 #include "KhensuTheme.h"
 #include "../../BundledResources.h"
+#include <khensu/ui/VizPalette.h>
 #include <map>
 #include <utility>
 
@@ -34,15 +35,15 @@ juce::Typeface::Ptr loadBundledTypeface(const juce::String& relativePath)
 
 } // namespace
 
-// Aurora Glass defaults (2026-07-16) - mirror the Dark branch of setTheme().
-juce::Colour KhensuTheme::bgVoid(0xff050608);
-juce::Colour KhensuTheme::bgBase(0xff080b0d);
-juce::Colour KhensuTheme::bgSurface(0xff0e1518);
-juce::Colour KhensuTheme::bgRaised(0xff141d21);
-juce::Colour KhensuTheme::bgOverlay(0xff1a2429);
+// Defaults mirror the Dark branch of setTheme().
+juce::Colour KhensuTheme::bgVoid(0xff0b0c0e);
+juce::Colour KhensuTheme::bgBase(0xff101113);
+juce::Colour KhensuTheme::bgSurface(0xff16181b);
+juce::Colour KhensuTheme::bgRaised(0xff1c1f23);
+juce::Colour KhensuTheme::bgOverlay(0xff24282d);
 
-juce::Colour KhensuTheme::borderSubtle(0x12ffffff);
-juce::Colour KhensuTheme::borderActive(0x22ffffff);
+juce::Colour KhensuTheme::borderSubtle(0x14ffffff);
+juce::Colour KhensuTheme::borderActive(0x26ffffff);
 
 juce::Colour KhensuTheme::accentTeal(0xff22d3c5);
 juce::Colour KhensuTheme::accentTealDim(0x3322d3c5);
@@ -60,14 +61,22 @@ juce::Colour KhensuTheme::accentBlueDim(0x334da3ff);
 juce::Colour KhensuTheme::accentGreen(0xff34d399);
 juce::Colour KhensuTheme::accentGreenDim(0x3334d399);
 juce::Colour KhensuTheme::scrim(0xb3000000);
-juce::Colour KhensuTheme::shadowColour(0x80000000);
-juce::Colour KhensuTheme::highlight(0x0dffffff);
+juce::Colour KhensuTheme::shadowColour(0x66000000);
+juce::Colour KhensuTheme::highlight(0x08ffffff);
 juce::Colour KhensuTheme::focusRing(0xff22d3c5);
 
-juce::Colour KhensuTheme::textPrimary(0xffeaf0f4);
-juce::Colour KhensuTheme::textSecondary(0xff8a94a0);
-juce::Colour KhensuTheme::textTertiary(0xff7d8c96);
+juce::Colour KhensuTheme::textPrimary(0xffe8eaed);
+juce::Colour KhensuTheme::textSecondary(0xff9aa1a9);
+juce::Colour KhensuTheme::textTertiary(0xff878e97);
 juce::Colour KhensuTheme::textAccent(0xff22d3c5);
+// VIZ-F2: assigned per theme in setTheme(); these are the Dark values.
+juce::Colour KhensuTheme::vizSpreadOuter(0x14e8eaed);
+juce::Colour KhensuTheme::vizSpreadInner(0x26e8eaed);
+juce::Colour KhensuTheme::vizMedian(0xcc9aa1a9);
+juce::Colour KhensuTheme::vizTrack(0xffe8eaed);
+juce::Colour KhensuTheme::vizReference(0xff9085e9);
+juce::Colour KhensuTheme::vizGrid(0x10e8eaed);
+juce::Colour KhensuTheme::vizAxis(0x2ee8eaed);
 
 const juce::String& KhensuTheme::uiTypefaceName()
 {
@@ -109,10 +118,15 @@ juce::Font KhensuTheme::uiFont(float size, int style)
 }
 juce::Font KhensuTheme::bodyFont(float size) { return uiFont(size); }
 juce::Font KhensuTheme::labelFont(float size) { return uiFont(size); }
-juce::Font KhensuTheme::metricFont(float size)
+juce::Font KhensuTheme::metricFont(float size) { return numericFont(size); }
+juce::Font KhensuTheme::numericFont(float size, int style)
 {
-    // Light weight for large numeric readouts
-    return uiFont(size);
+    // UI-4: the bundled Space Grotesk draws proportional digits, so a value
+    // that changes (1.1 -> 8.8) shifted sideways and columns did not line up.
+    // The platform UI face (Segoe UI / Helvetica Neue) draws tabular lining
+    // figures by default; a concrete family, never the Sans-Serif placeholder.
+    size = std::max(size, kMinTextPx);
+    return juce::Font(juce::FontOptions{uiTypefaceName(), size, style});
 }
 juce::Font KhensuTheme::monoFont(float size)
 {
@@ -189,6 +203,18 @@ void KhensuTheme::removeThemeListener(int token) { themeListeners().erase(token)
 
 KhensuTheme::Theme KhensuTheme::currentTheme() noexcept { return g_currentTheme; }
 
+namespace {
+khensu::ui::viz::Mode vizMode() noexcept
+{
+    return KhensuTheme::currentTheme() == KhensuTheme::Theme::Light ? khensu::ui::viz::Mode::Light
+                                                                    : khensu::ui::viz::Mode::Dark;
+}
+} // namespace
+
+juce::Colour KhensuTheme::vizCategory(int slot) { return khensu::ui::viz::categorical(slot, vizMode()); }
+juce::Colour KhensuTheme::vizSequential(float t) { return khensu::ui::viz::sequential(t, vizMode()); }
+juce::Colour KhensuTheme::vizDiverging(float t) { return khensu::ui::viz::diverging(t, vizMode()); }
+
 const char* KhensuTheme::themeName(Theme t) noexcept
 {
     switch (t) {
@@ -221,14 +247,15 @@ void KhensuTheme::setTheme(Theme t)
     // palette has been retired onto these.)
     switch (t) {
     case Theme::Dark:
-        // Aurora Glass: near-black teal-tinted surfaces, teal + magenta accents.
-        bgVoid = juce::Colour(0xff050608);
-        bgBase = juce::Colour(0xff080b0d);
-        bgSurface = juce::Colour(0xff0e1518);
-        bgRaised = juce::Colour(0xff141d21);
-        bgOverlay = juce::Colour(0xff1a2429);
-        borderSubtle = juce::Colour(0x12ffffff);
-        borderActive = juce::Colour(0x22ffffff);
+        // Studio (UI-3): near-monochrome graphite surfaces and ONE accent, teal.
+        // Magenta stays only as a categorical data colour, never decoration.
+        bgVoid = juce::Colour(0xff0b0c0e);
+        bgBase = juce::Colour(0xff101113);
+        bgSurface = juce::Colour(0xff16181b);
+        bgRaised = juce::Colour(0xff1c1f23);
+        bgOverlay = juce::Colour(0xff24282d);
+        borderSubtle = juce::Colour(0x14ffffff);
+        borderActive = juce::Colour(0x26ffffff);
         accentTeal = juce::Colour(0xff22d3c5);
         accentTealDim = juce::Colour(0x3322d3c5);
         accentAmber = juce::Colour(0xfff5a623);
@@ -244,22 +271,22 @@ void KhensuTheme::setTheme(Theme t)
         accentGreen = juce::Colour(0xff34d399);
         accentGreenDim = juce::Colour(0x3334d399);
         scrim = juce::Colour(0xb3000000);
-        shadowColour = juce::Colour(0x80000000);
-        highlight = juce::Colour(0x0dffffff);
+        shadowColour = juce::Colour(0x66000000);
+        highlight = juce::Colour(0x08ffffff);
         focusRing = juce::Colour(0xff22d3c5);
-        textPrimary = juce::Colour(0xffeaf0f4);
-        textSecondary = juce::Colour(0xff8a94a0);
-        textTertiary = juce::Colour(0xff7d8c96); // UX-16: 4.9:1 on bgRaised (was 4.2)
+        textPrimary = juce::Colour(0xffe8eaed);
+        textSecondary = juce::Colour(0xff9aa1a9);
+        textTertiary = juce::Colour(0xff878e97); // UX-16: 4.9:1 on bgRaised (was 4.2)
         textAccent = juce::Colour(0xff22d3c5);
         break;
 
     case Theme::HighContrast:
         // Aurora Glass, high-contrast: pure-black base, brighter teal/magenta.
         bgVoid = juce::Colour(0xff000000);
-        bgBase = juce::Colour(0xff000406);
-        bgSurface = juce::Colour(0xff03090b);
-        bgRaised = juce::Colour(0xff0a1416);
-        bgOverlay = juce::Colour(0xff14201f);
+        bgBase = juce::Colour(0xff050505);
+        bgSurface = juce::Colour(0xff0a0a0b);
+        bgRaised = juce::Colour(0xff121314);
+        bgOverlay = juce::Colour(0xff1b1c1e);
         borderSubtle = juce::Colour(0x40ffffff);
         borderActive = juce::Colour(0x66ffffff);
         accentTeal = juce::Colour(0xff2ff5e4);
@@ -294,11 +321,11 @@ void KhensuTheme::setTheme(Theme t)
         // are in the dark themes: panels read as panels because bgSurface sits
         // above bgBase. bgBase and bgSurface were both pure white, which
         // flattened every panel edge into its parent (kimi audit P2 #39).
-        bgVoid = juce::Colour(0xffe7edf0);
-        bgBase = juce::Colour(0xfff3f7f9);
+        bgVoid = juce::Colour(0xffe8eaed);
+        bgBase = juce::Colour(0xfff3f4f6);
         bgSurface = juce::Colour(0xffffffff);
-        bgRaised = juce::Colour(0xfff7fafb);
-        bgOverlay = juce::Colour(0xffe8eff2);
+        bgRaised = juce::Colour(0xfff8f9fa);
+        bgOverlay = juce::Colour(0xffeceef1);
         borderSubtle = juce::Colour(0x14000000);
         borderActive = juce::Colour(0x28000000);
         accentTeal = juce::Colour(0xff065b54);
@@ -322,9 +349,21 @@ void KhensuTheme::setTheme(Theme t)
         focusRing = juce::Colour(0xff065b54);
         textPrimary = juce::Colour(0xff0d1417);
         textSecondary = juce::Colour(0xff48545c);
-        textTertiary = juce::Colour(0xff65727a);
+        textTertiary = juce::Colour(0xff63707a);
         textAccent = juce::Colour(0xff065b54);
         break;
+    }
+
+    // VIZ-F2: the data-visualisation tokens, from the shared viz palette.
+    {
+        const bool light = t == Theme::Light;
+        vizSpreadOuter = textPrimary.withAlpha(light ? 0.07f : 0.08f);
+        vizSpreadInner = textPrimary.withAlpha(light ? 0.13f : 0.15f);
+        vizMedian = textSecondary.withAlpha(0.8f);
+        vizTrack = textPrimary;
+        vizReference = vizCategory(6);
+        vizGrid = textPrimary.withAlpha(light ? 0.08f : 0.06f);
+        vizAxis = textPrimary.withAlpha(light ? 0.25f : 0.18f);
     }
 
     // Palette is fully reassigned - now let cached-colour surfaces re-apply.

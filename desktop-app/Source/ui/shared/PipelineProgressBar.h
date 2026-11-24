@@ -38,6 +38,11 @@ class PipelineProgressBar final : public juce::Component {
         repaint();
     }
     void reset();
+    /// For tests: one slot's state (0 = Fast ... 5 = Stems).
+    SlotState slotState(int index) const noexcept
+    {
+        return slotStates_[static_cast<size_t>(juce::jlimit(0, kNumSlots - 1, index))];
+    }
 
     std::function<void()> onSkipClicked;
 

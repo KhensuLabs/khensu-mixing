@@ -1,9 +1,11 @@
 // desktop-app/Source/ui/Copilot/MixerChainPanel.cpp
 #include <algorithm>
+#include "../shared/ServiceErrorHint.h"
 #include "MixerChainPanel.h"
 #include "../shared/JobPoller.h"
 #include <khensu/ipc/generated/ApiJobStatus.h>
 #include "SessionChainContext.h"
+#include "MixerChainPresetParams.h"
 #include "../shared/KhensuTheme.h"
 #include "../../IAppController.h"
 #include <khensu/common/AppPaths.h>
@@ -278,6 +280,7 @@ MixerChainPanel::MixerChainPanel(IAppController& c) : controller_(c)
     addAndMakeVisible(*pluginTarget_);
 
     mappingReportButton_.setEnabled(false);
+    mappingReportButton_.setTooltip(TRANS("Generate a chain first: the report maps each of its stages to your plugins."));
     mappingReportButton_.onClick = [this] { showMappingReport(); };
     addAndMakeVisible(mappingReportButton_);
 
@@ -554,7 +557,7 @@ void MixerChainPanel::generate()
                 self->generateButton_.setEnabled(true);
                 self->cancelGenerateButton_.setVisible(false);
                 self->resized();
-                self->setStatus(TRANS("Error: ") + juce::String(result.error().message), true);
+                self->setStatus(TRANS("Error: ") + serviceErrorLine(result.error()), true);
                 return;
             }
             self->currentJobId_ = result.value();
@@ -1060,11 +1063,7 @@ void MixerChainPanel::loadPreset(const juce::File& file)
     }
 
     // Extract exact parameter states if they exist
-    if (auto* paramsObj = obj->getProperty("parameter_states").getDynamicObject()) {
-        for (const auto& p : paramsObj->getProperties()) {
-            loadedPresetParams_[p.name.toString()] = static_cast<float>(p.value);
-        }
-    }
+    loadedPresetParams_ = mixer_chain_preset::parameterStates(json);
 
     std::vector<khensu::ipc::HttpServiceBridge::MixerChainPlugin> plugins;
     if (auto* pluginArr = obj->getProperty("plugins").getArray()) {
@@ -1080,16 +1079,15 @@ void MixerChainPanel::loadPreset(const juce::File& file)
 
     onResultsReady(std::move(plugins));
 
-    // Auto-post exact parameters to the plugin for byte-identical load state
-    if (!loadedPresetParams_.empty()) {
-        auto params = loadedPresetParams_;
-        controller_.runLongInBackground([params, target = controller_.lifecycle().pluginTargetInstance()]() {
-            khensu::ipc::HttpServiceBridge bridge;
-            bridge.postPluginParams(params, target); // PLG-04: the chosen instance ("" = all)
-        });
+    // WF-9 (FN2-4): the preset's exact parameter states are staged in the one
+    // plugin chain; the Signal Flow Rack applies them to the chosen instance.
+    if (mixer_chain_preset::stageLoadedPreset(controller_.lifecycle(), loadedPresetParams_,
+                                              file.getFileNameWithoutExtension())) {
+        setStatus(TRANS("Preset loaded: %s - staged in the plugin chain, apply it on Mix / Master's Signal Flow Rack.")
+                      .replace("%s", file.getFileNameWithoutExtension()));
+        return;
     }
-
-    setStatus("Preset loaded: " + file.getFileNameWithoutExtension());
+    setStatus(TRANS("Preset loaded: %s").replace("%s", file.getFileNameWithoutExtension()));
 }
 
 void MixerChainPanel::refreshPresetList()

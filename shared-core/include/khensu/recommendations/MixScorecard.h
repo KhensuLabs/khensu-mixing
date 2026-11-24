@@ -31,6 +31,18 @@ struct ScorecardCategory {
 /// this is a presentation/aggregation layer, not a new analysis pass.
 struct MixScorecard {
     float overall_score = 0.0f; ///< 0-100, weighted heuristic technical/genre-alignment
+    /// VIZ-P3: the weighted score before the open-finding cap. A severe finding
+    /// caps overall_score at kSevereCap and a moderate one at kModerateCap, so
+    /// "Near Target" never sits beside a severe issue; tier_audience then says
+    /// why ("Capped by 2 severe issues - 86 without them").
+    float uncapped_score = 0.0f;
+    int severe_open = 0;   ///< non-strength findings at severity >= kSevereSeverity
+    int moderate_open = 0; ///< at kModerateSeverity .. kSevereSeverity
+    bool capped() const noexcept { return overall_score + 0.5f < uncapped_score; }
+    static constexpr float kSevereSeverity = 66.0f;   ///< the Mix Notes / VerdictModel buckets
+    static constexpr float kModerateSeverity = 33.0f;
+    static constexpr float kSevereCap = 64.0f;   ///< below "Minor Issues" (65)
+    static constexpr float kModerateCap = 89.0f; ///< below "Meets Targets" (90)
     std::string tier_label;     ///< bounded readiness band (kTier* below) - NOT a quality claim
     std::string tier_audience;  ///< bounded technical descriptor of the band (not an audience/quality claim)
 

@@ -54,8 +54,9 @@ void SongFingerprintStrip::paint(juce::Graphics& g)
         juce::Colour colour;
     };
     const Bar bars[] = {
-        {"Energy", energy_, KhensuTheme::accentAmber},
-        {"Hook", hook_, KhensuTheme::accentBlue},
+        // UX2-3: one accent - the bars are told apart by their captions.
+        {"Energy", energy_, KhensuTheme::accentTeal},
+        {"Hook", hook_, KhensuTheme::accentTeal},
         {"Memo", memorability_, KhensuTheme::accentTeal},
     };
     constexpr int n = 3;
@@ -82,9 +83,9 @@ void GenreBlendStrip::paint(juce::Graphics& g)
     if (blend_.size() < 2) return;
 
     static const juce::Colour kSegColours[] = {
-        KhensuTheme::accentTeal,
-        KhensuTheme::accentBlue,
-        KhensuTheme::accentAmber,
+        KhensuTheme::accentTeal, // UX2-3: one accent, then neutral steps
+        KhensuTheme::textSecondary,
+        KhensuTheme::textTertiary,
     };
 
     auto full = getLocalBounds().toFloat();

@@ -25,6 +25,29 @@ os.environ.setdefault("KHENSU_TRUSTED_HOSTS", "testserver")
 # installed. Off for the suite so genre results don't depend on the machine;
 # tests/test_genre_probe.py turns it back on where it needs it.
 os.environ.setdefault("KHENSU_DISABLE_GENRE_PROBE", "1")
+# numba caches librosa's compiled kernels beside librosa in site-packages, and
+# its cache is not safe for concurrent writers: four xdist workers compiling
+# peak_pick at once left four .nbc variants, and every later load of them
+# crashed the process with an access violation (the self-hosted CI's fresh
+# venv, 2026-11-23). Each test process caches in its own directory instead,
+# set before anything imports numba (per process id: xdist names its workers
+# only after conftest has loaded). Directories over a day old are pruned. An
+# explicit NUMBA_CACHE_DIR still wins; one this conftest set (marked, and
+# inherited by the xdist workers from the controller) is replaced per process.
+if "NUMBA_CACHE_DIR" not in os.environ or os.environ.get("KHENSU_NUMBA_CACHE_AUTO") == "1":
+    os.environ["KHENSU_NUMBA_CACHE_AUTO"] = "1"
+    import shutil
+    import tempfile
+    import time
+
+    _numba_root = Path(tempfile.gettempdir()) / "khensu-numba-cache"
+    try:
+        for _old in _numba_root.iterdir():
+            if time.time() - _old.stat().st_mtime > 86400:
+                shutil.rmtree(_old, ignore_errors=True)
+    except OSError:
+        pass
+    os.environ["NUMBA_CACHE_DIR"] = str(_numba_root / f"pid{os.getpid()}")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

@@ -2,28 +2,100 @@
 #include "PluginEditor.h"
 #include <khensu/recommendations/ParameterLabels.h>
 #include <khensu/ui/KhensuPalette.h>
+#include <khensu/ui/StudioStyle.h>
 #include <khensu/common/AppPaths.h>
 #include <khensu/feedback/FeedbackManager.h>
 #include <khensu/ipc/HttpServiceBridge.h>
 #include "CopilotServiceJobs.h"
 #include "CaptureToDesktop.h"
 #include "PluginWorkerPool.h"
+#include "ui/ButtonRoles.h"
 
 namespace khensu {
+
+namespace {
+using ViewSize = KhensuCopilotProcessor::ViewSize;
+constexpr int kHeaderH = 40;    // title row
+constexpr int kSubHeaderH = 30; // presets + status row
+constexpr int kFooterH = 34;    // A/B strip
+constexpr int kPad = ui::studio::kPad;
+
+void styleStatusLabel(juce::Label& label)
+{
+    label.setFont(ui::Palette::uiFont(ui::studio::kLabelSize));
+    label.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
+    label.setJustificationType(juce::Justification::centredLeft);
+    label.setMinimumHorizontalScale(0.8f);
+}
+} // namespace
+
+//==============================================================================
+KhensuCopilotEditor::SuggestionsTabPage::SuggestionsTabPage(IssueTimelinePanel& issues, SuggestionFeedPanel& feed,
+                                                            KhensuCopilotProcessor& processor)
+    : issues_(issues), feed_(feed), processor_(processor), topFix_(processor),
+      desktopLinkButton_(juce::CharPointer_UTF8("View full reasoning on Desktop \xe2\x86\x92")) // utf8-exempt(arrow)
+{
+    addAndMakeVisible(topFix_);
+    addAndMakeVisible(issues_);
+    addAndMakeVisible(feed_);
+    desktopLinkButton_.setColour(juce::TextButton::textColourOffId, PluginLookAndFeel::accentTeal);
+    desktopLinkButton_.setTooltip(TRANS("Ask Khensu Mixing on the desktop to show the full reasoning for this session."));
+    desktopLinkButton_.onClick = [this] {
+        juce::String sessionId = processor_.getSessionId();
+        if (sessionId.isNotEmpty()) {
+            processor_.runShortInBackground([sessionId]() {
+                auto bridge = copilot::ServiceClient::bridge();
+                bridge.postEvent(sessionId, "show_reasoning", "View full reasoning request from plugin");
+            });
+        } else {
+            juce::NativeMessageBox::showMessageBoxAsync(
+                juce::MessageBoxIconType::InfoIcon, TRANS("Full Reasoning on Desktop"),
+                TRANS("Open Khensu Mixing on the desktop and select this session's Mix/Master screen to see the full "
+                      "Chain Reasoning View for each recommendation (Detected -> Cause -> Fix -> Trade-off -> "
+                      "Alternative Strategies -> How to Verify) - there's more room for it there than the plugin "
+                      "window allows."));
+        }
+    };
+    addAndMakeVisible(desktopLinkButton_);
+}
+
+void KhensuCopilotEditor::SuggestionsTabPage::resized()
+{
+    auto b = getLocalBounds().reduced(0, 6);
+    desktopLinkButton_.setBounds(b.removeFromBottom(24).removeFromRight(260));
+    b.removeFromBottom(4);
+    topFix_.setBounds(b.removeFromTop(64));
+    b.removeFromTop(ui::studio::kGap);
+    // The feed keeps at least ~45% at every size (Small included).
+    issues_.setBounds(b.removeFromTop(juce::jlimit(110, 260, b.getHeight() * 11 / 20)));
+    b.removeFromTop(4);
+    feed_.setBounds(b);
+}
+
+//==============================================================================
+juce::Point<int> KhensuCopilotEditor::sizeFor(ViewSize size) noexcept
+{
+    switch (size) {
+        case ViewSize::Small: return {kSmallWidth, kSmallHeight};
+        case ViewSize::Large: return {kLargeWidth, kLargeHeight};
+        case ViewSize::Medium: break;
+    }
+    return {kMediumWidth, kMediumHeight};
+}
 
 KhensuCopilotEditor::KhensuCopilotEditor(KhensuCopilotProcessor& p)
     : AudioProcessorEditor(&p),
 #if JucePlugin_Enable_ARA
       AudioProcessorEditorARAExtension(&p),
 #endif
-      processor_(p), meterSection_(p),
+      processor_(p), presetBar_(p), meterSection_(p),
       systemBrainPanel_([&p](std::function<void()> job) { p.runShortInBackground(std::move(job)); }),
       mixerChainPanel_(&p), chatPanel_(p), dspGridPanel_(p), eqCurvePanel_(p), hostedChainPanel_(p), mixHubPanel_(p),
-      issuePanel_(p)
+      issuePanel_(p), compactTopFix_(p)
 {
     setLookAndFeel(&editorLookAndFeel_); // UX-4: 12 px button text floor
     titleLabel_.setText("Khensu Copilot", juce::dontSendNotification);
-    titleLabel_.setFont(khensu::ui::Palette::uiFont(16.0f, juce::Font::bold));
+    titleLabel_.setFont(ui::Palette::uiFont(ui::studio::kTitleSize, juce::Font::bold));
     titleLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textPrimary);
     titleLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(titleLabel_);
@@ -40,41 +112,49 @@ KhensuCopilotEditor::KhensuCopilotEditor(KhensuCopilotProcessor& p)
     }
 #endif
 
+    loadButton_.setButtonText(TRANS("Load Session..."));
     loadButton_.onClick = [this]() { onLoadClicked(); };
     addAndMakeVisible(loadButton_);
-    captureButton_.setTitle("Capture to Khensu Mixing");
-    captureButton_.setTooltip("Record the next 4, 8 or 16 bars (or the loop region) as the host plays, and "
-                              "send them to Khensu Mixing as a new session.");
+    captureButton_.setButtonText(TRANS("Capture..."));
+    captureButton_.setTitle(TRANS("Capture to Khensu Mixing"));
+    captureButton_.setTooltip(TRANS("Record the next 4, 8 or 16 bars (or the loop region) as the host plays, and "
+                                    "send them to Khensu Mixing as a new session."));
     captureButton_.onClick = [this]() { onCaptureClicked(); };
     addAndMakeVisible(captureButton_);
 
+    bypassButton_.setButtonText(TRANS("Bypass"));
     bypassButton_.setClickingTogglesState(true);
-    bypassButton_.setColour(juce::TextButton::buttonColourId, PluginLookAndFeel::bgPanel);
+    // Bypass on is a warning state, not the accent.
     bypassButton_.setColour(juce::TextButton::buttonOnColourId, PluginLookAndFeel::statusWarn);
     bypassButton_.setColour(juce::TextButton::textColourOnId, PluginLookAndFeel::bgDark);
     bypassButton_.setColour(juce::TextButton::textColourOffId, PluginLookAndFeel::textMuted);
     addAndMakeVisible(bypassButton_);
-
     bypassAttachment_ = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor_.getAPVTS(),
                                                                                                "bypass", bypassButton_);
 
-    statusLabel_.setText("Ready", juce::dontSendNotification);
-    statusLabel_.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::plain));
-    statusLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
-    statusLabel_.setJustificationType(juce::Justification::centredLeft);
+    viewButton_.setButtonText(TRANS("View"));
+    viewButton_.setComponentID("viewButton");
+    viewButton_.setTitle(TRANS("Editor view"));
+    viewButton_.setTooltip(TRANS("Compact (fits an insert slot), or the Small / Medium / Large full editor"));
+    viewButton_.onClick = [this] { showViewMenu(); };
+    addAndMakeVisible(viewButton_);
+
+    presetBar_.setComponentID("presetBar");
+    addAndMakeVisible(presetBar_);
+
+    statusLabel_.setText(TRANS("Ready"), juce::dontSendNotification);
+    styleStatusLabel(statusLabel_);
     addAndMakeVisible(statusLabel_);
 
     addAndMakeVisible(meterSection_);
 
     // HUD Labels
-    mappingHudLabel_.setText("Auto-Map: Idle", juce::dontSendNotification);
-    mappingHudLabel_.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::plain));
-    mappingHudLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
+    mappingHudLabel_.setText(TRANS("Auto-Map: Idle"), juce::dontSendNotification);
+    styleStatusLabel(mappingHudLabel_);
     addAndMakeVisible(mappingHudLabel_);
-
-    serviceHealthLabel_.setText("Service: Connecting...", juce::dontSendNotification);
-    serviceHealthLabel_.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::plain));
-    serviceHealthLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
+    serviceHealthLabel_.setText(TRANS("Service: Connecting..."), juce::dontSendNotification);
+    styleStatusLabel(serviceHealthLabel_);
+    serviceHealthLabel_.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(serviceHealthLabel_);
 
     // Comparison Strip
@@ -90,6 +170,7 @@ KhensuCopilotEditor::KhensuCopilotEditor(KhensuCopilotProcessor& p)
     // a desktop action; a dismissed finding shows as such and reopens on click.
     suggestionPanel_.setOnIssueStateChanged([this](const std::string& recId, issue_state::State state) {
         processor_.setIssueState(recId, state);
+        refreshFindings();
 
         // Save to the shared khensu.db on a background thread, then mirror to
         // the Python service store best-effort so reports see it too. Short
@@ -130,24 +211,24 @@ KhensuCopilotEditor::KhensuCopilotEditor(KhensuCopilotProcessor& p)
         }
     });
 
-    // Auto-apply: route the recommendation's suggested parameters into the
-    // plugin's own DSP chain where the names map; anything unmapped is
-    // presented as a recipe to dial in manually. Writing a fix as host
-    // automation over a time span is the Issues list's job (CE-DAW-4).
-    suggestionPanel_.setOnAutomateSuggestion([this](const Recommendation& rec) { applySuggestion(rec); });
+    // Auto-Apply (OVH-8): the shared mapper routes the fix into the built-in
+    // chain and keeps it live under Amount; the rest is listed to dial in by
+    // hand. Writing a fix as host automation over a time span is the Issues
+    // list's job (CE-DAW-4).
+    suggestionPanel_.setOnAutomateSuggestion([this](const Recommendation& rec) { return applySuggestion(rec); });
+    for (auto* topFix : {&suggestionsPage_.topFix_, &compactTopFix_})
+        topFix->onApply = [this](const Recommendation& rec) { return applySuggestion(rec); };
 
     // UX-18: five tabs under the persistent meter strip (Ctrl+1..5):
     // Suggest / DSP / Plugins / Mix / Chat. The views that belong together
     // share a tab with a small switch between them.
-    tabs_.setColour(juce::TabbedComponent::backgroundColourId, PluginLookAndFeel::bgDark);
-    tabs_.setColour(juce::TabbedButtonBar::tabOutlineColourId, PluginLookAndFeel::controlOutline);
-    suggestTab_.addView("Suggestions", suggestionsPage_);
-    suggestTab_.addView("Hooks / Brain", hooksBrainPage_);
-    dspTab_.addView("Chain", dspGridPanel_);
+    suggestTab_.addView(TRANS("Suggestions"), suggestionsPage_);
+    suggestTab_.addView(TRANS("Hooks / Brain"), hooksBrainPage_);
+    dspTab_.addView(TRANS("Chain"), dspGridPanel_);
     // Only the EQ curve of the Dashboard's visual panels fits the plugin's
     // small host-embedded window; the others stay desktop-only.
-    dspTab_.addView("EQ curve", eqCurvePanel_);
-    pluginsTab_.addView("Mixer chain", mixerChainPanel_);
+    dspTab_.addView(TRANS("EQ curve"), eqCurvePanel_);
+    pluginsTab_.addView(TRANS("Mixer chain"), mixerChainPanel_);
     // WF-9: the DSP tab's Chain view is the plugin chain's one editor.
     mixerChainPanel_.onLoadedIntoDsp = [this] {
         tabs_.setCurrentTabIndex(1);
@@ -155,28 +236,46 @@ KhensuCopilotEditor::KhensuCopilotEditor(KhensuCopilotProcessor& p)
     };
     // Third-party VST3s hosted inside the copilot - processed after the
     // corrective DSP and before the output stage (limiter, A/B).
-    pluginsTab_.addView("Hosted", hostedChainPanel_);
-    // UX-6: tab tints are teal/blue only - red and amber mean severity.
-    tabs_.addTab("Suggest", PluginLookAndFeel::accentTeal.withAlpha(0.18f), &suggestTab_, false);
-    tabs_.addTab("DSP", PluginLookAndFeel::accentBlue.withAlpha(0.18f), &dspTab_, false);
-    tabs_.addTab("Plugins", PluginLookAndFeel::accentBlue.withAlpha(0.18f), &pluginsTab_, false);
+    pluginsTab_.addView(TRANS("Hosted"), hostedChainPanel_);
+    // UI-6: flat text tabs; the selected one is underlined in the accent.
+    const auto tabFill = juce::Colours::transparentBlack;
+    tabs_.addTab("Suggest", tabFill, &suggestTab_, false);
+    tabs_.addTab("DSP", tabFill, &dspTab_, false);
+    tabs_.addTab("Plugins", tabFill, &pluginsTab_, false);
     // Every Copilot instance in this process: masking between tracks and the
     // summed balance (mixhub/MixHub.h).
-    tabs_.addTab("Mix", PluginLookAndFeel::accentTeal.withAlpha(0.18f), &mixHubPanel_, false);
-    tabs_.addTab("Chat", PluginLookAndFeel::accentBlue.withAlpha(0.18f), &chatPanel_, false);
+    tabs_.addTab("Mix", tabFill, &mixHubPanel_, false);
+    tabs_.addTab("Chat", tabFill, &chatPanel_, false);
+    tabs_.setTabBarDepth(34);
+    tabs_.setOutline(0);
     addAndMakeVisible(tabs_);
+
+    // UI-8 Compact view parts (hidden in the full view).
+    compactTopFix_.setComponentID("compactTopFix");
+    compactTopFix_.setCompact(true);
+    addChildComponent(compactFindings_);
+    addChildComponent(compactTopFix_);
 
     // UX-10: the inline apply strip (hidden until an Apply).
     applyStripLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::accentTeal);
+    applyStripLabel_.setFont(ui::Palette::uiFont(ui::studio::kBodySize));
     addChildComponent(applyStripLabel_);
-    applyUndoButton_.setTooltip("Put back every parameter the last Apply changed");
+    applyUndoButton_.setButtonText(TRANS("Undo"));
+    applyUndoButton_.setTooltip(TRANS("Put back every parameter the last Apply changed"));
     applyUndoButton_.onClick = [this] { undoLastApply(); };
     addChildComponent(applyUndoButton_);
-    applyDismissButton_.setTitle("Dismiss");
-    applyDismissButton_.setTooltip("Hide this message");
+    applyOverrideButton_.setButtonText(TRANS("Apply anyway"));
+    applyOverrideButton_.setTooltip(TRANS("Apply this fix although it is not marked safe to apply automatically"));
+    applyOverrideButton_.onClick = [this] {
+        if (auto rec = pendingOverride_) applySuggestion(*rec, false);
+    };
+    addChildComponent(applyOverrideButton_);
+    applyDismissButton_.setTitle(TRANS("Dismiss"));
+    applyDismissButton_.setTooltip(TRANS("Hide this message"));
     applyDismissButton_.onClick = [this] {
         applyStripLabel_.setVisible(false);
         applyUndoButton_.setVisible(false);
+        applyOverrideButton_.setVisible(false);
         applyDismissButton_.setVisible(false);
         resized();
     };
@@ -184,17 +283,70 @@ KhensuCopilotEditor::KhensuCopilotEditor(KhensuCopilotProcessor& p)
 
     configureKeyboardAccess();
 
-    // Resizable within sensible limits (PLG-20); every tab lays out from its
-    // actual bounds.
+    // UI-8: the saved view (mode, size, tab) of this instance.
+    const auto view = processor_.getEditorViewState();
+    if (view.tab >= 0 && view.tab < tabs_.getNumTabs()) tabs_.setCurrentTabIndex(view.tab);
+    tabs_.onTabChanged = [this](int index) {
+        auto state = processor_.getEditorViewState();
+        state.tab = index;
+        processor_.setEditorViewState(state);
+    };
     setResizable(true, true);
-    setResizeLimits(kMinWidth, kMinHeight, kMaxWidth, kMaxHeight);
-    setSize(kDefaultWidth, kDefaultHeight);
+    setView(view.compact, view.size);
+    refreshFindings();
     startTimerHz(5);
 }
 
 KhensuCopilotEditor::~KhensuCopilotEditor()
 {
     setLookAndFeel(nullptr);
+}
+
+void KhensuCopilotEditor::setView(bool compact, ViewSize size)
+{
+    auto state = processor_.getEditorViewState();
+    state.compact = compact;
+    if (!compact) state.size = size;
+    processor_.setEditorViewState(state);
+
+    compact_ = compact;
+    for (juce::Component* full : {static_cast<juce::Component*>(&tabs_), static_cast<juce::Component*>(&captureButton_),
+                                  static_cast<juce::Component*>(&presetBar_), static_cast<juce::Component*>(&statusLabel_),
+                                  static_cast<juce::Component*>(&mappingHudLabel_),
+                                  static_cast<juce::Component*>(&serviceHealthLabel_)})
+        full->setVisible(!compact);
+    compactFindings_.setVisible(compact);
+    compactTopFix_.setVisible(compact);
+    meterSection_.setCompact(compact);
+    if (compact) {
+        // Fixed: a DAW insert slot, not a window to drag around.
+        setResizeLimits(kCompactWidth, kCompactHeight, kCompactWidth, kCompactHeight);
+        setSize(kCompactWidth, kCompactHeight);
+    } else {
+        setResizeLimits(kMinWidth, kMinHeight, kMaxWidth, kMaxHeight);
+        const auto wanted = sizeFor(state.size);
+        setSize(wanted.x, wanted.y);
+    }
+    resized();
+}
+
+void KhensuCopilotEditor::showViewMenu()
+{
+    const auto state = processor_.getEditorViewState();
+    juce::PopupMenu menu;
+    menu.addItem(1, TRANS("Compact") + " (560 x 380)", true, state.compact);
+    menu.addSeparator();
+    menu.addItem(2, TRANS("Small") + " (720 x 540)", true, !state.compact && state.size == ViewSize::Small);
+    menu.addItem(3, TRANS("Medium") + " (960 x 720)", true, !state.compact && state.size == ViewSize::Medium);
+    menu.addItem(4, TRANS("Large") + " (1280 x 960)", true, !state.compact && state.size == ViewSize::Large);
+    juce::Component::SafePointer<KhensuCopilotEditor> safeThis(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&viewButton_), [safeThis](int choice) {
+        auto* self = safeThis.getComponent();
+        if (self == nullptr || choice <= 0) return;
+        const auto current = self->processor_.getEditorViewState().size;
+        if (choice == 1) self->setView(true, current);
+        else self->setView(false, choice == 2 ? ViewSize::Small : choice == 4 ? ViewSize::Large : ViewSize::Medium);
+    });
 }
 
 void KhensuCopilotEditor::configureKeyboardAccess()
@@ -205,49 +357,51 @@ void KhensuCopilotEditor::configureKeyboardAccess()
     setFocusContainerType(juce::Component::FocusContainerType::keyboardFocusContainer);
     setWantsKeyboardFocus(true);
     setTitle("Khensu Copilot");
-    setDescription("Mix copilot: meters, suggestions, and the corrective DSP chain.");
-    setHelpText("Ctrl+1 to Ctrl+5 select a tab; Ctrl+Tab cycles tabs; Ctrl+B toggles bypass.");
+    setDescription(TRANS("Mix copilot: meters, suggestions, and the corrective DSP chain."));
+    setHelpText(TRANS("Ctrl+1 to Ctrl+5 select a tab; Ctrl+Tab cycles tabs; Ctrl+B toggles bypass."));
 
     loadButton_.setComponentID("loadButton");
-    loadButton_.setTitle("Load last session");
-    loadButton_.setDescription("Load the most recent analysis from Khensu Mixing.");
+    loadButton_.setTitle(TRANS("Load last session"));
+    loadButton_.setDescription(TRANS("Load the most recent analysis from Khensu Mixing."));
     loadButton_.setExplicitFocusOrder(1);
-    loadButton_.setTooltip("Load the most recent analysis from Khensu Mixing.");
-    bypassButton_.setTooltip("Bypass everything the Copilot does: the corrective DSP, the hosted plugins and the "
-                             "output limiter. The input passes through, delayed by the reported latency (Ctrl+B).");
+    loadButton_.setTooltip(TRANS("Load the most recent analysis from Khensu Mixing."));
+    bypassButton_.setTooltip(TRANS("Bypass everything the Copilot does: the corrective DSP, the hosted plugins and "
+                                   "the output limiter. The input passes through, delayed by the reported latency "
+                                   "(Ctrl+B)."));
 
     bypassButton_.setComponentID("bypassButton");
-    bypassButton_.setTitle("Bypass");
-    bypassButton_.setDescription("Bypass the corrective DSP, the hosted plugins and the output limiter.");
+    bypassButton_.setTitle(TRANS("Bypass"));
+    bypassButton_.setDescription(TRANS("Bypass the corrective DSP, the hosted plugins and the output limiter."));
     bypassButton_.setExplicitFocusOrder(2);
+    viewButton_.setExplicitFocusOrder(3);
+    presetBar_.setExplicitFocusOrder(4);
 
     tabs_.setComponentID("tabs");
-    tabs_.setTitle("Copilot sections");
-    tabs_.setExplicitFocusOrder(3);
+    tabs_.setTitle(TRANS("Copilot sections"));
+    tabs_.setExplicitFocusOrder(5);
     auto& bar = tabs_.getTabbedButtonBar();
-    // Default tab text is near-black on the dark tab fills (unreadable in
-    // the scale snapshots); use the palette's text tokens.
-    bar.setColour(juce::TabbedButtonBar::tabTextColourId, PluginLookAndFeel::textMuted);
-    bar.setColour(juce::TabbedButtonBar::frontTextColourId, PluginLookAndFeel::textPrimary);
     // JUCE makes the button bar a keyboardFocusContainer, which hides its
     // buttons from the editor's Tab traversal; demote it so Tab reaches them.
     bar.setFocusContainerType(juce::Component::FocusContainerType::focusContainer);
     for (int i = 0; i < bar.getNumTabs(); ++i) {
         if (auto* tab = bar.getTabButton(i)) {
             tab->setWantsKeyboardFocus(true);
-            tab->setDescription("Show the " + tab->getButtonText() + " section (Ctrl+" + juce::String(i + 1) + ").");
+            tab->setDescription(TRANS("Show the") + " " + tab->getButtonText() + " " + TRANS("section") + " (Ctrl+"
+                                + juce::String(i + 1) + ").");
             tab->setExplicitFocusOrder(i + 1);
         }
     }
+    compactFindings_.setExplicitFocusOrder(6);
+    compactTopFix_.setExplicitFocusOrder(7);
 
     comparisonStrip_.setComponentID("comparisonStrip");
-    comparisonStrip_.setExplicitFocusOrder(4);
+    comparisonStrip_.setExplicitFocusOrder(8);
 
     // Read-only status text stays in the accessibility tree (screen readers
     // announce it) but out of the Tab order.
-    statusLabel_.setTitle("Status");
-    serviceHealthLabel_.setTitle("Service health");
-    mappingHudLabel_.setTitle("Auto-map status");
+    statusLabel_.setTitle(TRANS("Status"));
+    serviceHealthLabel_.setTitle(TRANS("Service health"));
+    mappingHudLabel_.setTitle(TRANS("Auto-map status"));
     titleLabel_.setAccessible(false);
 }
 
@@ -263,6 +417,21 @@ bool KhensuCopilotEditor::keyPressed(const juce::KeyPress& key)
     const auto mods = key.getModifiers();
     if (!mods.isCommandDown()) return false;
     const int code = key.getKeyCode();
+    // UX2-6b: Ctrl+Z undo, Ctrl+Shift+Z / Ctrl+Y redo (Cmd on macOS). A text
+    // field with focus (chat, a knob's value editor) takes them first.
+    if (code == 'Z' || code == 'z') {
+        if (mods.isShiftDown())
+            processor_.undoHistory().redo();
+        else
+            processor_.undoHistory().undo();
+        presetBar_.refresh();
+        return true;
+    }
+    if ((code == 'Y' || code == 'y') && !mods.isShiftDown()) {
+        processor_.undoHistory().redo();
+        presetBar_.refresh();
+        return true;
+    }
     if (code >= '1' && code <= '9') return selectTabByShortcut(code - '1');
     if (code == juce::KeyPress::tabKey) {
         const int n = tabs_.getNumTabs();
@@ -282,7 +451,7 @@ void KhensuCopilotEditor::onLoadClicked()
     // saved with the plugin state, so a project reopens on the same session.
     juce::PopupMenu menu;
     const auto bound = processor_.boundSessionId();
-    menu.addItem(1, "Newest desktop session", true, bound.empty());
+    menu.addItem(1, TRANS("Newest desktop session"), true, bound.empty());
     const auto sessions = CopilotAnalysisController::recentSessions();
     if (!sessions.empty()) menu.addSeparator();
     for (size_t i = 0; i < sessions.size(); ++i)
@@ -302,7 +471,7 @@ void KhensuCopilotEditor::onLoadClicked()
 void KhensuCopilotEditor::startLoad()
 {
     loadButton_.setEnabled(false);
-    statusLabel_.setText("Analyzing...", juce::dontSendNotification);
+    statusLabel_.setText(TRANS("Analyzing..."), juce::dontSendNotification);
     statusLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
     suggestionPanel_.setLoading(true);
 
@@ -312,15 +481,27 @@ void KhensuCopilotEditor::startLoad()
     });
 }
 
+void KhensuCopilotEditor::refreshFindings()
+{
+    AnalysisResult analysis;
+    std::vector<Recommendation> recs;
+    if (processor_.hasAnalysis()) processor_.getAnalysisSnapshot(analysis, recs);
+    const copilot::IssueStateLookup stateOf = [this](const std::string& id) { return processor_.issueState(id); };
+    suggestionsPage_.topFix_.setRecommendations(recs, stateOf);
+    compactTopFix_.setRecommendations(recs, stateOf);
+    compactFindings_.setFindings(copilot::topFindings(recs, stateOf, 3));
+}
+
 void KhensuCopilotEditor::onAnalysisLoaded()
 {
     loadButton_.setEnabled(true);
 
     if (!processor_.hasAnalysis()) {
-        statusLabel_.setText("No session found in database", juce::dontSendNotification);
+        statusLabel_.setText(TRANS("No session found in database"), juce::dontSendNotification);
         statusLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::statusWarn);
         suggestionPanel_.clearData();
         hookPanel_.clearData();
+        refreshFindings();
         return;
     }
 
@@ -339,131 +520,93 @@ void KhensuCopilotEditor::onAnalysisLoaded()
     }
     suggestionPanel_.setData(recs, [this](const std::string& recId) { return processor_.issueState(recId); });
     eqCurvePanel_.pushAnalysis(analysis);
+    refreshFindings();
 
-    statusLabel_.setText("Loaded: " + juce::String(recs.size()) + " suggestions", juce::dontSendNotification);
+    statusLabel_.setText(TRANS("Loaded:") + " " + juce::String(recs.size()) + " " + TRANS("suggestions"),
+                         juce::dontSendNotification);
     statusLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::statusGood);
 }
 
 void KhensuCopilotEditor::paint(juce::Graphics& g)
 {
     g.fillAll(PluginLookAndFeel::bgDark);
-
-    // Header separator
-    g.setColour(PluginLookAndFeel::accentTeal.withAlpha(0.3f));
-    g.drawHorizontalLine(50, 0.0f, (float)getWidth());
+    // Hairline under the header.
+    g.setColour(PluginLookAndFeel::textPrimary.withAlpha(0.08f));
+    g.fillRect(0, compact_ ? kHeaderH - 4 : kHeaderH + kSubHeaderH, getWidth(), 1);
 }
 
-void KhensuCopilotEditor::applySuggestion(const Recommendation& rec)
+bool KhensuCopilotEditor::applySuggestion(const Recommendation& rec, bool requireSafe)
 {
-    using P = KhensuCopilotProcessor::ParamIDs;
-    juce::StringArray appliedLines, manualLines;
     // UX-10: what every parameter was before, for the strip's Undo.
-    applyUndoSnapshot_.clear();
-    for (auto* param : processor_.getParameters())
-        applyUndoSnapshot_.push_back(param->getValue());
+    std::vector<float> before;
+    for (auto* param : processor_.getParameters()) before.push_back(param->getValue());
 
-    bool compTouched = false, eqTouched = false;
-    // Gain keys are RELATIVE moves (PLG-19): they used to overwrite
-    // out_gain_db with an absolute value, and each other. Summed here and
-    // applied once on top of the current output gain.
-    float gainDeltaDb = 0.0f;
-    juce::StringArray gainLines;
-    // A shelf fix (eq_type 1 = high, 2 = low) on the plugin's one bell band:
-    // centre a wide bell in the region the finding measures (below ~180 Hz,
-    // above ~4 kHz) instead of putting a narrow bell on the shelf's corner,
-    // which moved that region by a fraction of the gain (MEAS-4).
-    const auto typeIt = rec.suggested_parameters.find("eq_type");
-    const int eqType = typeIt != rec.suggested_parameters.end() ? juce::roundToInt(typeIt->second) : 0;
-    for (const auto& [key, value] : rec.suggested_parameters) {
-        const juce::String k(key);
-        const float v = value;
-        auto apply = [&](const char* paramId, float plain) {
-            processor_.setParamFromAI(paramId, plain);
-            appliedLines.add("  - " + juce::String(parameter_labels::describe(key, v)));
-        };
+    const auto result = processor_.applyLiveFix(rec, requireSafe);
+    const auto& mapped = result.mapped;
 
-        if (k == "comp_ratio") {
-            apply(P::compRatio, v);
-            compTouched = true;
-        } else if (k == "comp_threshold_db") {
-            apply(P::compThreshDb, v);
-            compTouched = true;
-        } else if (k == "comp_attack_ms") {
-            apply(P::compAttackMs, v);
-            compTouched = true;
-        } else if (k == "comp_release_ms") {
-            apply(P::compReleaseMs, v);
-            compTouched = true;
-        } else if (k == "comp_makeup_gain_db") {
-            gainDeltaDb += v;
-            gainLines.add("  - " + juce::String(parameter_labels::describe(key, v)));
-        } else if (k == "eq_type") {
-            continue; // read above
-        } else if (k == "eq_freq_hz") {
-            apply(P::eqFreq, eqType == 2 ? 60.0f : eqType == 1 ? 8000.0f : v);
-            eqTouched = true;
-        } else if (k == "eq_gain_db") {
-            apply(P::eqGainDb, v);
-            eqTouched = true;
-        } else if (k == "eq_q") {
-            apply(P::eqQ, eqType == 1 || eqType == 2 ? 0.4f : v);
-            eqTouched = true;
-        } else if (k == "reduce_gain_db") {
-            gainDeltaDb -= std::abs(v);
-            gainLines.add("  - " + juce::String(parameter_labels::describe(key, v)));
-        } else if (k == "increase_gain_db") {
-            gainDeltaDb += std::abs(v);
-            gainLines.add("  - " + juce::String(parameter_labels::describe(key, v)));
-        } else if (k == "true_peak_ceiling_dbtp") {
-            apply(P::limThreshDb, v);
-            processor_.setParamFromAI(P::limOn, 1.0f);
-        } else
-            manualLines.add("  - " + juce::String(parameter_labels::describe(key, v)));
-    }
-    if (compTouched) processor_.setParamFromAI(P::compOn, 1.0f);
-    if (eqTouched) processor_.setParamFromAI(P::eqOn, 1.0f);
-    if (!gainLines.isEmpty()) {
-        processor_.adjustOutGainFromAi(gainDeltaDb);
-        appliedLines.addArray(gainLines);
-        appliedLines.add("    (output gain moved " + juce::String(gainDeltaDb, 1) + " dB from its current value)");
+    juce::StringArray appliedLines, manualLines;
+    for (const auto& note : mapped.notes) appliedLines.add("  - " + juce::String(juce::CharPointer_UTF8(note.c_str())));
+    for (const auto& key : mapped.unmappedKeys) {
+        const auto it = rec.suggested_parameters.find(key);
+        const float v = it != rec.suggested_parameters.end() ? it->second : 0.0f;
+        manualLines.add("  - " + juce::String(parameter_labels::describe(key, v)));
     }
 
     juce::String details;
     if (!appliedLines.isEmpty())
-        details << "Applied to the built-in DSP chain (host-automatable):\n"
-                << appliedLines.joinIntoString("\n") << "\n\n";
+        details << (result.applied ? TRANS("Applied to the built-in DSP chain (host-automatable, live under Amount):")
+                                   : TRANS("Would apply to the built-in DSP chain:"))
+                << "\n" << appliedLines.joinIntoString("\n") << "\n\n";
     if (!manualLines.isEmpty())
-        details << "Dial these into the relevant device manually:\n" << manualLines.joinIntoString("\n") << "\n\n";
+        details << TRANS("Dial these into the relevant device manually:") << "\n" << manualLines.joinIntoString("\n")
+                << "\n\n";
     if (appliedLines.isEmpty() && manualLines.isEmpty())
-        details << "This recommendation has no concrete parameter targets.\n\n";
-    details << "To record a fix as automation over its time span, select the finding in the Issues list "
-               "above and use Write as automation.";
+        details << TRANS("This recommendation has no concrete parameter targets.") << "\n\n";
+    details << TRANS("To record a fix as automation over its time span, select the finding in the Issues list "
+                     "above and use Write as automation.");
 
-    // The row marks itself done and its state callback stores it
-    // (khensu.db + Python mirror) - no duplicate write here.
+    if (!result.applied) {
+        // OVH-8: not safe to auto-apply (or nothing maps) - say why, and offer
+        // Apply anyway when there is something to apply.
+        const bool canOverride = requireSafe && !mapped.empty() && rec.safe_to_auto_apply == false;
+        pendingOverride_ = canOverride ? std::optional<Recommendation>(rec) : std::nullopt;
+        auto why = result.blockedReason.isNotEmpty() ? result.blockedReason : TRANS("No concrete parameter targets");
+        if (!manualLines.isEmpty() && mapped.empty())
+            why << " - " << manualLines.size() << " " << TRANS("to dial in by hand");
+        showApplyStrip(why, details, false, canOverride);
+        return false;
+    }
 
-    // UX-10: an inline strip with Undo, not a blocking dialog in the host.
+    applyUndoSnapshot_ = std::move(before);
+    pendingOverride_.reset();
+    const int applied = static_cast<int>(mapped.mappedKeys.size());
     juce::String summary;
-    if (!appliedLines.isEmpty())
-        summary << "Applied " << appliedLines.size() << (appliedLines.size() == 1 ? " parameter" : " parameters");
-    if (!manualLines.isEmpty())
-        summary << (summary.isEmpty() ? "" : " - ") << manualLines.size() << " to dial in by hand";
-    if (summary.isEmpty()) summary = "No concrete parameter targets";
-    showApplyStrip(summary + " (hover for details)", details, !appliedLines.isEmpty());
+    summary << TRANS("Applied") << " " << applied << " " << (applied == 1 ? TRANS("parameter") : TRANS("parameters"));
+    if (!manualLines.isEmpty()) summary << " - " << manualLines.size() << " " << TRANS("to dial in by hand");
+    showApplyStrip(summary + " " + TRANS("(hover for details)"), details, true);
+    return true;
 }
 
-void KhensuCopilotEditor::showApplyStrip(const juce::String& summary, const juce::String& details, bool canUndo)
+void KhensuCopilotEditor::showApplyStrip(const juce::String& summary, const juce::String& details, bool canUndo,
+                                         bool canOverride)
 {
     applyStripLabel_.setText(summary, juce::dontSendNotification);
     applyStripLabel_.setTooltip(details);
+    applyStripLabel_.setColour(juce::Label::textColourId,
+                               canUndo ? PluginLookAndFeel::accentTeal : PluginLookAndFeel::textPrimary);
     applyStripLabel_.setVisible(true);
     applyUndoButton_.setVisible(canUndo);
+    applyOverrideButton_.setVisible(canOverride);
     applyDismissButton_.setVisible(true);
     resized();
 }
 
 void KhensuCopilotEditor::undoLastApply()
 {
+    // One undo step of its own (UX2-6b).
+    const copilot::ParamUndoHistory::ScopedTransaction step(processor_.undoHistory(), TRANS("Undo top fix"));
+    // The live fix goes first, or putting fix_amount back would re-apply it.
+    processor_.clearLiveFix();
     const auto params = processor_.getParameters();
     for (int i = 0; i < params.size() && i < (int)applyUndoSnapshot_.size(); ++i) {
         auto* param = params[i];
@@ -474,59 +617,100 @@ void KhensuCopilotEditor::undoLastApply()
         param->endChangeGesture();
     }
     applyUndoSnapshot_.clear();
-    applyStripLabel_.setText("Undone - the parameters are back where they were", juce::dontSendNotification);
+    applyStripLabel_.setText(TRANS("Undone - the parameters are back where they were"), juce::dontSendNotification);
     applyUndoButton_.setVisible(false);
 }
 
-void KhensuCopilotEditor::resized()
+void KhensuCopilotEditor::layoutApplyStrip(juce::Rectangle<int>& b)
 {
-    auto b = getLocalBounds();
+    // UX-10: the apply strip, above the comparison strip while it shows.
+    if (!applyStripLabel_.isVisible()) return;
+    auto strip = b.removeFromBottom(28).reduced(kPad, 2);
+    applyDismissButton_.setBounds(strip.removeFromRight(28));
+    strip.removeFromRight(6);
+    if (applyUndoButton_.isVisible()) {
+        applyUndoButton_.setBounds(strip.removeFromRight(70));
+        strip.removeFromRight(6);
+    }
+    if (applyOverrideButton_.isVisible()) {
+        applyOverrideButton_.setBounds(strip.removeFromRight(110));
+        strip.removeFromRight(6);
+    }
+    applyStripLabel_.setBounds(strip);
+    b.removeFromBottom(2);
+}
 
-    // Header strip 50px
-    auto header = b.removeFromTop(50).reduced(12, 8);
-    titleLabel_.setBounds(header.removeFromLeft(160));
+void KhensuCopilotEditor::layoutCompact(juce::Rectangle<int> b)
+{
+    auto header = b.removeFromTop(kHeaderH - 4).reduced(kPad, 6);
+    titleLabel_.setFont(ui::Palette::uiFont(ui::studio::kBodySize + 1.0f, juce::Font::bold));
+    titleLabel_.setBounds(header.removeFromLeft(130));
+    bypassButton_.setBounds(header.removeFromRight(70));
+    header.removeFromRight(6);
+    viewButton_.setBounds(header.removeFromRight(60));
+    header.removeFromRight(6);
+    loadButton_.setBounds(header.removeFromRight(110));
+    formatTag_.setBounds({});
+
+    comparisonStrip_.setBounds(b.removeFromBottom(30).reduced(kPad, 2));
+    layoutApplyStrip(b);
+    b.reduce(kPad, 0);
+    b.removeFromTop(4);
+    meterSection_.setBounds(b.removeFromTop(112));
+    b.removeFromTop(6);
+    compactTopFix_.setBounds(b.removeFromBottom(58));
+    b.removeFromBottom(6);
+    compactFindings_.setBounds(b);
+}
+
+void KhensuCopilotEditor::layoutFull(juce::Rectangle<int> b)
+{
+    // Row 1: title (+ format tag) ... Capture, Load, View, Bypass.
+    auto header = b.removeFromTop(kHeaderH).reduced(kPad, 6);
+    titleLabel_.setFont(ui::Palette::uiFont(ui::studio::kTitleSize, juce::Font::bold));
+    titleLabel_.setBounds(header.removeFromLeft(140));
     if (formatTag_.isVisible()) {
         auto tag = header.removeFromLeft(khensu::ui::ExperimentalTag::preferredWidth() + 8);
         formatTag_.setBounds(tag.withSizeKeepingCentre(khensu::ui::ExperimentalTag::preferredWidth(),
                                                       khensu::ui::ExperimentalTag::kHeight));
     }
-    loadButton_.setBounds(header.removeFromRight(130));
-    header.removeFromRight(8);
-    captureButton_.setBounds(header.removeFromRight(120));
-    header.removeFromRight(8);
-    bypassButton_.setBounds(header.removeFromRight(80));
-    header.removeFromRight(12);
+    bypassButton_.setBounds(header.removeFromRight(76));
+    header.removeFromRight(6);
+    viewButton_.setBounds(header.removeFromRight(64));
+    header.removeFromRight(6);
+    loadButton_.setBounds(header.removeFromRight(124));
+    header.removeFromRight(6);
+    captureButton_.setBounds(header.removeFromRight(116));
 
-    serviceHealthLabel_.setBounds(header.removeFromRight(110));
-    header.removeFromRight(8);
-    mappingHudLabel_.setBounds(header.removeFromRight(130));
-    header.removeFromRight(8);
+    // Row 2: presets | status ... auto-map, service health.
+    auto sub = b.removeFromTop(kSubHeaderH).reduced(kPad, 3);
+    presetBar_.setBounds(sub.removeFromLeft(juce::jmin(PresetBar::kPreferredWidth, sub.getWidth() * 3 / 5)));
+    sub.removeFromLeft(kPad);
+    serviceHealthLabel_.setBounds(sub.removeFromRight(juce::jmin(190, sub.getWidth() / 3)));
+    sub.removeFromRight(8);
+    mappingHudLabel_.setBounds(sub.removeFromRight(juce::jmin(120, sub.getWidth() / 2)));
+    sub.removeFromRight(8);
+    statusLabel_.setBounds(sub);
 
-    statusLabel_.setBounds(header);
-
-    b.removeFromTop(4);
-
-    // Persistent top meter strip - spans the full width, visible under every tab.
-    meterSection_.setBounds(b.removeFromTop(110));
+    b.removeFromTop(ui::studio::kGap);
+    // Persistent meter strip - spans the full width, visible under every tab.
+    const int meterH = getHeight() >= kLargeHeight ? 150 : getHeight() >= kMediumHeight ? 128 : 112;
+    meterSection_.setBounds(b.removeFromTop(meterH).reduced(kPad, 0));
     b.removeFromTop(4);
 
     // Global Comparison Strip at bottom
-    auto footer = b.removeFromBottom(34).reduced(12, 4);
-    comparisonStrip_.setBounds(footer);
-    b.removeFromBottom(4);
+    comparisonStrip_.setBounds(b.removeFromBottom(kFooterH).reduced(kPad, 4));
+    b.removeFromBottom(2);
+    layoutApplyStrip(b);
+    tabs_.setBounds(b.reduced(kPad / 2, 0));
+}
 
-    // UX-10: the apply strip, above the comparison strip while it shows.
-    if (applyStripLabel_.isVisible()) {
-        auto strip = b.removeFromBottom(28).reduced(12, 2);
-        applyDismissButton_.setBounds(strip.removeFromRight(28));
-        strip.removeFromRight(6);
-        applyUndoButton_.setBounds(strip.removeFromRight(70));
-        strip.removeFromRight(8);
-        applyStripLabel_.setBounds(strip);
-        b.removeFromBottom(2);
-    }
-
-    tabs_.setBounds(b);
+void KhensuCopilotEditor::resized()
+{
+    if (compact_)
+        layoutCompact(getLocalBounds());
+    else
+        layoutFull(getLocalBounds());
 }
 
 void KhensuCopilotEditor::onCaptureClicked()
@@ -536,19 +720,19 @@ void KhensuCopilotEditor::onCaptureClicked()
     const auto state = capture.state();
     if (state == State::Armed || state == State::Recording) {
         capture.cancel();
-        captureNote_ = "Capture cancelled";
+        captureNote_ = TRANS("Capture cancelled");
         captureNoteTicks_ = 30;
         return;
     }
     const double bpm = processor_.getBpm() > 0.0f ? (double)processor_.getBpm() : 120.0;
     const double loopBeats = processor_.getLoopBeats();
     juce::PopupMenu menu;
-    menu.addSectionHeader("Capture to Khensu Mixing, from the next play");
-    menu.addItem(4, "4 bars");
-    menu.addItem(8, "8 bars");
-    menu.addItem(16, "16 bars");
-    menu.addItem(100, "The loop region" + (loopBeats > 0.0 ? " (" + juce::String(loopBeats / 4.0, 1) + " bars)"
-                                                         : juce::String(" (none set)")),
+    menu.addSectionHeader(TRANS("Capture to Khensu Mixing, from the next play"));
+    menu.addItem(4, TRANS("4 bars"));
+    menu.addItem(8, TRANS("8 bars"));
+    menu.addItem(16, TRANS("16 bars"));
+    menu.addItem(100, TRANS("The loop region") + (loopBeats > 0.0 ? " (" + juce::String(loopBeats / 4.0, 1) + " bars)"
+                                                                 : " (" + TRANS("none set") + ")"),
                  loopBeats > 0.0);
     juce::Component::SafePointer<KhensuCopilotEditor> safeThis(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&captureButton_),
@@ -562,7 +746,7 @@ void KhensuCopilotEditor::onCaptureClicked()
                            self->captureLabel_ = choice == 100 ? juce::String("loop") : juce::String(choice) + " bars";
                            const int channels = juce::jmax(1, self->processor_.getTotalNumInputChannels());
                            if (!self->processor_.capture().arm(samples, juce::jmin(2, channels))) {
-                               self->captureNote_ = "Capture busy";
+                               self->captureNote_ = TRANS("Capture busy");
                                self->captureNoteTicks_ = 30;
                            }
                        });
@@ -583,7 +767,7 @@ void KhensuCopilotEditor::updateCapture()
         const double bpm = processor_.getBpm();
         const juce::String sessionId(processor_.getSessionId());
         const auto label = captureLabel_;
-        captureNote_ = "Sending...";
+        captureNote_ = TRANS("Sending...");
         captureNoteTicks_ = 1000;
         juce::Component::SafePointer<KhensuCopilotEditor> safeThis(this);
         copilot::PluginWorkerPool::submit([safeThis, audio, samples, sr, bpm, sessionId, label] {
@@ -591,16 +775,18 @@ void KhensuCopilotEditor::updateCapture()
             const auto result = copilot::capture_to_desktop::write(*audio, samples, sr, bpm, sessionId, label, manifest);
             juce::MessageManager::callAsync([safeThis, result] {
                 if (auto* self = safeThis.getComponent()) {
-                    self->captureNote_ = result.wasOk() ? "Sent to Khensu Mixing" : "Capture failed";
+                    self->captureNote_ = result.wasOk() ? TRANS("Sent to Khensu Mixing") : TRANS("Capture failed");
                     self->captureNoteTicks_ = 40;
                     if (!result.wasOk()) juce::Logger::writeToLog("Plugin capture: " + result.getErrorMessage());
                 }
             });
         });
     }
-    juce::String text = "Capture...";
-    if (state == State::Armed) text = "Waiting for play";
-    else if (state == State::Recording) text = "Capturing " + juce::String(juce::roundToInt(capture.progress() * 100.0)) + "%";
+    juce::String text = TRANS("Capture...");
+    if (state == State::Armed)
+        text = TRANS("Waiting for play");
+    else if (state == State::Recording)
+        text = TRANS("Capturing") + " " + juce::String(juce::roundToInt(capture.progress() * 100.0)) + "%";
     else if (captureNoteTicks_ > 0) {
         --captureNoteTicks_;
         text = captureNote_;
@@ -611,21 +797,27 @@ void KhensuCopilotEditor::updateCapture()
 void KhensuCopilotEditor::timerCallback()
 {
     updateCapture();
+    presetBar_.refresh();
+    suggestionsPage_.topFix_.refresh();
+    compactTopFix_.refresh();
     // 1. Update service health label. Distinguishes "never seen the Khensu
     // Mixing desktop app this session" from "it was connected and dropped" -
     // the two point the user at different fixes (audit ARCH-05).
     switch (processor_.serviceHealthStatus()) {
         case ipc::ServiceHealthStatus::Connected:
-            serviceHealthLabel_.setText("Service: Connected", juce::dontSendNotification);
-            serviceHealthLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::accentTeal);
+            serviceHealthLabel_.setText(TRANS("Service: Connected"), juce::dontSendNotification);
+            serviceHealthLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
+            serviceHealthLabel_.setTooltip({});
             break;
         case ipc::ServiceHealthStatus::Lost:
-            serviceHealthLabel_.setText("Service: Disconnected", juce::dontSendNotification);
+            serviceHealthLabel_.setText(TRANS("Service: Disconnected"), juce::dontSendNotification);
             serviceHealthLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::statusBad);
+            serviceHealthLabel_.setTooltip(TRANS("The Khensu Mixing service was connected and dropped."));
             break;
         case ipc::ServiceHealthStatus::NeverConnected:
-            serviceHealthLabel_.setText("Service: Not Started - open Khensu Mixing", juce::dontSendNotification);
+            serviceHealthLabel_.setText(TRANS("Service: Not Started - open Khensu Mixing"), juce::dontSendNotification);
             serviceHealthLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::statusBad);
+            serviceHealthLabel_.setTooltip(TRANS("Open Khensu Mixing on the desktop; it starts the analysis service."));
             break;
     }
 
@@ -637,10 +829,11 @@ void KhensuCopilotEditor::timerCallback()
         }
     }
     if (aiCount > 0) {
-        mappingHudLabel_.setText("Auto-Map: " + juce::String(aiCount) + " params", juce::dontSendNotification);
+        mappingHudLabel_.setText(TRANS("Auto-Map:") + " " + juce::String(aiCount) + " " + TRANS("params"),
+                                 juce::dontSendNotification);
         mappingHudLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::accentTeal);
     } else {
-        mappingHudLabel_.setText("Auto-Map: Idle", juce::dontSendNotification);
+        mappingHudLabel_.setText(TRANS("Auto-Map: Idle"), juce::dontSendNotification);
         mappingHudLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
     }
 
@@ -664,7 +857,7 @@ void KhensuCopilotEditor::filesDropped(const juce::StringArray& files, int, int)
 {
     if (files.isEmpty()) return;
     juce::String path = files[0];
-    statusLabel_.setText("Ingesting: " + juce::File(path).getFileName(), juce::dontSendNotification);
+    statusLabel_.setText(TRANS("Ingesting:") + " " + juce::File(path).getFileName(), juce::dontSendNotification);
     statusLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::accentTeal);
     suggestionPanel_.setLoading(true);
 
@@ -679,7 +872,7 @@ void KhensuCopilotEditor::filesDropped(const juce::StringArray& files, int, int)
             if (success) {
                 juce::MessageManager::callAsync([safeThis]() {
                     if (auto* self = safeThis.getComponent()) {
-                        self->statusLabel_.setText("Intake complete", juce::dontSendNotification);
+                        self->statusLabel_.setText(TRANS("Intake complete"), juce::dontSendNotification);
                         self->statusLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::accentTeal);
                         self->onLoadClicked();
                     }
@@ -687,7 +880,7 @@ void KhensuCopilotEditor::filesDropped(const juce::StringArray& files, int, int)
             } else {
                 juce::MessageManager::callAsync([safeThis]() {
                     if (auto* self = safeThis.getComponent()) {
-                        self->statusLabel_.setText("Intake failed", juce::dontSendNotification);
+                        self->statusLabel_.setText(TRANS("Intake failed"), juce::dontSendNotification);
                         self->statusLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::statusBad);
                         self->suggestionPanel_.setLoading(false);
                     }
@@ -696,7 +889,7 @@ void KhensuCopilotEditor::filesDropped(const juce::StringArray& files, int, int)
         } catch (...) {
             juce::MessageManager::callAsync([safeThis]() {
                 if (auto* self = safeThis.getComponent()) {
-                    self->statusLabel_.setText("Intake failed (exception)", juce::dontSendNotification);
+                    self->statusLabel_.setText(TRANS("Intake failed (exception)"), juce::dontSendNotification);
                     self->statusLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::statusBad);
                     self->suggestionPanel_.setLoading(false);
                 }

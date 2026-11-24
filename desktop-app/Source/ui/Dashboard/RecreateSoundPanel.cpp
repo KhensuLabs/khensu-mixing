@@ -1,4 +1,5 @@
 // desktop-app/Source/ui/Dashboard/RecreateSoundPanel.cpp
+#include "../shared/ServiceErrorHint.h"
 #include "RecreateSoundPanel.h"
 #include <khensu/session/Session.h>
 #include "../VocalWorkspace/MixTuningReference.h"
@@ -14,10 +15,6 @@ namespace af = api::fields; // generated service field names (ApiSchema.h)
 // Every cached palette colour on this panel, in one place (UI-01).
 void RecreateSoundPanel::applyThemeColours()
 {
-    analyzeButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.2f));
-    analyzeButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
-    midiVarButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentBlue.withAlpha(0.2f));
-    midiVarButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentBlue);
     for (auto* s : {&timingVarSlider_, &velocityVarSlider_, &pitchVarSlider_})
         s->setColour(juce::Slider::trackColourId, KhensuTheme::accentTeal.withAlpha(0.4f));
     for (auto* l : {&timingVarLabel_, &velocityVarLabel_, &pitchVarLabel_})
@@ -172,7 +169,7 @@ void RecreateSoundPanel::runMidiVariation()
         auto result = bridge.postAnalyzeJson("/analyze/midi_variation", juce::var(body.get()));
         postIfCurrent(self, work, [result](RecreateSoundPanel& panel) {
             if (result.is_err()) {
-                panel.run_.label().setText(TRANS("MIDI variation failed: ") + juce::String(result.error().message),
+                panel.run_.label().setText(TRANS("MIDI variation failed: ") + serviceErrorLine(result.error()),
                                            juce::dontSendNotification);
                 return;
             }

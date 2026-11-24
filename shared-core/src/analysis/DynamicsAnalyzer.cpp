@@ -108,6 +108,8 @@ AnalysisResult::DynamicsData DynamicsAnalyzer::getResult() const
         if (rmsB > 1e-10) blocks.push_back(static_cast<float>(20.0 * std::log10(rmsB)));
     }
 
+    // VIZ-P6: under 10 s (100 blocks) the spread is the clip's, not the track's.
+    result.dynamic_range_measured = blocks.size() >= 100;
     if (blocks.size() >= 5) {
         std::sort(blocks.begin(), blocks.end());
         const float p10 = analysis::percentileSorted(blocks, 0.10);

@@ -4,6 +4,7 @@
 // existing folder), stemFilesExist / hasStemsAvailable against a real vs HPSS
 // separation.json (AID-07), getStemFile for missing stems and the session
 // reset - without an AppController. Background work is counted, not run.
+#include <thread>
 #include <catch2/catch_test_macros.hpp>
 #include "IBackgroundWork.h"
 #include "session/SessionService.h"
@@ -225,6 +226,7 @@ TEST_CASE("StemService reports why a separation could not start", "[split][stems
     ref.path = source.getFullPathName().toStdString();
     session.files.push_back(ref);
     sessions.adopt(std::move(session));
+    stems.setIdentityWaitMs(0); // the gate stays closed: fail at once
 
     bool called = false, ok = true;
     juce::String message;
@@ -244,4 +246,58 @@ TEST_CASE("StemService reports why a separation could not start", "[split][stems
     CHECK(message.contains("identity not verified"));
     CHECK_FALSE(message.contains("did not complete"));
     CHECK_FALSE(stems.isSeparatingStems());
+}
+
+// The gate is closed when the separation is asked for (a cold engine not yet
+// proven, or a busy one that missed its health probes) and opens a moment
+// later: the separation waits for it instead of failing with "service
+// identity not verified" (the app-loop failure of 2026-11-23).
+TEST_CASE("StemService waits for the engine's identity before starting", "[split][stems]")
+{
+    using khensu::ipc::HttpServiceBridge;
+    HttpServiceBridge::setServiceIdentityRequired(true);
+    HttpServiceBridge::setServiceIdentityVerified(false);
+
+    const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                         .getChildFile("khensu-stem-wait-" + juce::Uuid().toString());
+    REQUIRE(dir.createDirectory());
+    InlineWork work;
+    SessionService sessions;
+    StemService stems{work, sessions};
+    stems.setIdentityWaitMs(5000);
+    const auto source = dir.getChildFile("song.wav");
+    REQUIRE(source.replaceWithText("not audio"));
+    khensu::Session session;
+    session.id = "session-1";
+    khensu::AudioFileRef ref;
+    ref.id = "f";
+    ref.path = source.getFullPathName().toStdString();
+    session.files.push_back(ref);
+    sessions.adopt(std::move(session));
+
+    // The health monitor proves the engine 300 ms in; the start then gets
+    // past the gate (and fails, or is refused, at the service - not here).
+    std::thread prover([] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        HttpServiceBridge::setServiceIdentityVerified(true);
+    });
+
+    bool called = false;
+    juce::String message;
+    const auto t0 = juce::Time::getMillisecondCounter();
+    stems.runStemSeparation("demucs", [&](bool, juce::String m) {
+        called = true;
+        message = m;
+    });
+    for (int i = 0; i < 1500 && !called; ++i)
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    const auto waited = juce::Time::getMillisecondCounter() - t0;
+    prover.join();
+
+    HttpServiceBridge::setServiceIdentityVerified(false);
+    HttpServiceBridge::setServiceIdentityRequired(false);
+    dir.deleteRecursively();
+    REQUIRE(called);
+    CHECK_FALSE(message.contains("identity not verified"));
+    CHECK(waited >= 250u);
 }

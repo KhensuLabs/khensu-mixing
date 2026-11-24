@@ -47,6 +47,9 @@ class IDiagnosticsHost {
 
     /// True once the Python service has answered a health check.
     virtual bool serviceSeenHealthy() const = 0;
+    /// The engine's status now (PythonStatus as int: 0 stopped, 1 starting,
+    /// 2 running, 3 gave up) - the gate log follows it (RUN-14).
+    virtual int serviceStatusForDiagnostics() const = 0;
     /// Starts a throwaway session on `audio`; false if it could not start.
     virtual bool startDiagnosticSession(const juce::File& audio) = 0;
     /// Deletes the active session and its derived data, then calls `done`.
@@ -80,6 +83,11 @@ class IDiagnosticsHost {
     /// Shows the Export screen on step `step` (its step strip's index) and
     /// returns how many steps it has (22c-export-<n>.png per step).
     virtual int showExportStepForDiagnostics(int step) = 0;
+    /// Shows Mix / Master on view `view` (its tab index) and returns how many
+    /// views it has (the full pass, 32-mixmaster-<n>.png).
+    virtual int showMixMasterViewForDiagnostics(int view) = 0;
+    /// Plays the session's audio from `fromSec` (play) or stops it.
+    virtual void playForDiagnostics(double fromSec, bool play) = 0;
     /// Drops `audio` on the Intake screen, as a user would (UX-12's after-drop state).
     virtual void dropIntoIntakeForDiagnostics(const juce::File& audio) = 0;
     /// Intake's Create Session is enabled (its first file is analysed).

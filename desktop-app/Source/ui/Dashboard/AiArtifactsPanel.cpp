@@ -14,10 +14,6 @@ namespace af = api::fields; // generated service field names (ApiSchema.h)
 // Every cached palette colour on this component, in one place (UI-01).
 void AiArtifactsPanel::applyThemeColours()
 {
-    scanButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.2f));
-    scanButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
-    humanizeButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentBlue.withAlpha(0.2f));
-    humanizeButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentBlue);
     summaryLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
 }
 

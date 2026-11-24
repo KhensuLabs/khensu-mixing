@@ -39,6 +39,9 @@ class IssueService final : public IIssues {
     int openCount() const override;
     std::optional<Issue> issue(const std::string& recId) const override;
     void fix(const std::string& recId, Done onDone = {}) override;
+    void fixScaled(const std::string& recId, float amount, Done onDone = {}) override;
+    void fixInRegion(const std::string& recId, double startSec, double endSec, const juce::String& label,
+                     Done onDone = {}) override;
     bool fixTopIssue(Done onDone = {}) override;
     void refine(const std::string& recId, bool stronger, Done onDone = {}) override;
     bool fixInProgress() const override { return fixInFlight_; }
@@ -60,7 +63,6 @@ class IssueService final : public IIssues {
     static std::string dismissNote(const juce::String& reason);
 
   private:
-    void fixScaled(const std::string& recId, float amount, Done onDone);
     void reloadStates();
     void notify();
     /// Upserts the feedback row, learns on a change of mind when `learn`,
@@ -82,6 +84,7 @@ class IssueService final : public IIssues {
     struct FixRender {
         std::string recId;
         bool kept = true;
+        float amount = 1.0f; ///< the share of the move rendered (OVH-6, NEW-4)
     };
     std::map<juce::String, FixRender> fixRenders_;
     std::map<void*, std::function<void()>> listeners_;

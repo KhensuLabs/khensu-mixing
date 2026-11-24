@@ -19,13 +19,13 @@ namespace af = api::fields; // generated service field names (ApiSchema.h)
 LoudnessCurvePanel::LoudnessCurvePanel(IAppController& c) : PanelCard(c, "Loudness & Crest History")
 {
     setExplainer(TRANS("Loudness & Crest History"), TRANS("Continuous short-term (3 s window, 1 s hop) K-weighted LUFS reading "
-                                             "across the whole track (blue) -- a mastering-meter-style history "
+                                             "across the whole track (teal) -- a mastering-meter-style history "
                                              "graph, finer-grained than the Loudness Arc panel's per-section "
                                              "buckets. The dashed line marks the track's integrated LUFS. The "
-                                             "amber line is the rolling peak/RMS crest factor over the same "
+                                             "grey line is the rolling peak/RMS crest factor over the same "
                                              "windows, own 0-24 dB scale -- where dynamics actually get squashed, "
                                              "not just the whole-track average. The three thin heatmap lanes at "
-                                             "the bottom show per-window loudness (blue), squashing (amber), and "
+                                             "the bottom show per-window loudness (teal), squashing (grey), and "
                                              "harshness (red), so localized issues stay visible even when the "
                                              "curves overlap. The right strip is a probability-density histogram "
                                              "of the LUFS values; red ticks along the top mark inter-sample true-peak "
@@ -316,7 +316,7 @@ void LoudnessCurvePanel::paint(juce::Graphics& g)
             path.lineTo(x, y);
         penDown = true;
     }
-    g.setColour(KhensuTheme::accentBlue);
+    g.setColour(KhensuTheme::accentTeal); // UX2-3: the one accent for the main curve
     g.strokePath(path, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved));
 
     // Rolling crest-factor curve (own 0-24 dB scale).
@@ -337,7 +337,7 @@ void LoudnessCurvePanel::paint(juce::Graphics& g)
                 crestPath.lineTo(x, y);
             crestPenDown = true;
         }
-        g.setColour(KhensuTheme::accentAmber.withAlpha(0.85f));
+        g.setColour(KhensuTheme::textSecondary.withAlpha(0.9f));
         g.strokePath(crestPath, juce::PathStrokeType(1.3f, juce::PathStrokeType::curved));
     }
 
@@ -363,10 +363,12 @@ void LoudnessCurvePanel::paint(juce::Graphics& g)
                 g.fillRect(left, y, juce::jmax(1.0f, right - left), laneHeight);
             }
         };
-        drawLane(lanesTop, KhensuTheme::accentBlue, [](const MetricTimelineWindow& window) {
+        // UX2-3: loudness and crest in the one accent; harshness is a defect
+        // measure, so it keeps the severity red.
+        drawLane(lanesTop, KhensuTheme::accentTeal, [](const MetricTimelineWindow& window) {
             return (window.loudnessLufs - kLufsMin) / (kLufsMax - kLufsMin);
         });
-        drawLane(lanesTop + laneHeight + laneGap, KhensuTheme::accentAmber,
+        drawLane(lanesTop + laneHeight + laneGap, KhensuTheme::textSecondary,
                  [](const MetricTimelineWindow& window) {
                      return (kCrestMax - window.crestDb) / (kCrestMax - kCrestMin);
                  });
@@ -424,7 +426,7 @@ void LoudnessCurvePanel::paint(juce::Graphics& g)
             // Bin b covers a LUFS range; higher bin index = louder = higher up.
             const float y = top + (1.0f - (float)(b + 1) / (float)kHistBins) * h;
             const float barW = frac * stripW;
-            g.setColour(KhensuTheme::accentBlue.withAlpha(0.30f + 0.55f * frac));
+            g.setColour(KhensuTheme::accentTeal.withAlpha(0.30f + 0.55f * frac));
             g.fillRect(stripX, y, barW, juce::jmax(1.0f, binH - 0.5f));
         }
     }

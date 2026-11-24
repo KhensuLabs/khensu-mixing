@@ -1,6 +1,7 @@
 // desktop-app/Source/ui/Dashboard/TuningReferencePanel.h
 // Tuning reference: concert-pitch A (440/432/off) + drift. THREAD_CONTEXT(UIThread)
 #pragma once
+#include "../shared/HoverCells.h"
 #include <JuceHeader.h>
 #include "AutoScanCompletion.h"
 #include "../shared/KhensuTheme.h" // ThemeListener
@@ -11,8 +12,11 @@
 namespace khensu {
 class IAppController;
 
-class TuningReferencePanel final : public PanelCard {
+class TuningReferencePanel final : public PanelCard, public juce::SettableTooltipClient {
   public:
+    /// VIZ-U3: the readout under the pointer.
+    void mouseMove(const juce::MouseEvent& e) override { hover_.update(*this, e.position); }
+    void mouseExit(const juce::MouseEvent&) override { setTooltip({}); }
     explicit TuningReferencePanel(IAppController& c);
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -61,6 +65,7 @@ class TuningReferencePanel final : public PanelCard {
         repaint();
     }};
 
+    mutable HoverCells hover_; ///< VIZ-U3, filled in paint()
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TuningReferencePanel)
 };
 } // namespace khensu

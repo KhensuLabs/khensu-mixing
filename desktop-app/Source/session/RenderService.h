@@ -10,6 +10,7 @@
 #include "../RenderJobManager.h"
 #include "../services/IRenders.h"
 #include "RenderHistory.h"
+#include <khensu/dsp/OfflineChainRenderer.h>
 
 namespace khensu {
 
@@ -37,6 +38,22 @@ class RenderService final : public IRenders {
     /// Fired after the accepted render changed (register / restore / undo /
     /// redo) so the owner persists the workspace (AppController::autosaveState).
     std::function<void()> onAcceptedRenderChanged;
+
+    /// OVH-9: whether the analysis engine can take a render right now - the
+    /// owner wires the lifecycle's status (Running). Unset = assume it can.
+    /// While it can't, a chain the native renderer covers is rendered in this
+    /// process (dsp::OfflineChainRenderer) instead of failing; the service
+    /// stays the renderer whenever it is up (pedalboard is the reference).
+    std::function<bool()> serviceAvailable;
+    /// The decision: the engine is not up and every effect of `chain` is native.
+    static bool shouldRenderNatively(bool serviceUp, const std::vector<ipc::HttpServiceBridge::EffectSpec>& chain);
+    /// `chain` in the native renderer's terms.
+    static std::vector<dsp::ChainStageSpec>
+    nativeChain(const std::vector<ipc::HttpServiceBridge::EffectSpec>& chain);
+    /// A native render's result in the service's RenderJobResult shape
+    /// (status, output_path, applied_effects, guardrail{ok, matched_gain_db,
+    /// before, after, blocks, warnings}) plus "renderer": "native".
+    static juce::var nativeRenderResult(const dsp::OfflineRenderResult& result, const juce::String& outputPath);
 
     // ---- IRenders ----
     /// Shared queue for every audio render that goes through the Python
@@ -189,6 +206,15 @@ class RenderService final : public IRenders {
     /// the outcome, and registration as a version when `asVersion`.
     void startChain(const ChainRender& render, const juce::String& inputPath, const juce::String& outputPath,
                     bool asVersion, RenderDone onDone);
+    /// OVH-9: the same render, done natively on the render queue's pool.
+    /// VIZ-N3: a chain over one time region (the service's section render).
+    void startRegionChain(const ChainRender& render, const juce::String& inputPath, const juce::String& outputPath,
+                          bool asVersion, RenderDone onDone);
+    void startNativeChain(const ChainRender& render, const juce::String& inputPath, const juce::String& outputPath,
+                          bool asVersion, RenderDone onDone);
+    /// The completion both paths share.
+    RenderJobManager::Callback chainCompletion(const juce::String& sessionId, const juce::String& inputPath,
+                                               bool asVersion, RenderDone onDone);
     void loadRenderAtCurrentIndex();
     void acceptedRenderChanged()
     {

@@ -2,6 +2,8 @@
 #include <JuceHeader.h>
 #include <khensu/common/ThreadContext.h>
 #include "KhensuComparisonStrip.h"
+#include "MeterBridge.h"
+#include "TransportWaveform.h"
 #include "KhensuTheme.h" // ThemeListener
 
 namespace khensu {
@@ -46,7 +48,8 @@ class PlaybackTransportBar final : public juce::Component, private juce::Timer {
 
     VectorIconButton playPauseButton_{VectorIconButton::IconType::Play};
     VectorIconButton stopButton_{VectorIconButton::IconType::Stop};
-    juce::Slider positionSlider_;
+    /// UX2-5: the waveform scrubber (playhead, seek, the fix's changed regions).
+    TransportWaveform waveform_{controller_};
     juce::Label timeLabel_;
     juce::Slider volumeSlider_;
     juce::Label volumeLabel_;
@@ -56,8 +59,9 @@ class PlaybackTransportBar final : public juce::Component, private juce::Timer {
     /// WF-1: what the next render processes - the current version (fixes
     /// stack) or the original. Shown once there is a version to start from.
     juce::ComboBox startFromBox_;
+    /// UI-5: the compact meter rail - what is playing, measured live.
+    MeterBridge meters_{controller_, MeterBridge::Layout::Compact};
 
-    bool isDragging_ = false;
 
     /// Re-applies every cached palette colour. Called at construction and on
     /// each theme change.

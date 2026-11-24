@@ -229,6 +229,42 @@ def assign_roles(groups: list[int], levels: list[float], bars: list[int]) -> lis
     return roles
 
 
+def collapse_alternation(starts: list[int], groups: list[int], nb: int,
+                         max_bars: int = 2 * _MIN_SECTION_BARS - 2,
+                         min_run: int = 4) -> tuple[list[int], list[int]]:
+    """Folds each run of short segments that alternates between two groups
+    (A B A B ..., each at most ``max_bars`` - shorter than the 8-bar parts a
+    real verse / chorus alternation uses) into one segment; returns the
+    new starts and groups (0, 1, ... in first-heard order).
+
+    A 4+4-bar call and response inside one part reads as two groups taking
+    turns: a released song (RUN-10) came out as 20 sections, a "verse" and
+    a "chorus" every 6 s. A folded run's group is the pair it alternates
+    between, so the same exchange later in the song is the same part."""
+    ends = starts[1:] + [nb]
+    short = [b - a <= max_bars for a, b in zip(starts, ends)]
+    new_starts: list[int] = []
+    keys: list[tuple[int, ...]] = []
+    k = 0
+    while k < len(starts):
+        j = k
+        while (j + 1 < len(starts) and short[j] and short[j + 1]
+               and groups[j + 1] != groups[j]
+               and (j + 1 - k < 2 or groups[j + 1] == groups[j - 1])):
+            j += 1
+        new_starts.append(starts[k])
+        if j - k + 1 >= min_run:
+            keys.append(tuple(sorted({groups[k], groups[k + 1]})))
+            k = j + 1
+        else:
+            keys.append((groups[k],))
+            k += 1
+    order: dict[tuple[int, ...], int] = {}
+    for key in keys:
+        order.setdefault(key, len(order))
+    return new_starts, [order[key] for key in keys]
+
+
 def structure_from_bars(harmony: npt.NDArray, timbre: npt.NDArray, levels_db: npt.NDArray,
                         bar_times: list[float], total_sec: float) -> list[dict[str, Any]]:
     """Sections from bar-level features (split out so tests can drive it
@@ -250,6 +286,7 @@ def structure_from_bars(harmony: npt.NDArray, timbre: npt.NDArray, levels_db: np
         if merged == starts:
             break
         starts = merged
+    starts, groups = collapse_alternation(starts, groups, nb)
     ends = starts[1:] + [nb]
     seg_l = [float(np.mean(levels_db[a:b])) for a, b in zip(starts, ends)]
     roles = assign_roles(groups, seg_l, [b - a for a, b in zip(starts, ends)])

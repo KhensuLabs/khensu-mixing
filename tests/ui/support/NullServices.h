@@ -116,6 +116,10 @@ class NullPlayback : public IPlayback {
     {
         return {};
     }
+    AbLevelOffset abLevelOffset() const override
+    {
+        return {};
+    }
     void primeAbLoudness(const juce::StringArray& paths, std::function<void(bool allKnown)> onDone) override
     {
         juce::ignoreUnused(paths, onDone);
@@ -139,6 +143,10 @@ class NullPlayback : public IPlayback {
     void removeRealTimeMeterListener(void* key) override
     {
         juce::ignoreUnused(key);
+    }
+    PlaybackMeterTap* meterTap() noexcept override
+    {
+        return nullptr;
     }
 };
 
@@ -447,6 +455,18 @@ class NullAnalysisHub : public IAnalysisHub {
         juce::ignoreUnused(weightProfileId);
         static const ResultDerivedData d{}; return d;
     }
+    void setScoreWeightProfile(const std::string& profileId) override
+    {
+        juce::ignoreUnused(profileId);
+    }
+    std::string scoreWeightProfile() const override
+    {
+        return {};
+    }
+    DeepPassState deepPassState() const override
+    {
+        return {};
+    }
     void setStemMaskingResult(const MaskingSummary& masking) override
     {
         juce::ignoreUnused(masking);
@@ -536,6 +556,10 @@ class NullAnalysisHub : public IAnalysisHub {
     const GenreDatabase& genreDatabase() const noexcept override
     {
         static const GenreDatabase g; return g;
+    }
+    const GenreSpread& genreSpread() const noexcept override
+    {
+        static const GenreSpread v{}; return v;
     }
     const SystemBrainDatabase& systemBrainDatabase() const noexcept override
     {
@@ -765,6 +789,10 @@ class NullShell : public IShell {
     void fixTopIssue() override
     {
     }
+    void showIssue(const std::string& key) override
+    {
+        juce::ignoreUnused(key);
+    }
     ReportMode getReportMode() const noexcept override
     {
         return ReportMode::EngineerDetail;
@@ -792,6 +820,10 @@ class NullShell : public IShell {
     void showMixMasterCard(int tabIdx) override
     {
         juce::ignoreUnused(tabIdx);
+    }
+    void showMetricExplanation(int gauge) override
+    {
+        juce::ignoreUnused(gauge);
     }
     void showMetricDiff(const juce::String& title, std::vector<MetricDiffTable::Row> rows, const juce::String& labelA, const juce::String& labelB) override
     {
@@ -872,10 +904,18 @@ class NullIssues : public IIssues {
     {
         juce::ignoreUnused(recId, onDone);
     }
+    void fixScaled(const std::string& recId, float amount, Done onDone) override
+    {
+        juce::ignoreUnused(recId, amount, onDone);
+    }
     bool fixTopIssue(Done onDone) override
     {
         juce::ignoreUnused(onDone);
         return false;
+    }
+    void fixInRegion(const std::string& recId, double startSec, double endSec, const juce::String& label, Done onDone) override
+    {
+        juce::ignoreUnused(recId, startSec, endSec, label, onDone);
     }
     bool fixInProgress() const override
     {

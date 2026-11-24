@@ -1,8 +1,10 @@
 // desktop-app/Source/services/IAnalysisHub.h
 #pragma once
+#include <khensu/targets/GenreSpread.h>
 #include <JuceHeader.h>
 #include <functional>
 #include <string>
+#include "DeepPassState.h"
 
 namespace khensu {
 
@@ -45,7 +47,15 @@ class IAnalysisHub {
     /// {scan name: compact result} for the active session (void when empty).
     virtual juce::var scanResults() const = 0;
     /// Recommendations + report + scorecard for the current result (§10.3).
+    /// Empty `weightProfileId`: the chosen score weighting (below).
     virtual const ResultDerivedData& derivedResultData(const std::string& weightProfileId = {}) = 0;
+    /// OVH-1: the score weighting the Dashboard shows and the store saves
+    /// ("" = the session genre's own profile). One choice, so the saved
+    /// readiness is the number on screen.
+    virtual void setScoreWeightProfile(const std::string& profileId) = 0;
+    virtual std::string scoreWeightProfile() const = 0;
+    /// OVH-1: why the current result has or lacks its deep half.
+    virtual DeepPassState deepPassState() const = 0;
     /// Merges an on-demand masking result and republishes.
     virtual void setStemMaskingResult(const MaskingSummary& masking) = 0;
 
@@ -99,6 +109,9 @@ class IAnalysisHub {
 
     // ---- Reference data ----
     virtual const GenreDatabase& genreDatabase() const noexcept = 0;
+    /// VIZ-1: where released tracks of each genre sit (genre_spread.json);
+    /// empty when the file is missing.
+    virtual const GenreSpread& genreSpread() const noexcept = 0;
     virtual const SystemBrainDatabase& systemBrainDatabase() const noexcept = 0;
     virtual FeedbackManager* getFeedbackManager() const noexcept = 0;
 };

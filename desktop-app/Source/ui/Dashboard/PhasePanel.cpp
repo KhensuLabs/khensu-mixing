@@ -64,8 +64,6 @@ void CorrelationStripComponent::paint(juce::Graphics& g)
 void PhasePanel::applyThemeColours()
 {
     harshnessPeakLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
-    findCulpritButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.15f));
-    findCulpritButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
     culpritLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     for (auto* l : {&monoCompatLabel_, &msImbalanceLabel_, &symmetryLabel_})
         l->setColour(juce::Label::textColourId, KhensuTheme::textSecondary);

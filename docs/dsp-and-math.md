@@ -113,7 +113,11 @@ measured in chunks so the memory stays bounded.
 - **Song structure.** Bar-synchronous chroma and timbre (MFCC) features build
   a self-similarity matrix; Foote-novelty peaks give section boundaries;
   repeated sections are grouped (A, B, ...) and labelled intro, verse,
-  pre-chorus, chorus, bridge or outro from repetition and level.
+  pre-chorus, chorus, bridge or outro from repetition and level. A run of
+  four or more segments under 6 bars that alternates between two groups
+  (a 4+4-bar call and response) is folded into one section whose group is
+  the pair, so the same exchange later is the same part - a released song
+  went from 20 sections to 11. A part with no repeat stays "Section N".
 - **Masking.** Per critical band, the energy overlap between separated stems:
   "the 250 Hz mud comes from the bass / vocal overlap".
 - **Partial loudness** (Moore-Glasberg) of one stem in the presence of the
@@ -131,8 +135,78 @@ analyzer. "Where you sit" is your value's percentile in the genre's measured
 distribution. Genre-relative advice runs only after the user confirms the
 genre.
 
+The **integrated-loudness window** is widened from the same corpus
+(`measure_genre_norms.py apply_loudness`): for each genre with 6 or more
+songs, the floor drops to the 10th percentile of its releases' whole-track
+loudness and the ceiling rises to the 90th - only ever widened, and never
+past -16 LUFS at the bottom or -4 LUFS at the top. The window widens because
+a window that calls a genre's typical release too quiet teaches the user to
+ignore the finding (37 of 113 genres' median release sat under its hand-set
+floor). It stops at -16 LUFS because the corpus is Creative Commons
+releases, many self-released and never mastered to commercial loudness (its
+10th percentile reaches -33 LUFS), and under -16 LUFS a master needs
+normalisation gain that players do not reliably give; it stops at -4 LUFS
+because the corpus's loudest decile is clipped lossy decodes. The loudness
+target the Fix aims at is unchanged. On 1,462 released tracks this took
+`lufs_too_quiet` from firing on 38.4% to 20.9% (alarm 7.2% to 5.4%) and
+`lufs_too_loud` from 15.3% to 10.2% (alarm 1.3% to 0.9%), for 106 genres'
+windows; no genre's median release raises an alarm.
+
+The **LRA window** is widened the same way (`apply_dynamics`: floor to the
+10th percentile of the releases' whole-track LRA, never under 1 LU; ceiling
+to the 90th) and the **crest ceiling** is the 90th percentile of their crest
+factor (`apply_crest`). All three count each song once - a song measured
+from its lossless original and its lossy copy contributes the lossless row -
+and each widening starts from the hand-set window, kept in the entry's
+`measured.hand_set` block, so re-applying with new measurements can narrow
+a window an earlier run widened too far.
+
 A playback intent of club, broadcast or headphone replaces the genre's
 loudness window; streaming (the default) keeps it.
+
+**Where released tracks sit (VIZ-1).** Beside the windows, the app draws the
+distribution itself: per genre (6 or more measured tracks, else the whole
+corpus) the 10th / 25th / 50th / 75th / 90th percentile of each 1/6-octave
+band's normalised power (the hero spectrum's own definition, `BandPower.h`:
+band power, least-squares line through 0 dB at 1 kHz), every track's
+loudness, true peak, LRA, crest, width, tilt and centroid (a tile's
+"louder than N %" is the share of released tracks below the value, ties
+counted half), and each readiness category's percentiles. Loudness, true
+peak, LRA and crest come from whole-track measurements (a song's lossless
+copy wins over its lossy one); the rest from the middle 120 s. The track's
+curve is drawn in the diverging colour where it leaves the middle 50 %:
+0 inside, rising to full strength at the edge of the middle 80 %.
+
+**Readiness cap (VIZ-P3).** The weighted score is capped at 64 while any
+non-strength finding is severe (66+) and at 89 while any is moderate (33+),
+so the band never contradicts the findings; the tier text then names the cap
+and the uncapped score.
+
+**Timelines (VIZ-2).** Momentary (400 ms) and short-term (3 s) loudness every
+100 ms with the BS.1770 K-weighting of section 1; true-peak events where the
+4x interpolated peak (section 2's filter) crosses -1 dBTP, checked only
+around samples within 3 dB of it, merged when closer than 50 ms; a 72-band
+log spectrogram (30 Hz - 16 kHz, 2048-point Hann). A version's measured
+difference is its long-term band power (power mean per band) minus the
+original's, and its short-term loudness minus the original's. Changed
+regions, when the engine cannot answer, are where the short-term loudness
+moves by more than 0.5 LU or the spectrum by more than 1.5 dB on average,
+merged across gaps under 0.5 s. The detailed spectrogram (VIZ-S1) is the same
+measurement on a finer grid: 256 log bands, a 4096-point Hann FFT, up to 3000
+frames. A band narrower than two FFT bins (the low end) takes the power
+density at its centre by Gaussian interpolation through the three nearest
+bins (a parabola in log power - a Hann main lobe is close to Gaussian, so a
+tone peaks at its own frequency, not on a bin) times its width in bins.
+Summing power over log bands weights each octave equally, i.e. the display
+is pink-compensated (+3 dB/oct relative to a raw FFT). Colours span the
+song's 99.5th percentile down by the chosen range on the magma map; zoomed
+out, a pixel column is 0.6 x the power mean + 0.4 x the maximum of its frames
+in dB, so short transients survive. The stem masking map is the service's
+definition (per frame, the minimum of the two normalised band profiles, only
+in bands within 20 dB of each other and above -80 dB, only where both play).
+An album's tonal fingerprint is each track's long-term band shape (its own
+mean removed) minus the album's mean shape. Stereo width per octave is
+2 S^2 / (M^2 + S^2) of that octave's mid and side power.
 
 ## 7. From measurement to finding
 
@@ -166,7 +240,14 @@ catches the defect it names when that defect is injected (sensitivity), and
 how often the app's own Fix clears it. The fire rate is split by severity:
 the **alarm rate** counts only firings at moderate or worse (severity >= 40),
 so a minor note - a quiet master that normalised players still play at
-level - is not counted as an alarm. **Delivery-spec checks** (true peak
+level - is not counted as an alarm. A Fix's **side effects** are the
+findings its render introduced, per finding the share of tried fixes that
+raised each; most come from the render's -1 dBTP output ceiling turning a
+master that peaked over it down as a whole (the *peak guard* share), so the
+louder-than-spec injected defects make quiet masters. The whole benchmark -
+method, every finding, the corpus per genre family and the commands that
+reproduce it - is `resources/calibration/BENCHMARK.md`
+(`scripts/benchmark_report.py`). **Delivery-spec checks** (true peak
 against -1 dBTP) report the share of released tracks that miss the spec
 instead: 82 % of released masters, lossless originals included, peak above
 -1 dBTP, which says how common the miss is, not that the check is wrong.
@@ -276,6 +357,55 @@ headroom the true-peak ceiling leaves.
 
 **Renders stack.** A fix renders from the current version (the accepted
 render, or the original), so fixes build on each other in a render tree.
+
+**The renderer.** The service renders a chain stage by stage
+(`copilot/dsp.py`), then an output stage that only ever attenuates: when the
+4x true peak is over the chain's ceiling (its last Limiter's, else
+-1 dBTP), the whole render is scaled down to it. The stages a fix uses:
+
+| Effect | Processing |
+|---|---|
+| HighpassFilter / LowpassFilter | causal Butterworth, order = slope / 6 (12 dB/oct by default), bilinear with pre-warp |
+| LowShelfFilter / HighShelfFilter / PeakFilter | RBJ biquads (JUCE's, which pedalboard runs): A = 10^(dB/40), Q 0.707 by default; a resonance notch is a peak at Q 6 |
+| Compressor | peak detector per channel, y = x + c (y' - x) with c = exp(-2 pi 1000 / (fs t_ms)), attack when rising, release when falling; gain (env / T)^(1/R - 1) above T, no knee |
+| DeEsser | zero-phase 4th-order Butterworth band f/1.6 .. f x 1.6, 8 ms envelope of the band, the band reduced by (env / T)^(1/R - 1) |
+| Gain | a multiply |
+| Limiter | true-peak ceiling, no makeup: 8x envelope e[n], reduction u = max(0, 20 log10(e / ceiling)), held over a 1.5 ms lookahead, released exponentially (60 ms), averaged over the lookahead (never below u); the output is re-measured and trimmed to 0.05 dB under the ceiling |
+| SpectralDenoise | per channel, 2048-point periodic Hann STFT, hop 512, the signal padded with 2048 zeros before and 2560 after; noise N = each bin's 10th-percentile power over every 4th frame / -ln(0.9); gain max(1 - s N / P, 10^(-reduction/10)) (s = 3, reduction 12 dB by default), smoothed [0.25 0.5 0.25] over bins, released 0.7 per hop when falling; spectrum x sqrt(gain), windowed overlap-add / summed squared window |
+| TransientShaper | linked detector (mean abs over channels); fast follower 1 ms / 10 ms, slow follower attack_ms / release_ms (3 / 200), e = c e + (1 - c) x; t = clip((fast - slow) / max(slow, 1e-6), 0, 1); gain = sustain + (attack - sustain) t |
+| TapeSaturation | per channel at 4x (resample_poly: 81-tap Kaiser(5) FIR, cutoff 1/4): (1 - w) tanh(d x) + w (tanh(d x + 0.25) - tanh(0.25)), a 5 Hz one-pole DC blocker, back to 1x with the same FIR; out = dry (1 - mix) + wet trim mix (drive 6 dB, warmth 0.5, mix 1 by default) |
+| StereoWidener | M = (L + R) / 2, S = (L - R) / 2 x width; L = M + S, R = M - S (mono unchanged) |
+
+The app renders the same chains itself while the service is down (OVH-9,
+`OfflineChainRenderer`): the same designs and laws block by block, the
+de-esser's zero-phase band over 65536-sample chunks with 8192 samples of
+context either side, and the output stage and trim as one gain in a second
+pass. The denoiser needs its noise profile before its first frame, so a
+chain with one decodes the file once more first and runs it through the
+stages in front (a profile pass); the profile keeps every value (exact, as
+numpy) for the first 4096 profiled frames, about 3 minutes at 44.1 kHz, then
+folds them into per-bin 0.05 dB histograms read with interpolation (within
+0.05 dB of the exact percentile), so memory stays bounded on any length.
+The saturator streams its two FIRs with about 20 samples of look-ahead.
+Rendering the parity fixtures both ways agrees within 0.05 LU integrated,
+0.1 dB true peak and 0.1 dB per octave band, and the denoiser's hiss
+reduction (the octave bands above 4 kHz of a hissy signal) within 0.1 dB
+(FN2-2a).
+
+**In the plugin (OVH-8)** a fix is applied live to the Copilot's own chain
+instead of rendered: `RecommendationDspMapper` puts each key on a parameter
+(shelves on a real shelf band, a notch on a free band, gain keys relative to
+the value before the fix) and scales it by **Amount** with the desktop's
+rule ("_db" keys that are not thresholds x amount, ratio and width from 1).
+Its de-esser is split-band and zero-latency: high = x - LP(x) with a
+2nd-order Butterworth low-pass at f, the linked peak envelope of the high
+band (0.8 ms attack, 60 ms release) above the threshold asks for
+(level - T)(1 - 1/4) dB, capped at the range, and the output is
+LP + g x high - the input exactly while g = 1. Its meters: true peak is the
+shared 4x interpolator (MEAS-5) evaluated around samples within 6 dB of the
+block's sample peak; integrated loudness keeps every gated 400 ms block in a
+0.1 LU histogram (counts and energy sums) and applies the -70 LUFS and -10 LU
+gates over it, so nothing grows while the host plays.
 
 ## 9. Safety gates
 

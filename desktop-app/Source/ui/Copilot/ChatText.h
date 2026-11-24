@@ -28,7 +28,11 @@ inline juce::String errorReply(const ipc::BridgeError& err)
     }
     const int status = err.http_status;
     juce::String text;
-    if (status == 401 || status == 403)
+    // RUN-12: say which gate stopped it - the network switch or the key.
+    if (status == 403 && (detail.containsIgnoreCase("online") || detail.containsIgnoreCase("disabled")))
+        text = TRANS("Online features are off in Settings, so the cloud provider can't be reached (HTTP %s). "
+                     "Turn them on, or choose the local model in Settings > AI providers to chat offline.");
+    else if (status == 401 || status == 403)
         text = TRANS("The copilot request was refused (HTTP %s). Check the provider's API key and that "
                      "online features are enabled in Settings.");
     else if (status == 413 || status == 422)

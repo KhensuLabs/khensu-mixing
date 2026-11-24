@@ -82,6 +82,25 @@ intra-op thread cap is applied where torch is first used
 loads at start-up or the import (best of three fresh interpreters) exceeds
 the budget.
 
+**numba's kernel cache.** librosa compiles some kernels with numba, whose
+cache defaults to a folder beside librosa in site-packages - the installed
+runtime's folder, which the user often cannot write (every launch then
+recompiles), and a cache several processes write at once can be left with
+variants that crash the process on load. `launch_service.py` sets
+`NUMBA_CACHE_DIR` to `<config dir>/cache/numba` before anything imports
+numba (`apply_numba_cache_env`; a value already set wins), and the
+basic-pitch worker caches in its own `basic-pitch` subfolder of it. The test
+suite gives each pytest process its own folder (`tests/conftest.py`).
+
+**The listening socket survives a client that left (Windows).** asyncio's
+proactor loop closes the listening socket on any accept error, and a client
+that gives up before its accept completes (a timed-out health probe against
+a busy engine) causes one: the process lived on with no listener and every
+request failed until the desktop restarted it. `launch_service.py` calls
+`common/win_accept.harden_proactor_accept()` before Uvicorn starts, which
+re-arms the accept for those errors (ERROR_NETNAME_DELETED, resets, aborts)
+and keeps asyncio's behaviour for any other.
+
 ## Status codes
 
 `common/errors.py` defines one status code per failure *kind*, so the desktop

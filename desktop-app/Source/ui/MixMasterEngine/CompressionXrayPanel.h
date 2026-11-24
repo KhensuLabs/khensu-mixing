@@ -4,6 +4,7 @@
 // what the dynamics chain actually did over time, not what its knobs say.
 // THREAD_CONTEXT(UIThread)
 #pragma once
+#include "../shared/HoverCells.h"
 #include <JuceHeader.h>
 #include "../shared/KhensuTheme.h" // ThemeListener
 #include "../shared/PanelCard.h"
@@ -14,8 +15,11 @@ namespace khensu {
 
 class IAppController;
 
-class CompressionXrayPanel final : public PanelCard {
+class CompressionXrayPanel final : public PanelCard, public juce::SettableTooltipClient {
   public:
+    /// VIZ-U3: the readout under the pointer.
+    void mouseMove(const juce::MouseEvent& e) override { hover_.update(*this, e.position); }
+    void mouseExit(const juce::MouseEvent&) override { setTooltip({}); }
     explicit CompressionXrayPanel(IAppController& c);
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -51,6 +55,7 @@ class CompressionXrayPanel final : public PanelCard {
         repaint();
     }};
 
+    mutable HoverCells hover_; ///< VIZ-U3, filled in paint()
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompressionXrayPanel)
 };
 

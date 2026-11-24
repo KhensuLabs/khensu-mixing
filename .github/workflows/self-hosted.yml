@@ -1,0 +1,112 @@
+# OVH-3: verify on every push with the owner's own Windows PC as the runner.
+#
+# Hosted Actions on the private repository have been blocked by a billing
+# hold since 2026-07-24; the public repository's hosted CI (ci.yml) still
+# runs. This job runs scripts/verify_all.ps1 on a self-hosted runner
+# registered to the PRIVATE repository only:
+#
+#   * the job is guarded by `github.repository`, so the public snapshot
+#     (KhensuLabs/khensu-mixing, where anyone can open a pull request) never
+#     schedules work onto a machine in someone's home;
+#   * the runner carries the `khensu-local` label and is registered to the
+#     private repository, so no other repository can reach it.
+#
+# State that makes runs incremental lives outside the checkout, under
+# D:\khensu-ci (build tree, FetchContent cache, Python venv, logs), and the
+# builds take the same Global\KhensuBuildLock mutex as everything else on the
+# machine, so a CI build never collides with a local one.
+#
+# Push and pull request: the fast gates, the Release build, the three Catch2
+# suites and the full pytest suite. Nightly and on demand: every verify_all
+# step except installer-upgrade (it installs into the real per-user app
+# location) and asan (hours).
+#
+# Setup / removal: scripts/setup_self_hosted_runner.ps1.
+name: Self-hosted verify
+
+on:
+  push:
+    branches: [main, "work/**"]
+  pull_request:
+  schedule:
+    - cron: "0 8 * * *"   # 03:00 / 04:00 US Eastern
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Run every verify_all step (as nightly)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: self-hosted-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.repository == 'KhensuLabs/Khensunian-Mixing'
+    runs-on: [self-hosted, windows, khensu-local]
+    timeout-minutes: 720
+    env:
+      CI_ROOT: D:\khensu-ci
+      FETCHCONTENT_BASE_DIR: D:\khensu-ci\fetchcontent
+      PYTHONUTF8: "1"
+      # The runner shares the PC with the owner's own work and runs pytest
+      # four-wide: the import-time gate measured 1.96 s there (1.5 s budget,
+      # well under it alone). Same allowance as the hosted Nightly job; the
+      # local gate (no variable) stays at 1.5 s.
+      KHENSU_IMPORT_BUDGET_SEC: "2.5"
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          clean: true
+
+      - name: Python environment (cached outside the checkout)
+        run: |
+          $venv = Join-Path $env:CI_ROOT "venv"
+          $stamp = Join-Path $venv "khensu-lock.sha256"
+          $lockHash = (Get-FileHash local-services/uv.lock -Algorithm SHA256).Hash +
+                      (Get-FileHash local-services/pyproject.toml -Algorithm SHA256).Hash
+          if (-not (Test-Path "$venv\Scripts\python.exe")) { py -3.11 -m venv $venv }
+          if (-not (Test-Path $stamp) -or (Get-Content $stamp -Raw).Trim() -ne $lockHash) {
+            & "$venv\Scripts\python.exe" -m pip install --upgrade pip
+            & "$venv\Scripts\python.exe" -m pip install --require-hashes -r local-services/requirements-hashed.txt
+            if ($LASTEXITCODE -ne 0) { throw "pip install (hashed) failed" }
+            Set-Content -Path $stamp -Value $lockHash
+          }
+          Push-Location local-services
+          & "$venv\Scripts\python.exe" -m pip install --no-deps -e .
+          & "$venv\Scripts\python.exe" -m pip install "pytest>=8.1.0" "pytest-asyncio>=0.23.0" "pytest-timeout>=2.3.1" "pytest-xdist>=3.6.1" "ruff>=0.15.0"
+          if ($LASTEXITCODE -ne 0) { throw "pip install (dev tools) failed" }
+          Pop-Location
+          # verify_all looks for local-services\.venv: point it at the cached venv.
+          if (Test-Path local-services\.venv) { Remove-Item local-services\.venv -Recurse -Force }
+          New-Item -ItemType Junction -Path local-services\.venv -Target $venv | Out-Null
+
+      - name: Configure (incremental build tree)
+        run: |
+          $build = Join-Path $env:CI_ROOT "build"
+          if (-not (Test-Path (Join-Path $build "CMakeCache.txt"))) {
+            cmake -S . -B $build -G "Visual Studio 17 2022" -A x64
+            if ($LASTEXITCODE -ne 0) { throw "configure failed" }
+          }
+
+      - name: verify_all
+        run: |
+          $full = "${{ github.event_name }}" -eq "schedule" -or "${{ inputs.full }}" -eq "true"
+          $logs = Join-Path $env:CI_ROOT "logs\${{ github.run_id }}"
+          $common = @("-BuildDir", (Join-Path $env:CI_ROOT "build"),
+                      "-DebugBuildDir", (Join-Path $env:CI_ROOT "build-debug"),
+                      "-Parallel", "2", "-LogDir", $logs)
+          if ($full) {
+            pwsh -NoProfile -File scripts/verify_all.ps1 @common -Skip installer-upgrade,asan
+          } else {
+            pwsh -NoProfile -File scripts/verify_all.ps1 @common -Only doc-drift,i18n,ruff,cpp-build,cpp-tests,pytest
+          }
+          if ($LASTEXITCODE -ne 0) { throw "verify_all failed - logs in $logs" }

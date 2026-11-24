@@ -84,6 +84,10 @@ class ArtifactRecommender {
             // takes up to kDenoiseReductionDb out of it; the advice above
             // (treat the noisy stem) still stands.
             r.suggested_parameters["denoise_reduction_db"] = kDenoiseReductionDb;
+            // RUN-6: on a dense master the "floor" learnt from the quietest
+            // frames is partly music - a run on a released song lost 1.7 dB
+            // of loudness and up to 6 dB at 100-500 Hz. Fix it on purpose,
+            // listening; Fix top issue passes it by (IIssues::Issue::topFixCandidate).
             out.push_back(std::move(r));
         }
 

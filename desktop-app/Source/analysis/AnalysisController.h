@@ -8,6 +8,7 @@
 #include <khensu/analysis/ChordAnalysis.h>
 #include <khensu/analysis/SectionAnalysis.h>
 #include "DeepAnalysisJobRunner.h"
+#include "ServiceReadyWait.h"
 #include <functional>
 #include <atomic>
 #include <memory>
@@ -25,6 +26,10 @@ class FeedbackManager;
 struct AnalysisServiceCalls {
     using Error = ipc::BridgeError;
     std::function<bool()> available;
+    /// FN2-2b: true when the engine is known not to be there yet (the
+    /// lifecycle says Starting or Down): the deep pass does not wait for it
+    /// (service_ready::engineKnownNotReady). Empty = never known; wait.
+    std::function<bool()> knownNotReady;
     std::function<DeepAnalysisJobResult(const std::string& path, const DeepAnalysisJobHooks& hooks)> deep;
     std::function<Result<SectionAnalysis, Error>(const std::string& path)> sections;
     std::function<Result<AnalysisResult::DrumData, Error>(const std::string& path)> drums;
@@ -37,12 +42,13 @@ struct AnalysisServiceCalls {
     bool scansWithDeep = false;
 
     /// The local Python service, through HttpServiceBridge.
-    static AnalysisServiceCalls localService();
+    /// `engine`: the lifecycle's verdict (OVH-1); null = probe /health.
+    static AnalysisServiceCalls localService(std::shared_ptr<const service_ready::EngineGate> engine = nullptr);
     /// The fix check (FEAT-1): only what a finding is built from. The deep
     /// job leaves out the extras no finding reads (AnalysisMode::FixCheck),
     /// chords and the reference deltas are not asked for, and the other
     /// scans run alongside the deep job (docs/2026-11-14-fix-check-cost.md).
-    static AnalysisServiceCalls fixCheck();
+    static AnalysisServiceCalls fixCheck(std::shared_ptr<const service_ready::EngineGate> engine = nullptr);
 };
 
 // THREAD_CONTEXT(UIThread for public API; runs work on an internal ThreadPool)
@@ -58,8 +64,11 @@ class AnalysisController {
     /// `forceRerun` bypasses the same-session/unmodified-file result cache so a
     /// stale C++-only result (analyzed while the Python service was down) can be
     /// re-run once the service recovers, instead of re-delivering the cached one.
+    /// `keepCurrentResult` (FN2-2b, an in-place re-run): the current result
+    /// stays readable through currentResult() until this run's final result
+    /// replaces it, instead of being forgotten when the run starts.
     void analyzeSession(const Session& session, ResultCallback onUpdate, ProgressCallback onProgress = nullptr,
-                        bool forceRerun = false);
+                        bool forceRerun = false, bool keepCurrentResult = false);
     void cancel();
 
     /// PERF-3: the stored native pass of `file`, when it can stand in for

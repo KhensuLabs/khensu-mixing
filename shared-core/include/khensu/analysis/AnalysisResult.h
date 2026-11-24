@@ -117,6 +117,9 @@ struct AnalysisResult {
         float crest_factor_db = 0.0f;
         float dynamic_range_db = 0.0f; // EBU DR value
         float peak_to_rms_db = 0.0f;
+        /// VIZ-P6: false when the file is too short (< 10 s of 100 ms blocks)
+        /// for a P95 - P10 spread to mean anything; the value is then shown "-".
+        bool dynamic_range_measured = true;
     } dynamics;
 
     // --- Stereo ---

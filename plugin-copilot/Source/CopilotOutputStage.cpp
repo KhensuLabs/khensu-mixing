@@ -188,6 +188,14 @@ void CopilotOutputStage::process(juce::AudioBuffer<float>& buffer, bool globalBy
 
     brickwall_.process(buffer.getArrayOfWritePointers(), channels, numSamples, ceiling, limiterEnabled,
                        detectorReady ? detectorPeak_.data() : nullptr);
+    {
+        // VIZ-6b: the limiter's reduction at the end of the block (its gain
+        // moves smoothly, so the block's last gain is its depth to within the
+        // release - good enough for a meter).
+        const float gain = limiterEnabled ? brickwall_.currentGain() : 1.0f;
+        limiterReductionDb_.store(gain > 1e-6f ? juce::jmax(0.0f, -20.0f * std::log10(gain)) : 60.0f,
+                                  std::memory_order_relaxed);
+    }
 
     // The processor splits host blocks to the prepared size, so this only
     // trips for a caller that skipped prepareToPlay.

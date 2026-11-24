@@ -24,6 +24,8 @@ set(KHENSU_COPILOT_SOURCES
     Source/CopilotAnalysisController.cpp
     Source/CopilotCorrectiveDsp.cpp
     Source/CopilotOutputStage.cpp
+    Source/CopilotPresets.cpp  # UI-9
+    Source/CopilotUndoHistory.cpp  # UX2-6b
     Source/CopilotRealtimeTelemetry.cpp
     Source/CopilotServiceJobs.cpp
     Source/CopilotTransportController.cpp
@@ -46,6 +48,8 @@ set(KHENSU_COPILOT_SOURCES
     Source/ui/HostedChainMiniPanel.cpp
     Source/ui/MixHubPanel.cpp
     Source/ui/IssueTimelinePanel.cpp
+    Source/ui/PresetBar.cpp  # UI-9
+    Source/ui/TopFixControl.cpp  # OVH-8
     Source/mixhub/MixHub.cpp
     Source/mixhub/MixHubAnalysis.cpp
     Source/timeline/IssueTimeline.cpp
@@ -104,7 +108,7 @@ endfunction()
 
 juce_add_plugin(KhensuCopilot
     PRODUCT_NAME        "Khensu Copilot"
-    VERSION             "1.0.2"
+    VERSION             "1.0.4"
     BUNDLE_ID           "com.khensu.mixing.copilot"
     COMPANY_NAME        "Khensu"
     PLUGIN_MANUFACTURER_CODE KhMx
@@ -134,7 +138,7 @@ endif()
 if(KHENSU_ARA_AVAILABLE)
     juce_add_plugin(KhensuCopilotARA
         PRODUCT_NAME        "Khensu Copilot ARA"
-        VERSION             "1.0.2"
+        VERSION             "1.0.4"
         BUNDLE_ID           "com.khensu.mixing.copilot.ara"
         COMPANY_NAME        "Khensu"
         PLUGIN_MANUFACTURER_CODE KhMx

@@ -1,5 +1,8 @@
 // desktop-app/Source/ui/MixMasterEngine/RenderTreePanel.cpp
 #include "RenderTreePanel.h"
+#include "../shared/FixDifferenceView.h"
+#include "../shared/PanelRunState.h"
+#include "../shared/TimelineCache.h"
 #include "../shared/PanelRunState.h"
 #include "../../IAppController.h"
 #include "../shared/KhensuTheme.h"
@@ -48,8 +51,69 @@ juce::String RenderTreePanel::sessionId() const
     return s != nullptr ? juce::String(s->id) : juce::String();
 }
 
+void RenderTreePanel::requestDiff(const juce::String& path)
+{
+    if (path.isEmpty() || diffByPath_.count(path) != 0 || diffPending_.count(path) != 0) return;
+    const auto original = controller_.activeSourcePath();
+    if (original.isEmpty() || original == path) return;
+    diffPending_.insert(path);
+    fetchQuietly(
+        *this, controller_,
+        [original, path] {
+            const auto a = timeline_cache::measure(original);
+            const auto b = timeline_cache::measure(path);
+            return a != nullptr && b != nullptr ? fix_difference::compute(*a, *b).spectrumDb : std::vector<double>{};
+        },
+        [path](RenderTreePanel& self, std::vector<double> diff) {
+            self.diffByPath_[path] = std::move(diff);
+            self.repaint();
+        },
+        [path](RenderTreePanel& self) { self.diffPending_.erase(path); }, true);
+}
+
+void RenderTreePanel::paintDiff(juce::Graphics& g, juce::Rectangle<float> r, const std::vector<double>& diffDb) const
+{
+    g.setColour(KhensuTheme::bgVoid.withAlpha(0.45f));
+    g.fillRoundedRectangle(r, 2.0f);
+    if (diffDb.size() < 2) return;
+    double range = 3.0;
+    for (const double d : diffDb)
+        range = std::max(range, std::abs(d));
+    const float mid = r.getCentreY(), half = r.getHeight() * 0.5f - 1.0f;
+    const float w = r.getWidth() / static_cast<float>(diffDb.size());
+    for (size_t i = 0; i < diffDb.size(); ++i) {
+        const float v = static_cast<float>(diffDb[i] / range);
+        g.setColour(KhensuTheme::vizDiverging(v));
+        const float x = r.getX() + w * static_cast<float>(i);
+        g.fillRect(juce::Rectangle<float>(x, std::min(mid, mid - v * half), std::max(1.0f, w), std::abs(v) * half + 0.5f));
+    }
+    g.setColour(KhensuTheme::vizAxis);
+    g.drawHorizontalLine(juce::roundToInt(mid), r.getX(), r.getRight());
+}
+
+void RenderTreePanel::mouseMove(const juce::MouseEvent& e)
+{
+    // VIZ-U3: the sparkline under the pointer, read out.
+    const auto& tree = controller_.renders().renderTree();
+    for (const auto& nl : layout_) {
+        if (nl.index < 0) continue;
+        const auto spark = juce::Rectangle<float>(static_cast<float>(getWidth() - 132), nl.dot.getCentreY() - 9.0f, 120.0f, 18.0f);
+        if (!spark.contains(e.position)) continue;
+        const auto it = diffByPath_.find(tree[(size_t)nl.index].path);
+        if (it == diffByPath_.end() || it->second.empty()) break;
+        const auto& d = it->second;
+        const auto hi = std::max_element(d.begin(), d.end()), lo = std::min_element(d.begin(), d.end());
+        setTooltip(TRANS("Against the original: most added") + " " + juce::String(*hi, 1) + " dB, " + TRANS("most removed") +
+                   " " + juce::String(*lo, 1) + " dB " + TRANS("(red added, blue removed, 30 Hz - 16 kHz)"));
+        return;
+    }
+    setTooltip({});
+}
+
 void RenderTreePanel::resetForSession()
 {
+    diffByPath_.clear();
+    diffPending_.clear();
     versionsByPath_.clear();
     branches_.clear();
     activeBranch_.clear();
@@ -273,8 +337,22 @@ void RenderTreePanel::paint(juce::Graphics& g)
         g.drawText(name, textX, textY, nameW, 16, juce::Justification::centredLeft, true);
         if (extra.isNotEmpty()) {
             g.setColour(KhensuTheme::accentBlue);
-            g.drawText(extra, textX + nameW, textY, getWidth() - textX - nameW - 8, 16,
+            g.drawText(extra, textX + nameW, textY, getWidth() - textX - nameW - 140, 16,
                        juce::Justification::centredLeft, true);
+        }
+        // VIZ-N4: what this version changed against the original.
+        if (nl.index >= 0 && getWidth() > 360) {
+            const auto spark = juce::Rectangle<float>(static_cast<float>(getWidth() - 132), nl.dot.getCentreY() - 9.0f, 120.0f, 18.0f);
+            if (const auto it = diffByPath_.find(path); it != diffByPath_.end())
+                paintDiff(g, spark, it->second);
+            else {
+                g.setColour(KhensuTheme::bgVoid.withAlpha(0.3f));
+                g.fillRoundedRectangle(spark, 2.0f);
+                juce::Component::SafePointer<RenderTreePanel> self(this);
+                juce::MessageManager::callAsync([self, path] { // paint() stays pure
+                    if (self != nullptr) self->requestDiff(path);
+                });
+            }
         }
     }
 }
