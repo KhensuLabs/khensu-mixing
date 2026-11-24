@@ -344,14 +344,17 @@ juce::Colour HeroSpectrumView::colourFor(const Finding& f) const
     return KhensuTheme::accentBlue;
 }
 
-juce::Path HeroSpectrumView::curvePath(juce::Rectangle<float> plot, const std::vector<float>& offsets,
+juce::Path HeroSpectrumView::curvePath(juce::Rectangle<float> plot, const std::vector<float>* offsets,
                                        float amount) const
 {
     juce::Path path;
     const auto& pts = model_.spectrum;
+    auto offsetAt = [offsets, amount](size_t j) {
+        return offsets != nullptr && j < offsets->size() ? (*offsets)[j] * amount : 0.0f;
+    };
     bool first = true;
     for (size_t i = 0; i < pts.size(); ++i) {
-        const float off = i < offsets.size() ? offsets[i] * amount : 0.0f;
+        const float off = offsetAt(i);
         const float x = xForHz(pts[i].hz);
         const float y = yForDb(pts[i].db + off);
         if (first) {
@@ -361,13 +364,13 @@ juce::Path HeroSpectrumView::curvePath(juce::Rectangle<float> plot, const std::v
             // A gentle quadratic through midpoints keeps the 1/6-octave
             // steps from reading as a polyline.
             const float px = xForHz(pts[i - 1].hz);
-            const float poff = (i - 1) < offsets.size() ? offsets[i - 1] * amount : 0.0f;
+            const float poff = offsetAt(i - 1);
             const float py = yForDb(pts[i - 1].db + poff);
             path.quadraticTo(px, py, (px + x) * 0.5f, (py + y) * 0.5f);
         }
     }
     if (!pts.empty()) {
-        const float off = offsets.size() == pts.size() ? offsets.back() * amount : 0.0f;
+        const float off = offsets != nullptr && offsets->size() == pts.size() ? offsetAt(pts.size() - 1) : 0.0f;
         path.lineTo(xForHz(pts.back().hz), yForDb(pts.back().db + off));
     }
     juce::ignoreUnused(plot);
@@ -541,7 +544,7 @@ void HeroSpectrumView::paintSpectrum(juce::Graphics& g, juce::Rectangle<float> p
         after[i] = shownAfter(i);
         anyAfter = anyAfter || std::abs(after[i]) > 0.05f || (i < afterTo_.size() && std::abs(afterTo_[i]) > 0.05f);
     }
-    const auto main = curvePath(plot, after, 1.0f);
+    const auto main = curvePath(plot, &after, 1.0f);
 
     // The fill under the curve (a whisper of the curve's colour).
     juce::Path fill(main);
@@ -554,7 +557,7 @@ void HeroSpectrumView::paintSpectrum(juce::Graphics& g, juce::Rectangle<float> p
     g.fillPath(fill);
 
     if (anyAfter) { // the original, as a ghost under the current version
-        const auto original = curvePath(plot, {}, 0.0f);
+        const auto original = curvePath(plot, nullptr, 0.0f);
         juce::Path dashed;
         const float dashes[] = {3.0f, 3.0f};
         juce::PathStrokeType(1.2f).createDashedStroke(dashed, original, dashes, 2);
@@ -583,7 +586,7 @@ void HeroSpectrumView::paintSpectrum(juce::Graphics& g, juce::Rectangle<float> p
         std::vector<float> combined(after);
         for (size_t i = 0; i < combined.size() && i < preview_.size(); ++i)
             combined[i] += preview_[i];
-        const auto pv = curvePath(plot, combined, 1.0f);
+        const auto pv = curvePath(plot, &combined, 1.0f);
         juce::Path dashed;
         const float dashes[] = {5.0f, 3.0f};
         juce::PathStrokeType(1.6f).createDashedStroke(dashed, pv, dashes, 2);

@@ -29,6 +29,7 @@
 #   KHENSU_ARCHS                architectures              (default: "arm64;x86_64")
 #   KHENSU_DEPLOYMENT_TARGET    minimum macOS              (default: 11.0)
 #   KHENSU_JOBS                 build parallelism          (default: 4)
+#   KHENSU_BUILD_TESTS          also configure the tests   (default: OFF)
 #   KHENSU_PYTHON_RUNTIME_DIR   a relocatable universal2 Python install (e.g.
 #                               python-build-standalone) to stage as
 #                               local-services/runtime. Without it the app
@@ -73,7 +74,7 @@ if [[ "${KHENSU_SKIP_BUILD:-0}" != "1" ]]; then
     cmake -S "$ROOT" -B "$BUILD_DIR" -G Xcode \
         -DCMAKE_OSX_ARCHITECTURES="$ARCHS" \
         -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOY" \
-        -DKHENSU_BUILD_TESTS=OFF \
+        -DKHENSU_BUILD_TESTS="${KHENSU_BUILD_TESTS:-OFF}" \
         -DFETCHCONTENT_BASE_DIR="${FETCHCONTENT_BASE_DIR:-$ROOT/.fetchcontent}"
 
     log "Build app + plug-ins"

@@ -171,6 +171,8 @@ jobs:
         env:
           FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.fetchcontent
           KHENSU_JOBS: "3"
+          # the next step builds and runs the core tests in this build tree
+          KHENSU_BUILD_TESTS: "ON"
           KHENSU_CODESIGN_IDENTITY: ${{ secrets.KHENSU_MACOS_CODESIGN_IDENTITY }}
           KHENSU_APPLE_ID: ${{ secrets.KHENSU_APPLE_ID }}
           KHENSU_TEAM_ID: ${{ secrets.KHENSU_APPLE_TEAM_ID }}

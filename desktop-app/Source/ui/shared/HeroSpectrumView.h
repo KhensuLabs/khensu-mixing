@@ -99,7 +99,8 @@ class HeroSpectrumView final : public juce::Component, public juce::SettableTool
     void paintHeader(juce::Graphics& g) const;
     void paintHover(juce::Graphics& g) const;
     juce::Colour colourFor(const hero_spectrum::Finding& f) const;
-    juce::Path curvePath(juce::Rectangle<float> plot, const std::vector<float>& offsets, float amount) const;
+    /// offsets: dB per spectrum point, scaled by amount; nullptr draws the original curve.
+    juce::Path curvePath(juce::Rectangle<float> plot, const std::vector<float>* offsets, float amount) const;
 
     hero_spectrum::Model model_;
     std::vector<float> afterFrom_, afterTo_;
