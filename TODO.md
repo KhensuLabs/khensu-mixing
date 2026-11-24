@@ -361,3 +361,11 @@ Open:
       Suggest never re-checked for stems after the separation (it now listens
       for it); Mapping Report needs a generated chain (tooltip says so;
       `--exercise-all` presses Generate Chain first).
+- [x] RUN-16 The vectorscope looked empty in the capture: it draws on
+      vblank, and the capture switched screens without a frame between. The
+      run shows Mix / Master while the song plays; the trace now shows.
+- [x] RUN-17 Release 1.0.4 (app + plugin): private main 74940a83, public
+      snapshot with this README / TODO, GitHub release v1.0.4
+      (khensu-setup-1.0.4.exe, unsigned, installer smoke test passed).
+Verified: a third `--exercise-all` run - all 32 features ran, the engine
+never dropped out, 11 sections, 132 words, exit 0.
