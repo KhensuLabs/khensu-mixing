@@ -342,6 +342,7 @@ def report() -> dict:
                      "peak_guard_share": round(pk / n_, 4)}
                     for nc, (n_, pk) in sorted(side.get(c, {}).items(), key=lambda kv: (-kv[1][0], kv[0]))]
     _add_full(out)
+    _add_masking(out)
     EVIDENCE_OUT.parent.mkdir(parents=True, exist_ok=True)
     EVIDENCE_OUT.write_text(json.dumps(out, indent=1) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {EVIDENCE_OUT.relative_to(ROOT)}: {tracks} tracks")
@@ -582,6 +583,28 @@ def _add_full(out: dict) -> None:
         for c in names:
             out["findings"].setdefault(c, {"false_alarm_rate": 0.0, "fired_on": 0}).setdefault(
                 "detects", []).append({"defect": name, "rate": rate, "tracks": len(pairs)})
+
+
+MASKING_EVAL = ROOT / "bench-results" / "masking_eval.json"
+
+
+def _add_masking(out: dict) -> None:
+    """FULL-4: masking_collision needs separated stems, which the full run
+    does not make, so it read 0 %. scripts/eval_masking.py separates a
+    subset with Demucs and scores it with the per-pair bars the finding
+    uses; that rate replaces the full run's."""
+    if not MASKING_EVAL.is_file():
+        return
+    m = json.loads(MASKING_EVAL.read_text(encoding="utf-8"))
+    rows = [r for r in m.get("rows", []) if "fires_per_pair" in r]
+    if not rows:
+        return
+    fired = sum(1 for r in rows if r["fires_per_pair"])
+    e = out["findings"].setdefault("masking_collision", {})
+    e.update({"false_alarm_rate": round(fired / len(rows), 4), "fired_on": fired,
+              # every bar is >= 0.5 and severity is the score x 100, so each
+              # firing is an alarm (severity >= ALARM_SEVERITY)
+              "alarm_rate": round(fired / len(rows), 4), "tracks": len(rows), "source": "masking_eval"})
 
 
 # --- Dynamics and artifact findings (MEAS-4 tuning) -------------------------

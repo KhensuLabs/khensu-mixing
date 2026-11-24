@@ -119,7 +119,16 @@ measured in chunks so the memory stays bounded.
   the pair, so the same exchange later is the same part - a released song
   went from 20 sections to 11. A part with no repeat stays "Section N".
 - **Masking.** Per critical band, the energy overlap between separated stems:
-  "the 250 Hz mud comes from the bass / vocal overlap".
+  "the 250 Hz mud comes from the bass / vocal overlap". The finding holds
+  each stem pair to its own bar, because some pairs share their range in
+  nearly every mix: one 0.5 bar fired on 48 % of 150 released tracks
+  (drums + bass on 25 %, vocals + other on 21 %). Each pair's bar is its
+  99.17th percentile on those tracks (a 5 % budget split over the six
+  pairs, rounded up, never below 0.5): drums + bass 0.90, vocals + other
+  0.73, bass + other 0.67, drums + other 0.60, vocals + drums 0.51,
+  vocals + bass 0.50 (`MaskingRecommender::fireThreshold`,
+  `scripts/eval_masking.py`). It now fires on 4 % of them; a pair the run
+  has not measured (guitar, piano) keeps 0.5.
 - **Partial loudness** (Moore-Glasberg) of one stem in the presence of the
   others turns "the vocal is buried" into a number.
 - **Mood and energy** on Russell's circumplex (valence / arousal) from

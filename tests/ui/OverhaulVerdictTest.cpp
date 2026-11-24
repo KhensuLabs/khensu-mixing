@@ -74,7 +74,7 @@ TEST_CASE("The verdict counts the list the score was built from (OVH-1)", "[ovh1
     CHECK(c.issues() == 4);
 }
 
-TEST_CASE("\"Start here\" names the issue Fix top issue fixes (OVH-1)", "[ovh1][verdict]")
+TEST_CASE("Start here names the issue Fix top issue fixes (OVH-1)", "[ovh1][verdict]")
 {
     // The queue lists the most severe first; the first one cannot be rendered,
     // so Fix top issue fixes the second - and that is what the card names.

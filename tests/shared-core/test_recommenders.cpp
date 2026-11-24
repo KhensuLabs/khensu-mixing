@@ -632,6 +632,32 @@ TEST_CASE("MaskingRecommender scales the cut depth with collision severity", "[m
     CHECK(severeCut < mildCut); // more collision -> deeper cut
 }
 
+TEST_CASE("MaskingRecommender holds each stem pair to its own bar (FULL-4)", "[masking]")
+{
+    auto withPair = [](const char* a, const char* b, float score) {
+        AnalysisResult r = makeResult();
+        MaskingSummary m;
+        m.bands_hz = {60.0f, 120.0f};
+        MaskingPairSummary pair;
+        pair.stem_a = a;
+        pair.stem_b = b;
+        pair.collision_score = score;
+        pair.band_scores = {score};
+        m.pairs.push_back(pair);
+        r.masking = m;
+        return MaskingRecommender{}.recommend(r, {}, {}).size();
+    };
+    // Kick and bass overlap in most released music: 0.8 is ordinary there.
+    CHECK(withPair("drums", "bass", 0.80f) == 0);
+    CHECK(withPair("drums", "bass", 0.92f) == 1);
+    CHECK(withPair("bass", "drums", 0.92f) == 1); // either order
+    CHECK(withPair("vocals", "other", 0.70f) == 0);
+    CHECK(withPair("vocals", "other", 0.75f) == 1);
+    // A pair the corpus has not measured keeps the general bar.
+    CHECK(withPair("vocals", "guitar", 0.55f) == 1);
+    CHECK(MaskingRecommender::fireThreshold("vocals", "bass") >= MaskingRecommender::kModerateThreshold);
+}
+
 // -- Audit 2026-10-15 regressions ------------------------------------------
 
 #include <khensu/recommendations/MixScorecard.h>

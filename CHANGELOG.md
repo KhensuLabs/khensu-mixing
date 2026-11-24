@@ -3,6 +3,13 @@
 Notable changes, newest first. The service API version (`SERVICE_VERSION`)
 moves separately.
 
+## Unreleased
+
+- The stem masking finding holds each stem pair to its own bar, measured on
+  150 released tracks: kick and bass, or a vocal and the pads and keys,
+  share their range in nearly every mix, and one bar flagged 48 % of
+  released music. It now flags 4 %.
+
 ## 1.0.4 - 2026-11-24 - visualisation and UX overhaul
 
 - Charts show where released tracks of the genre sit: spread bands on the

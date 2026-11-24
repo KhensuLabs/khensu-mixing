@@ -47,7 +47,9 @@ def _family(gid: str, parents: dict[str, str | None]) -> str:
 
 def _finding_table(code: str, e: dict, ev: dict) -> list[str]:
     tracks = e.get("tracks", ev["tracks"])
-    source = "full pipeline (service)" if e.get("source") == "full" else "native engine"
+    source = {"full": "full pipeline (service)",
+              "masking_eval": "Demucs stems, 60 s excerpts (scripts/eval_masking.py)"}.get(
+        e.get("source"), "native engine")
     kind = "delivery-spec check" if e.get("kind") == "spec" else "finding"
     rows = [
         ("Graded by", f"{source}, {tracks} released tracks"),
@@ -108,6 +110,9 @@ def render() -> str:
         f"width, translation) are graded through the app's `AnalysisController` against the running "
         f"service (`KhensuTests \"[.measurefull]\"`) on the {ev.get('full_tracks', 0)} lossless "
         "originals (two-minute excerpts); their tables say so."),
+        ("* **Stems.** `masking_collision` needs separated stems: `scripts/eval_masking.py` separates "
+        "a subset of the lossless originals with the app's Demucs path (the middle 60 s) and grades "
+        "each stem pair against its own bar."),
         ("* **Fires / alarm.** *Fires* is the share of released tracks a finding is raised on at any "
         f"severity. An *alarm* is a finding at severity >= {ev['alarm_severity']:.0f} (the UI's "
         "moderate band); under that it is a minor note."),
@@ -148,7 +153,7 @@ def render() -> str:
         det = max((d["rate"] for d in e.get("detects", [])), default=None)
         fix = e.get("fix") or {}
         clears = "advice" if fix.get("advice_only") else _pct(fix.get("clears_rate"))
-        L.append(f"| `{code}` | {'full' if e.get('source') == 'full' else 'native'} | "
+        L.append(f"| `{code}` | { {'full': 'full', 'masking_eval': 'stems'}.get(e.get('source'), 'native')} | "
                  f"{_pct(e.get('false_alarm_rate'))} | {_pct(e.get('alarm_rate'))} | {_pct(det)} | "
                  f"{clears if fix else '-'} |")
     L.append("")

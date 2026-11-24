@@ -3,6 +3,7 @@
 #include "../../IAppController.h"
 #include "../shared/KhensuTheme.h"
 #include <khensu/ipc/HttpServiceBridge.h>
+#include <algorithm>
 #include "../shared/PanelRunState.h"
 #include <cmath>
 
@@ -154,7 +155,7 @@ void SubBassPhasePanel::drawHistory(juce::Graphics& g, juce::Rectangle<int> area
     for (size_t i = 0; i < history_.size(); ++i) {
         const float x = xFor(history_[i].x), y = yFor(history_[i].y);
         {
-            const float w = plot.getWidth() / (float)juce::jmax<size_t>(1, history_.size() - 1);
+            const float w = plot.getWidth() / (float)std::max<size_t>(1, history_.size() - 1);
             hover_.addColumn(x - w * 0.5f, x + w * 0.5f, plot,
                              juce::String(history_[i].x, 1) + " s: " + TRANS("kick / bass correlation") + " "
                                  + juce::String(history_[i].y, 2));

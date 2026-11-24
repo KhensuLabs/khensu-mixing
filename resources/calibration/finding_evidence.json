@@ -513,11 +513,11 @@
    }
   },
   "masking_collision": {
-   "false_alarm_rate": 0.0,
-   "fired_on": 0,
-   "alarm_rate": 0.0,
-   "tracks": 209,
-   "source": "full"
+   "false_alarm_rate": 0.04,
+   "fired_on": 6,
+   "alarm_rate": 0.04,
+   "tracks": 150,
+   "source": "masking_eval"
   },
   "memorability_low": {
    "false_alarm_rate": 0.0861,

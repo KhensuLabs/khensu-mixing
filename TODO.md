@@ -98,12 +98,17 @@ lists what needs the owner (a person, a Mac, hardware or a certificate).
 ## 8. Needs the owner (at the end)
 - [ ] MAC-3 Build, package and run on an Intel Mac (Python 3.11-3.13) and an
       Apple Silicon Mac: analyse / fix / export, plugin in a DAW.
-- [ ] SHIP-F Push the CI fixes to the public repository (owner's call).
+- [x] SHIP-F Push the CI fixes to the public repository: public main (1.0.4)
+      carries the same tree as private main. Its CI was still red on two
+      things, both fixed: a test whose name began with a quote that CTest's
+      filter cannot match (Windows), and juce::jmax<size_t>, which Apple
+      clang cannot compile beside juce_dsp (macOS app and release packages;
+      check_doc_drift.py now refuses it).
 - [ ] EXP-6 Structural Flow / Section Readiness: mark ~20 songs - the
       harness is ready (`scripts/eval_sections.py template ...`, correct the
       boundaries, then `score`).
-- [ ] STR-5 The plugin by hand in Reaper / Ableton / FL / Cubase (ARA2,
-      multi-instance, capture).
+- [ ] STR-5 The plugin by hand in FL Studio 2024 (ARA2, multi-instance,
+      capture); Reaper and Ableton are uninstalled for now, Cubase later.
 - [ ] EXP-5 Hooks, Memorability, Heaviness - listener ratings: the harness is
       ready (`scripts/listener_study.py prepare SONGS study/`, 3+ listeners
       fill copies of ratings.csv, then `score`). Emotional Arc needs ratings
@@ -114,11 +119,11 @@ lists what needs the owner (a person, a Mac, hardware or a certificate).
       DIR/README.txt, then `compare`).
 - [ ] EXP-8 Listening room - a second device.
 - [ ] EXP-9 Reference profiles - a hosted shared index.
-- [ ] FULL-4 Masking findings - 150 tracks (2026-11-24,
-      `scripts/eval_masking.py --tracks 150`, bench-results/masking_eval.json):
-      fires on 48 % of released tracks against the 5 % bar - drums+bass 25 %,
-      vocals+other 21 %, every other pair <= 5 %. Needs a threshold per pair
-      (each pair's 95th percentile); the full corpus is not needed.
+- [x] FULL-4 Masking findings - 150 tracks (`scripts/eval_masking.py
+      --tracks 150`): one 0.5 bar fired on 48 % of released tracks. Each
+      stem pair now has its own bar (its 99.17th percentile, a 5 % budget
+      over six pairs, never below 0.5; `MaskingRecommender::fireThreshold`):
+      fires on 4.0 % (6 of 150). Evidence in finding_evidence.json.
 - [ ] SHIP-D Code-signing certificate for the Windows installer.
 
 ## 9. Fire-rate tuning, round 2 (2026-11-22)

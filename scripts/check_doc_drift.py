@@ -662,6 +662,22 @@ def check_string_zero_decimals(errors: list[str]) -> None:
                     k = code.find(token, k + 1)
 
 
+def check_jmax_size_t(errors: list[str]) -> None:
+    """juce::jmax<size_t> / jmin<size_t> do not compile with Apple clang once
+    juce_dsp is included: size_t is unsigned long there, and overload
+    resolution instantiates SIMDRegister<unsigned long>, which has no native
+    ops (the 1.0.3 and 1.0.4 macOS builds failed on it). Use std::max."""
+    pat = re.compile(r"juce::jm(?:ax|in)<\s*(?:std::)?size_t\s*>")
+    for sub in ("desktop-app/Source", "shared-core", "plugin-copilot/Source", "tests"):
+        for f in sorted((ROOT / sub).rglob("*")):
+            if f.suffix not in (".cpp", ".h"):
+                continue
+            for n, line in enumerate(f.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+                if pat.search(line.split("//", 1)[0]):
+                    errors.append(f"{f.relative_to(ROOT).as_posix()}:{n}: juce::jmax/jmin<size_t> breaks the "
+                                  "macOS build (juce_dsp SIMD overloads) - use std::max/std::min.")
+
+
 def check_generated_issue_codes(errors: list[str]) -> None:
     """ENG-7: the service's finding-code table is generated from the C++ one."""
     result = subprocess.run(
@@ -733,6 +749,7 @@ def main() -> int:
     check_generated_schema(errors)
     check_generated_issue_codes(errors)
     check_string_zero_decimals(errors)
+    check_jmax_size_t(errors)
     check_hand_rolled_fetches(errors)
     check_benchmark_report(errors)
     check_measured_loudness(errors)

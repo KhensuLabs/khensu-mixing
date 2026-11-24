@@ -72,7 +72,7 @@ inline juce::String cacheKey(const juce::File& file)
 /// Least-recently-used peak cache (message thread only).
 class PeakCache {
   public:
-    explicit PeakCache(size_t capacity = 8) : capacity_(juce::jmax<size_t>(1, capacity)) {}
+    explicit PeakCache(size_t capacity = 8) : capacity_(std::max<size_t>(1, capacity)) {}
 
     std::shared_ptr<const std::vector<float>> find(const juce::String& key)
     {

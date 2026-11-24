@@ -3,6 +3,7 @@
 #include "../VocalWorkspace/MixTuningReference.h"
 #include "../shared/KhensuTheme.h"
 #include <khensu/ipc/HttpServiceBridge.h>
+#include <algorithm>
 #include "../shared/PanelRunState.h"
 #include <khensu/ipc/generated/ApiSchema.h>
 
@@ -105,7 +106,7 @@ void TuningReferencePanel::paint(juce::Graphics& g)
         for (size_t i = 0; i < drift_.size(); ++i) {
             const float x = strip.getX() + juce::jlimit(0.0f, 1.0f, drift_[i].x / tMax) * strip.getWidth();
             {
-                const float w = strip.getWidth() / (float)juce::jmax<size_t>(1, drift_.size() - 1);
+                const float w = strip.getWidth() / (float)std::max<size_t>(1, drift_.size() - 1);
                 hover_.addColumn(x - w * 0.5f, x + w * 0.5f, strip.toFloat(),
                                  juce::String(drift_[i].x, 1) + " s: " + (drift_[i].y >= 0.0f ? "+" : "")
                                      + juce::String(drift_[i].y, 1) + " " + TRANS("cents from") + " "

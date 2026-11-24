@@ -21,6 +21,38 @@ namespace khensu {
 /// masking-driven recommendations rather than a fabricated one.
 class MaskingRecommender {
   public:
+    /// Below this, two stems sharing spectral territory is normal and not
+    /// worth surfacing. Pairs the corpus run has not measured keep it.
+    static constexpr float kModerateThreshold = 0.5f;
+
+    /// FULL-4: how much two stems overlap in released music depends on the
+    /// pair - kick and bass, or a vocal and the "other" stem (pads, keys,
+    /// guitars), share their range in nearly every mix. One 0.5 bar fired on
+    /// 48 % of 150 released tracks (scripts/eval_masking.py,
+    /// bench-results/masking_eval.json). Each pair's bar is its own
+    /// 99.17th percentile there (a 5 % budget split over six pairs), rounded
+    /// up, never below kModerateThreshold: the finding fires on 4 % of them.
+    /// scripts/eval_masking.py prints these numbers; keep the two in step
+    /// (tests/test_masking_thresholds_sync.py).
+    static float fireThreshold(const std::string& a, const std::string& b) noexcept
+    {
+        struct Bar {
+            const char* lo;
+            const char* hi;
+            float at;
+        };
+        // Keys are in alphabetical order, so either stem order matches.
+        static constexpr Bar kBars[] = {
+            {"bass", "drums", 0.90f},   {"other", "vocals", 0.73f}, {"bass", "other", 0.67f},
+            {"drums", "other", 0.60f},  {"drums", "vocals", 0.51f}, {"bass", "vocals", 0.50f},
+        };
+        const std::string& lo = a < b ? a : b;
+        const std::string& hi = a < b ? b : a;
+        for (const auto& bar : kBars)
+            if (lo == bar.lo && hi == bar.hi) return bar.at;
+        return kModerateThreshold;
+    }
+
     std::vector<Recommendation> recommend(const AnalysisResult& result, const GenreEntry& /*genre*/,
                                           const CreativeTarget& /*target*/) const
     {
@@ -28,12 +60,8 @@ class MaskingRecommender {
         if (!result.masking.has_value()) return out;
         const auto& masking = *result.masking;
 
-        // Below this, two stems sharing some spectral territory is normal
-        // and not worth surfacing as an actionable recommendation.
-        constexpr float kModerateThreshold = 0.5f;
-
         for (const auto& pair : masking.pairs) {
-            if (pair.collision_score < kModerateThreshold) continue;
+            if (pair.collision_score < fireThreshold(pair.stem_a, pair.stem_b)) continue;
 
             // Localize the suggestion to whichever band contributes most to
             // the overlap, rather than only reporting the aggregate score.
