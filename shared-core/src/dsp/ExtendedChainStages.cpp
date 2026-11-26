@@ -21,10 +21,7 @@ constexpr int kMinMargin = 8192;
 constexpr int kMaxMargin = 1 << 21;
 constexpr int kMinChunk = 65536;
 
-double dbToGain(double db)
-{
-    return std::pow(10.0, db / 20.0);
-}
+double dbToGain(double db) { return std::pow(10.0, db / 20.0); }
 
 double param(const std::map<std::string, double>& p, const char* key, double fallback)
 {
@@ -46,13 +43,15 @@ class StreamWindow {
     void prepare(int numChannels, size_t reserveSamples)
     {
         hist_.assign(static_cast<size_t>(std::max(0, numChannels)), {});
-        for (auto& h : hist_) h.reserve(reserveSamples);
+        for (auto& h : hist_)
+            h.reserve(reserveSamples);
         start_ = received_ = 0;
         ended_ = false;
     }
     void reset()
     {
-        for (auto& h : hist_) h.clear();
+        for (auto& h : hist_)
+            h.clear();
         start_ = received_ = 0;
         ended_ = false;
     }
@@ -94,7 +93,8 @@ class StreamWindow {
 
     void fill(size_t c, long long from, int count, double* dst) const noexcept
     {
-        for (int k = 0; k < count; ++k) dst[k] = at(c, from + k);
+        for (int k = 0; k < count; ++k)
+            dst[k] = at(c, from + k);
     }
 
     /// Forgets samples before `index` (no allocation: a front erase).
@@ -103,7 +103,8 @@ class StreamWindow {
         if (index <= start_) return;
         const long long drop = std::min(index, received_) - start_;
         if (drop <= 0) return;
-        for (auto& h : hist_) h.erase(h.begin(), h.begin() + static_cast<std::ptrdiff_t>(drop));
+        for (auto& h : hist_)
+            h.erase(h.begin(), h.begin() + static_cast<std::ptrdiff_t>(drop));
         start_ += drop;
     }
 
@@ -141,10 +142,12 @@ void zeroPhase(BiquadCascade& f, double* x, int n, long long winStart, long long
     const auto at = [x, winStart](long long a) -> double& { return x[a - winStart]; };
     if (winStart < 0 && inWin(0)) {
         const double x0 = at(0);
-        for (long long a = winStart; a < 0; ++a) at(a) = inWin(-a) ? 2.0 * x0 - at(-a) : 2.0 * x0;
+        for (long long a = winStart; a < 0; ++a)
+            at(a) = inWin(-a) ? 2.0 * x0 - at(-a) : 2.0 * x0;
         if (winStart < -pad) {
             const double v = at(-pad);
-            for (long long a = winStart; a < -pad; ++a) at(a) = v;
+            for (long long a = winStart; a < -pad; ++a)
+                at(a) = v;
         }
     }
     const long long winEnd = winStart + n - 1;
@@ -160,7 +163,8 @@ void zeroPhase(BiquadCascade& f, double* x, int n, long long winStart, long long
     f.process(0, x, n);
     if (endInWin && last + pad < winEnd) {
         const double v = at(last + pad);
-        for (long long a = last + pad + 1; a <= winEnd; ++a) at(a) = v;
+        for (long long a = last + pad + 1; a <= winEnd; ++a)
+            at(a) = v;
     }
     std::reverse(x, x + n);
     f.reset();
@@ -185,7 +189,8 @@ class ChunkedStage : public ChainStage {
     {
         if (bypass_) return;
         in_.append(io);
-        for (auto& c : io.ch) c.clear();
+        for (auto& c : io.ch)
+            c.clear();
         drain(io, false);
     }
 
@@ -279,7 +284,8 @@ class ChunkedStage : public ChainStage {
                 consumeProfile(emitPos_, len);
             } else {
                 render(emitPos_, len);
-                if (out.ch.size() != static_cast<size_t>(numChannels_)) out.ch.resize(static_cast<size_t>(numChannels_));
+                if (out.ch.size() != static_cast<size_t>(numChannels_))
+                    out.ch.resize(static_cast<size_t>(numChannels_));
                 for (size_t c = 0; c < out.ch.size(); ++c)
                     out.ch[c].insert(out.ch[c].end(), out_[c].begin(), out_[c].begin() + len);
             }
@@ -345,10 +351,7 @@ class DynamicEqStage final : public ChunkedStage {
     }
 
   protected:
-    bool canEmit(long long through) const override
-    {
-        return !keyed_ || key_.ended() || key_.received() >= through;
-    }
+    bool canEmit(long long through) const override { return !keyed_ || key_.ended() || key_.received() >= through; }
     void afterEmit(long long emitPos) override
     {
         if (keyed_) key_.dropBefore(std::max(0LL, emitPos - margin_));
@@ -372,7 +375,8 @@ class DynamicEqStage final : public ChunkedStage {
         for (int k = 0; k < len; ++k) {
             const auto idx = static_cast<size_t>(margin_ + k);
             double rect = 0.0;
-            for (const auto& d : det) rect += std::abs(d[idx]);
+            for (const auto& d : det)
+                rect += std::abs(d[idx]);
             rect /= detChannels;
             env_ = rect > env_ ? atk_ * env_ + (1.0 - atk_) * rect : rel_ * env_ + (1.0 - rel_) * rect;
             const double over = std::max(env_ / threshold_, 1e-12);
@@ -446,10 +450,10 @@ class MultibandCompressorStage final : public ChunkedStage {
         midLp_ = monoCascade(butterworth(ButterworthType::Lowpass, 4, sampleRate, std::min(highX, nyq * 0.9)));
         highHpOn_ = highX > 20.0;
         highHp_ = monoCascade(butterworth(ButterworthType::Highpass, 4, sampleRate, std::min(highX, nyq * 0.9)));
-        const int margin = std::max({zeroPhaseSettleSamples(lowLp_.sections()),
-                                     zeroPhaseSettleSamples(midHp_.sections()) +
-                                         zeroPhaseSettleSamples(midLp_.sections()),
-                                     zeroPhaseSettleSamples(highHp_.sections())});
+        const int margin =
+            std::max({zeroPhaseSettleSamples(lowLp_.sections()),
+                      zeroPhaseSettleSamples(midHp_.sections()) + zeroPhaseSettleSamples(midLp_.sections()),
+                      zeroPhaseSettleSamples(highHp_.sections())});
         configure(margin, false);
 
         const double sharedAtk = p.at("attack_ms"), sharedRel = p.at("release_ms"), sharedMakeup = p.at("makeup_db");
@@ -492,12 +496,13 @@ class MultibandCompressorStage final : public ChunkedStage {
             double gains[3];
             for (size_t b = 0; b < 3; ++b) {
                 double rect = 0.0; // linked: the loudest channel
-                for (const auto& ch : bands_[b]) rect = std::max(rect, std::abs(ch[idx]));
+                for (const auto& ch : bands_[b])
+                    rect = std::max(rect, std::abs(ch[idx]));
                 gains[b] = core_[b].gain(rect);
             }
             for (size_t c = 0; c < static_cast<size_t>(numChannels_); ++c)
-                out_[c][static_cast<size_t>(k)] = bands_[0][c][idx] * gains[0] + bands_[1][c][idx] * gains[1] +
-                                                  bands_[2][c][idx] * gains[2];
+                out_[c][static_cast<size_t>(k)] =
+                    bands_[0][c][idx] * gains[0] + bands_[1][c][idx] * gains[1] + bands_[2][c][idx] * gains[2];
         }
     }
 
@@ -515,8 +520,7 @@ class MultibandCompressorStage final : public ChunkedStage {
 /// profile pass), out = x + mix sat.
 class ExciterStage final : public ChunkedStage {
   public:
-    ExciterStage(const std::map<std::string, double>& p, double sampleRate, int numChannels)
-        : ChunkedStage(numChannels)
+    ExciterStage(const std::map<std::string, double>& p, double sampleRate, int numChannels) : ChunkedStage(numChannels)
     {
         const double nyq = sampleRate * 0.5;
         const double f = p.at("frequency_hz");
@@ -613,11 +617,11 @@ class BassMonoMakerStage final : public ChunkedStage {
             lp_ = monoCascade(butterworth(ButterworthType::Lowpass, 4, sampleRate, cutoff));
             hp_ = monoCascade(butterworth(ButterworthType::Highpass, 4, sampleRate, cutoff));
         }
-        configure(bypass ? 0
-                         : std::max(zeroPhaseSettleSamples(lp_.sections()), zeroPhaseSettleSamples(hp_.sections())),
+        configure(bypass ? 0 : std::max(zeroPhaseSettleSamples(lp_.sections()), zeroPhaseSettleSamples(hp_.sections())),
                   bypass);
         if (bypass) return;
-        for (auto& b : buf_) b.assign(spanCapacity(), 0.0);
+        for (auto& b : buf_)
+            b.assign(spanCapacity(), 0.0);
     }
 
   protected:
@@ -643,7 +647,8 @@ class BassMonoMakerStage final : public ChunkedStage {
         }
         // Channels past the front pair pass through.
         for (size_t c = 2; c < static_cast<size_t>(numChannels_); ++c)
-            for (int k = 0; k < len; ++k) out_[c][static_cast<size_t>(k)] = in_.at(c, start + k);
+            for (int k = 0; k < len; ++k)
+                out_[c][static_cast<size_t>(k)] = in_.at(c, start + k);
     }
 
   private:
@@ -792,8 +797,7 @@ std::unique_ptr<ChainStage> makeMidSideStage(const std::map<std::string, double>
     return std::make_unique<MidSideStage>(p, sampleRate);
 }
 
-std::unique_ptr<ChainStage> makeExciterStage(const std::map<std::string, double>& p, double sampleRate,
-                                             int numChannels)
+std::unique_ptr<ChainStage> makeExciterStage(const std::map<std::string, double>& p, double sampleRate, int numChannels)
 {
     return std::make_unique<ExciterStage>(p, sampleRate, numChannels);
 }

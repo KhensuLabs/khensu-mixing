@@ -78,8 +78,8 @@ void PluginSegmentedTabs::addTab(const juce::String& name, juce::Component& page
 {
     const int index = getNumTabs();
     auto segment = std::make_unique<Segment>(*this, index, name);
-    segment->setDescription(TRANS("Show the") + " " + name + " " + TRANS("section") + " (Ctrl+"
-                            + juce::String(index + 1) + ").");
+    segment->setDescription(TRANS("Show the") + " " + name + " " + TRANS("section") + " (Ctrl+" +
+                            juce::String(index + 1) + ").");
     segment->setTooltip(name + " (Ctrl+" + juce::String(index + 1) + ")");
     segment->setExplicitFocusOrder(index + 1);
     segment->setToggleState(index == current_, juce::dontSendNotification);
@@ -96,7 +96,8 @@ void PluginSegmentedTabs::addTab(const juce::String& name, juce::Component& page
 juce::StringArray PluginSegmentedTabs::getTabNames() const
 {
     juce::StringArray names;
-    for (const auto& s : segments_) names.add(s->getButtonText());
+    for (const auto& s : segments_)
+        names.add(s->getButtonText());
     return names;
 }
 
@@ -148,10 +149,12 @@ void PluginSegmentedTabs::resized()
     auto bar = barBounds();
     const int n = juce::jmax(1, getNumTabs());
     const int w = bar.getWidth() / n;
-    for (auto& s : segments_) s->setBounds(bar.removeFromLeft(w));
+    for (auto& s : segments_)
+        s->setBounds(bar.removeFromLeft(w));
     auto content = getLocalBounds();
     content.removeFromTop(kBarHeight + 2);
-    for (auto* page : pages_) page->setBounds(content);
+    for (auto* page : pages_)
+        page->setBounds(content);
 }
 
 } // namespace khensu

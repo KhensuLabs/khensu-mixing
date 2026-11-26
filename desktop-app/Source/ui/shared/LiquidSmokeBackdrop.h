@@ -34,16 +34,10 @@ class LiquidSmokeBackdrop final {
         ambientEnabled_.store(enabled, std::memory_order_relaxed);
     }
 
-    static bool isAmbientMotionEnabled() noexcept
-    {
-        return ambientEnabled_.load(std::memory_order_relaxed);
-    }
+    static bool isAmbientMotionEnabled() noexcept { return ambientEnabled_.load(std::memory_order_relaxed); }
 
     /// True when the smoke should animate (motion toggle on + reduced motion off).
-    static bool shouldAnimate() noexcept
-    {
-        return isAmbientMotionEnabled() && !ui::motion::reduced();
-    }
+    static bool shouldAnimate() noexcept { return isAmbientMotionEnabled() && !ui::motion::reduced(); }
 
     /// Advances the smoke simulation by `dtSeconds` with optional live audio
     /// energy in [0, 1] (LG-3). Re-renders the tiny 160x90 smoke buffer and
@@ -112,8 +106,10 @@ class LiquidSmokeBackdrop final {
                 for (int x = 0; x < kSize; ++x) {
                     const float fx = static_cast<float>(x);
                     const float fy = static_cast<float>(y);
-                    const float n1 = std::fmod(52.9829189f * std::fmod(0.06711056f * fx + 0.00583715f * fy, 1.0f), 1.0f);
-                    const float n2 = std::fmod(43.7585453f * std::fmod(0.03191f * fx + 0.09137f * fy + 0.37f, 1.0f), 1.0f);
+                    const float n1 =
+                        std::fmod(52.9829189f * std::fmod(0.06711056f * fx + 0.00583715f * fy, 1.0f), 1.0f);
+                    const float n2 =
+                        std::fmod(43.7585453f * std::fmod(0.03191f * fx + 0.09137f * fy + 0.37f, 1.0f), 1.0f);
                     const float v = juce::jlimit(0.0f, 1.0f, 0.5f * (n1 + n2));
                     const auto lum = static_cast<juce::uint8>(v * 255.0f);
                     // Premultiplied ARGB with subtle alpha (~9 / 255 ≈ 3.5%).
@@ -156,7 +152,7 @@ class LiquidSmokeBackdrop final {
         const auto cBase = KhensuTheme::bgBase;
         const auto cTeal = KhensuTheme::accentTeal;
         const auto cIndigo = isLight ? KhensuTheme::accentBlue.interpolatedWith(cBase, 0.70f)
-                                      : KhensuTheme::accentBlue.interpolatedWith(cVoid, 0.75f);
+                                     : KhensuTheme::accentBlue.interpolatedWith(cVoid, 0.75f);
         const auto cMagenta = KhensuTheme::accentMagenta;
 
         // Pro-audio guardrails (LG-4): dark, calm, studio-grade contrast.

@@ -77,8 +77,8 @@ std::string toReaperCsv(const std::vector<Marker>& markers)
     int regions = 0, points = 0;
     for (const auto& m : normalised(markers)) {
         if (m.kind == Kind::Section && m.endSec > m.startSec) {
-            out += "R" + std::to_string(++regions) + "," + csvField(m.name) + "," + reaperTime(m.startSec) + ","
-                   + reaperTime(m.endSec) + "," + reaperTime(m.endSec - m.startSec) + ",\n";
+            out += "R" + std::to_string(++regions) + "," + csvField(m.name) + "," + reaperTime(m.startSec) + "," +
+                   reaperTime(m.endSec) + "," + reaperTime(m.endSec - m.startSec) + ",\n";
         } else {
             out += "M" + std::to_string(++points) + "," + csvField(m.name) + "," + reaperTime(m.startSec) + ",,,\n";
         }
@@ -110,7 +110,8 @@ void appendBE(std::vector<std::uint8_t>& out, std::uint32_t v, int bytes)
         out.push_back(static_cast<std::uint8_t>((v >> (8 * i)) & 0xFFu));
 }
 
-void appendMeta(std::vector<std::uint8_t>& track, std::uint32_t delta, std::uint8_t type, const std::vector<std::uint8_t>& data)
+void appendMeta(std::vector<std::uint8_t>& track, std::uint32_t delta, std::uint8_t type,
+                const std::vector<std::uint8_t>& data)
 {
     const auto d = varLen(delta);
     track.insert(track.end(), d.begin(), d.end());
@@ -122,7 +123,8 @@ void appendMeta(std::vector<std::uint8_t>& track, std::uint32_t delta, std::uint
 }
 } // namespace
 
-std::vector<std::uint8_t> toMidiFile(const std::vector<Marker>& markers, double bpm, int ppq, const std::string& trackName)
+std::vector<std::uint8_t> toMidiFile(const std::vector<Marker>& markers, double bpm, int ppq,
+                                     const std::string& trackName)
 {
     ppq = std::clamp(ppq, 24, 0x7FFF);
     const double tempo = tempoOrDefault(bpm);
@@ -130,7 +132,8 @@ std::vector<std::uint8_t> toMidiFile(const std::vector<Marker>& markers, double 
     if (!trackName.empty()) appendMeta(track, 0, 0x03, std::vector<std::uint8_t>(trackName.begin(), trackName.end()));
     const auto usPerQuarter = static_cast<std::uint32_t>(std::llround(60000000.0 / tempo));
     appendMeta(track, 0, 0x51,
-               {static_cast<std::uint8_t>((usPerQuarter >> 16) & 0xFFu), static_cast<std::uint8_t>((usPerQuarter >> 8) & 0xFFu),
+               {static_cast<std::uint8_t>((usPerQuarter >> 16) & 0xFFu),
+                static_cast<std::uint8_t>((usPerQuarter >> 8) & 0xFFu),
                 static_cast<std::uint8_t>(usPerQuarter & 0xFFu)});
     appendMeta(track, 0, 0x58, {4, 2, 24, 8}); // 4/4
     std::uint32_t last = 0;

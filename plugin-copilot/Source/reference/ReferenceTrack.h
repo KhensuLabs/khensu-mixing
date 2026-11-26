@@ -43,7 +43,7 @@ struct ReferenceData {
     std::vector<float> shortTermLufs;
     int blockSamples = 4800;
     mixhub::BandLevels bands = mixhub::silentBands(); ///< long-term mean on the hub grid
-    bool truncated = false; ///< cut to kMaxReferenceSeconds
+    bool truncated = false;                           ///< cut to kMaxReferenceSeconds
 
     double durationSec() const noexcept { return audio.getNumSamples() / juce::jmax(1.0, sampleRate); }
     juce::String name() const { return juce::File(path).getFileName(); }
@@ -81,12 +81,12 @@ class ReferencePlayer {
 
     /// What the audio thread knows about the host side this block.
     struct HostSide {
-        bool advance = true;      ///< the host is playing (or reports no transport)
-        bool timeValid = false;   ///< timeSec is the host timeline position
+        bool advance = true;    ///< the host is playing (or reports no transport)
+        bool timeValid = false; ///< timeSec is the host timeline position
         double timeSec = 0.0;
         float integratedLufs = -96.0f;
         float shortTermLufs = -96.0f;
-        bool offline = false;     ///< an offline render: never the reference
+        bool offline = false; ///< an offline render: never the reference
     };
 
     ReferencePlayer() = default;

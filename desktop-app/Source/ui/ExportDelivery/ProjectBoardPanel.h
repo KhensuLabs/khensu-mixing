@@ -54,7 +54,10 @@ class ProjectBoardPanel final : public PanelCard, private juce::Timer {
         juce::String label; ///< e.g. the macro set's name, for the status line
     };
     void analyseAll();
-    void fixAndMasterAll(const MasterOptions& options = {});
+    // Two overloads, not "= {}": clang rejects a default argument that needs
+    // MasterOptions' member initializers inside the enclosing class.
+    void fixAndMasterAll();
+    void fixAndMasterAll(const MasterOptions& options);
     void exportAll();
     void cancelBulk();
     bool bulkRunning() const noexcept { return bulk_ != Bulk::None; }

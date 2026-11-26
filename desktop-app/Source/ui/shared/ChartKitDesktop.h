@@ -16,8 +16,7 @@
 namespace khensu {
 
 /// A ChartKit chart that follows the desktop theme.
-template <class Chart>
-class Themed : public Chart {
+template <class Chart> class Themed : public Chart {
   public:
     Themed() { this->setStyle(desktopChartStyle()); }
 
@@ -67,10 +66,8 @@ inline void attachClickToPlay(ui::chart::ChartView& chart, IPlayback& playback)
 class PlayheadFollower final {
   public:
     PlayheadFollower(ui::chart::ChartView& chart, IPlayback& playback, std::function<bool()> active = {})
-        : chart_(chart), playback_(playback), active_(std::move(active)),
-          vblank_(&chart, [this] { update(); })
-    {
-    }
+        : chart_(chart), playback_(playback), active_(std::move(active)), vblank_(&chart, [this] { update(); })
+    {}
 
   private:
     void update()

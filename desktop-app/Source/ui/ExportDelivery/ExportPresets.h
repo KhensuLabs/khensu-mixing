@@ -51,27 +51,62 @@ inline constexpr const char* kPreferenceKey = "export_user_presets";
 inline std::vector<Preset> builtIns()
 {
     return {
-        {TRANS("Streaming Master (WAV 24/44.1)"), Format::WAV, BitDepth::Bits24, SampleRate::SR44100,
-         Mp3Bitrate::kbps320, {}, "_streaming", 2},
-        {TRANS("CD Master (WAV 16/44.1 + dither)"), Format::WAV, BitDepth::Bits16, SampleRate::SR44100,
-         Mp3Bitrate::kbps320, {}, "_cd", 3},
-        {TRANS("Video / Broadcast (WAV 24/48)"), Format::WAV, BitDepth::Bits24, SampleRate::SR48000,
-         Mp3Bitrate::kbps320, {}, "_video", 4},
-        {TRANS("Hi-Res Archive (FLAC 24/96)"), Format::FLAC, BitDepth::Bits24, SampleRate::SR96000,
-         Mp3Bitrate::kbps320, {}, "_archive", 5},
-        {TRANS("Client Preview (MP3 320)"), Format::MP3, BitDepth::Bits24, SampleRate::Source, Mp3Bitrate::kbps320,
-         {}, "_preview", 6},
+        {TRANS("Streaming Master (WAV 24/44.1)"),
+         Format::WAV,
+         BitDepth::Bits24,
+         SampleRate::SR44100,
+         Mp3Bitrate::kbps320,
+         {},
+         "_streaming",
+         2},
+        {TRANS("CD Master (WAV 16/44.1 + dither)"),
+         Format::WAV,
+         BitDepth::Bits16,
+         SampleRate::SR44100,
+         Mp3Bitrate::kbps320,
+         {},
+         "_cd",
+         3},
+        {TRANS("Video / Broadcast (WAV 24/48)"),
+         Format::WAV,
+         BitDepth::Bits24,
+         SampleRate::SR48000,
+         Mp3Bitrate::kbps320,
+         {},
+         "_video",
+         4},
+        {TRANS("Hi-Res Archive (FLAC 24/96)"),
+         Format::FLAC,
+         BitDepth::Bits24,
+         SampleRate::SR96000,
+         Mp3Bitrate::kbps320,
+         {},
+         "_archive",
+         5},
+        {TRANS("Client Preview (MP3 320)"),
+         Format::MP3,
+         BitDepth::Bits24,
+         SampleRate::Source,
+         Mp3Bitrate::kbps320,
+         {},
+         "_preview",
+         6},
     };
 }
 
 inline juce::String formatId(Format f)
 {
     switch (f) {
-    case Format::AIFF: return "aiff";
-    case Format::FLAC: return "flac";
-    case Format::MP3: return "mp3";
-    case Format::AAC: return "aac";
-    case Format::WAV: break;
+    case Format::AIFF:
+        return "aiff";
+    case Format::FLAC:
+        return "flac";
+    case Format::MP3:
+        return "mp3";
+    case Format::AAC:
+        return "aac";
+    case Format::WAV:
+        break;
     }
     return "wav";
 }
@@ -152,7 +187,8 @@ inline std::vector<Preset> parse(const juce::String& json)
             auto p = fromVar(v);
             if (p.name.isNotEmpty()) out.push_back(std::move(p));
         }
-    std::sort(out.begin(), out.end(), [](const Preset& a, const Preset& b) { return a.name.compareIgnoreCase(b.name) < 0; });
+    std::sort(out.begin(), out.end(),
+              [](const Preset& a, const Preset& b) { return a.name.compareIgnoreCase(b.name) < 0; });
     return out;
 }
 
@@ -190,8 +226,7 @@ inline std::vector<Preset> withoutPreset(std::vector<Preset> presets, const juce
 
 /// Where an extra preset's file goes: beside `primaryOutput`, named after the
 /// original (`originalPath`'s name) with the preset's suffix and extension.
-inline juce::String outputPathFor(const juce::String& primaryOutput, const juce::String& originalPath,
-                                  const Preset& p)
+inline juce::String outputPathFor(const juce::String& primaryOutput, const juce::String& originalPath, const Preset& p)
 {
     const juce::File dir = juce::File(primaryOutput).getParentDirectory();
     juce::String base = juce::File::createLegalFileName(juce::File(originalPath).getFileNameWithoutExtension()).trim();

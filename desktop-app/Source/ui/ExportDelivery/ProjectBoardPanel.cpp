@@ -501,6 +501,8 @@ void ProjectBoardPanel::tickAnalyse()
     progress(TRANS("analysing..."));
 }
 
+void ProjectBoardPanel::fixAndMasterAll() { fixAndMasterAll(MasterOptions{}); }
+
 void ProjectBoardPanel::fixAndMasterAll(const MasterOptions& options)
 {
     if (!startBulk(Bulk::FixMaster)) return;

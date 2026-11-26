@@ -14,10 +14,10 @@
 namespace khensu::ab_pins {
 
 struct State {
-    int aNode = -1;           ///< tree index playing as A; -1 = the original (or a file not in the tree)
-    int bNode = -1;           ///< tree index playing as B; -1 = no B, or a file not in the tree
-    bool aIsOriginal = true;  ///< nothing pinned as A
-    bool hasB = false;        ///< there is a B side at all
+    int aNode = -1;          ///< tree index playing as A; -1 = the original (or a file not in the tree)
+    int bNode = -1;          ///< tree index playing as B; -1 = no B, or a file not in the tree
+    bool aIsOriginal = true; ///< nothing pinned as A
+    bool hasB = false;       ///< there is a B side at all
     /// Original against the current version (or no B while the original is
     /// current): what Reset A/B goes back to. Reset is offered otherwise.
     bool isDefault = true;

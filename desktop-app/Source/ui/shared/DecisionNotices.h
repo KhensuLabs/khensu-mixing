@@ -42,14 +42,13 @@ inline AppNoticeBar::Notice serviceGaveUp(const juce::String& cause, std::functi
 /// The open session's audio file is missing. `locate` (the old dialog's
 /// "Locate File...") runs only while `stillSameSession()` holds: the notice
 /// can outlive the session it was posted for.
-inline AppNoticeBar::Notice missingSessionFile(const juce::String& missingPath,
-                                               std::function<bool()> stillSameSession,
+inline AppNoticeBar::Notice missingSessionFile(const juce::String& missingPath, std::function<bool()> stillSameSession,
                                                std::function<void()> locate)
 {
     AppNoticeBar::Notice n;
     n.id = kMissingSessionFileId;
-    n.text = TRANS("This session's audio file could not be found (it may have been moved or deleted):") + " " +
-             missingPath;
+    n.text =
+        TRANS("This session's audio file could not be found (it may have been moved or deleted):") + " " + missingPath;
     n.actionLabel = TRANS("Locate File...");
     n.onAction = [stillSameSession = std::move(stillSameSession), locate = std::move(locate)] {
         if (stillSameSession && !stillSameSession()) return;

@@ -7,7 +7,8 @@ namespace khensu {
 
 LivePreviewStage::LivePreviewStage(juce::AudioSource& input) : input_(input)
 {
-    for (auto& slot : retired_) slot.store(nullptr, std::memory_order_relaxed);
+    for (auto& slot : retired_)
+        slot.store(nullptr, std::memory_order_relaxed);
 }
 
 LivePreviewStage::~LivePreviewStage()
@@ -26,7 +27,8 @@ void LivePreviewStage::prepareToPlay(int samplesPerBlockExpected, double sampleR
     sampleRate_.store(sampleRate, std::memory_order_release);
     // Sized here, never on the audio thread; a longer callback runs in parts.
     old_.setSize(2, juce::jmax(samplesPerBlockExpected, 512), false, true, false);
-    fadeSamples_ = juce::jmax(1, (int)std::lround((sampleRate > 0.0 ? sampleRate : kFallbackRate) * kCrossfadeMs / 1000.0));
+    fadeSamples_ =
+        juce::jmax(1, (int)std::lround((sampleRate > 0.0 ? sampleRate : kFallbackRate) * kCrossfadeMs / 1000.0));
 }
 
 // ---- audio thread -------------------------------------------------------------
@@ -87,7 +89,8 @@ void LivePreviewStage::getNextAudioBlock(const juce::AudioSourceChannelInfo& inf
         float* io[2] = {info.buffer->getWritePointer(0, start),
                         info.buffer->getWritePointer(channels > 1 ? 1 : 0, start)};
         if (fadeActive_)
-            for (int ch = 0; ch < channels; ++ch) old_.copyFrom(ch, 0, *info.buffer, ch, start, n);
+            for (int ch = 0; ch < channels; ++ch)
+                old_.copyFrom(ch, 0, *info.buffer, ch, start, n);
         if (active_ != nullptr) active_->process(io, channels, n);
         if (fadeActive_) {
             float* oldIo[2] = {old_.getWritePointer(0), old_.getWritePointer(channels > 1 ? 1 : 0)};
@@ -119,7 +122,8 @@ dsp::RealtimeChain* LivePreviewStage::build(const std::vector<dsp::ChainStageSpe
     builtRate_ = rate > 0.0 ? rate : kFallbackRate;
     auto next = std::make_unique<dsp::RealtimeChain>();
     std::string error;
-    if (!next->prepare(chain, builtRate_, 2, kChainBlock, error)) next->prepare({}, kFallbackRate, 2, kChainBlock, error);
+    if (!next->prepare(chain, builtRate_, 2, kChainBlock, error))
+        next->prepare({}, kFallbackRate, 2, kChainBlock, error);
     plan_ = next->plan();
     return next.release();
 }
@@ -133,7 +137,8 @@ void LivePreviewStage::publish(dsp::RealtimeChain* chain)
 
 void LivePreviewStage::collectGarbage()
 {
-    for (auto& slot : retired_) delete slot.exchange(nullptr, std::memory_order_acq_rel);
+    for (auto& slot : retired_)
+        delete slot.exchange(nullptr, std::memory_order_acq_rel);
 }
 
 const std::vector<dsp::RealtimeChain::StagePlan>& LivePreviewStage::setChain(std::vector<dsp::ChainStageSpec> chain)

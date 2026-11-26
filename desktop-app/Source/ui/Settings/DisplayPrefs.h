@@ -20,9 +20,12 @@ inline juce::File fileIn(const juce::File& configDir) { return configDir.getChil
 inline const char* themeId(KhensuTheme::Theme t) noexcept
 {
     switch (t) {
-    case KhensuTheme::Theme::Dark: return "dark";
-    case KhensuTheme::Theme::HighContrast: return "high_contrast";
-    case KhensuTheme::Theme::Light: return "light";
+    case KhensuTheme::Theme::Dark:
+        return "dark";
+    case KhensuTheme::Theme::HighContrast:
+        return "high_contrast";
+    case KhensuTheme::Theme::Light:
+        return "light";
     }
     return "dark";
 }

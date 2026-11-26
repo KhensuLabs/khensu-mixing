@@ -70,9 +70,8 @@ class RecurringIssuesPanel::RowButton final : public juce::Button {
 
     juce::String detailText() const
     {
-        return juce::String(row_.count) + " " + TRANS("of") + " " + juce::String(row_.scanned) + " " +
-               TRANS("tracks") + "  -  " + TRANS("last") + " " + row_.lastSeen.substring(0, 10) + "  -  " +
-               ri::trendText(row_.trend);
+        return juce::String(row_.count) + " " + TRANS("of") + " " + juce::String(row_.scanned) + " " + TRANS("tracks") +
+               "  -  " + TRANS("last") + " " + row_.lastSeen.substring(0, 10) + "  -  " + ri::trendText(row_.trend);
     }
 
     void paintButton(juce::Graphics& g, bool highlighted, bool down) override
@@ -272,12 +271,12 @@ void RecurringIssuesPanel::showResults(std::vector<ri::Recurring> rows, int scan
         status_ = failed > 0 ? TRANS("Your recent tracks could not be measured - is the engine running?")
                              : TRANS("No tracks to compare yet. Analyse a few and the findings that recur show here.");
     else if (rows_.empty())
-        status_ = TRANS("Nothing comes back across your last") + " " + juce::String(scanned) + " " +
-                  TRANS("tracks.");
+        status_ = TRANS("Nothing comes back across your last") + " " + juce::String(scanned) + " " + TRANS("tracks.");
     else
-        status_ = TRANS("Across your last") + " " + juce::String(scanned) + " " + TRANS("tracks") +
-                  (failed > 0 ? " (" + juce::String(failed) + " " + TRANS("could not be measured") + ")" : juce::String()) +
-                  ". " + TRANS("Click one to open the newest track with it.");
+        status_ =
+            TRANS("Across your last") + " " + juce::String(scanned) + " " + TRANS("tracks") +
+            (failed > 0 ? " (" + juce::String(failed) + " " + TRANS("could not be measured") + ")" : juce::String()) +
+            ". " + TRANS("Click one to open the newest track with it.");
     resized();
     repaint();
 }

@@ -19,9 +19,12 @@ enum class Format { Csv, ReaperCsv, Midi };
 inline const char* extension(Format f) noexcept
 {
     switch (f) {
-    case Format::Csv: return ".csv";
-    case Format::ReaperCsv: return ".csv";
-    case Format::Midi: return ".mid";
+    case Format::Csv:
+        return ".csv";
+    case Format::ReaperCsv:
+        return ".csv";
+    case Format::Midi:
+        return ".mid";
     }
     return ".csv";
 }
@@ -30,9 +33,12 @@ inline const char* extension(Format f) noexcept
 inline const char* suffix(Format f) noexcept
 {
     switch (f) {
-    case Format::Csv: return "_markers";
-    case Format::ReaperCsv: return "_reaper_regions";
-    case Format::Midi: return "_markers";
+    case Format::Csv:
+        return "_markers";
+    case Format::ReaperCsv:
+        return "_reaper_regions";
+    case Format::Midi:
+        return "_markers";
     }
     return "_markers";
 }

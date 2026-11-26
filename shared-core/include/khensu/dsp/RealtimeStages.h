@@ -92,8 +92,10 @@ class RealtimeEqBand {
 
     void reset() noexcept
     {
-        for (auto& f : filters_) f.reset();
-        for (auto& d : detectors_) d.reset();
+        for (auto& f : filters_)
+            f.reset();
+        for (auto& d : detectors_)
+            d.reset();
         env_ = 0.0f;
         reductionDb_ = 0.0f;
         appliedReductionDb_ = 0.0f;
@@ -148,7 +150,8 @@ class RealtimeEqBand {
         const bool ms = channels_ != Channels::Stereo && nch >= 2;
         if (!dynamicActive() && !ms) {
             // The v4 path: one juce IIR filter per channel over the block.
-            for (int c = 0; c < nch; ++c) runFilter(filters_[static_cast<size_t>(c)], channels[c], numSamples);
+            for (int c = 0; c < nch; ++c)
+                runFilter(filters_[static_cast<size_t>(c)], channels[c], numSamples);
             return;
         }
         for (int start = 0; start < numSamples; start += kControlSamples) {
@@ -180,7 +183,8 @@ class RealtimeEqBand {
                     key[static_cast<size_t>(c)] = out[static_cast<size_t>(c)];
                 }
                 updateDynamicGain(key.data(), nch, n);
-                for (int c = 0; c < nch; ++c) runFilter(filters_[static_cast<size_t>(c)], out[static_cast<size_t>(c)], n);
+                for (int c = 0; c < nch; ++c)
+                    runFilter(filters_[static_cast<size_t>(c)], out[static_cast<size_t>(c)], n);
             }
         }
     }
@@ -194,12 +198,18 @@ class RealtimeEqBand {
         const float qq = std::max(0.05f, q);
         const float gain = juce::Decibels::decibelsToGain(gainDb);
         switch (type) {
-        case Type::LowShelf: return AC::makeLowShelf(sampleRate_, f, qq, gain);
-        case Type::HighShelf: return AC::makeHighShelf(sampleRate_, f, qq, gain);
-        case Type::Notch: return AC::makeNotch(sampleRate_, f, qq);
-        case Type::HighPass: return AC::makeHighPass(sampleRate_, f, qq);
-        case Type::LowPass: return AC::makeLowPass(sampleRate_, f, qq);
-        case Type::Bell: break;
+        case Type::LowShelf:
+            return AC::makeLowShelf(sampleRate_, f, qq, gain);
+        case Type::HighShelf:
+            return AC::makeHighShelf(sampleRate_, f, qq, gain);
+        case Type::Notch:
+            return AC::makeNotch(sampleRate_, f, qq);
+        case Type::HighPass:
+            return AC::makeHighPass(sampleRate_, f, qq);
+        case Type::LowPass:
+            return AC::makeLowPass(sampleRate_, f, qq);
+        case Type::Bell:
+            break;
         }
         return AC::makePeakFilter(sampleRate_, f, qq, gain);
     }
@@ -215,7 +225,8 @@ class RealtimeEqBand {
 
     void applyDesign(const std::array<float, 6>& design) noexcept
     {
-        for (auto& f : filters_) *f.coefficients = design;
+        for (auto& f : filters_)
+            *f.coefficients = design;
     }
 
     void updateDetector() noexcept
@@ -229,7 +240,8 @@ class RealtimeEqBand {
             design = AC::makeHighPass(sampleRate_, f, 0.70710678f);
         else
             design = AC::makeBandPass(sampleRate_, f, std::max(0.05f, q_));
-        for (auto& d : detectors_) *d.coefficients = design;
+        for (auto& d : detectors_)
+            *d.coefficients = design;
     }
 
     void updateBallistics() noexcept
@@ -426,8 +438,9 @@ class RealtimeSaturation {
                 const double dry = static_cast<double>(x[i]);
                 const double u = drive * dry;
                 const double du = u - u1;
-                const double shaped = std::abs(du) > 1.0e-6 ? (antiderivative(u, warmth) - antiderivative(u1, warmth)) / du
-                                                            : curve(0.5 * (u + u1), warmth);
+                const double shaped = std::abs(du) > 1.0e-6
+                                          ? (antiderivative(u, warmth) - antiderivative(u1, warmth)) / du
+                                          : curve(0.5 * (u + u1), warmth);
                 u1 = u;
                 const double dc = shaped - in1 + dcPole_ * out1;
                 in1 = shaped;
@@ -500,13 +513,17 @@ class RealtimeTransientShaper {
         const double inv = 1.0 / static_cast<double>(nch);
         for (int i = 0; i < numSamples; ++i) {
             double level = 0.0;
-            for (int c = 0; c < nch; ++c) level += std::abs(static_cast<double>(channels[c][i]));
+            for (int c = 0; c < nch; ++c)
+                level += std::abs(static_cast<double>(channels[c][i]));
             level *= inv;
-            fast_ = level > fast_ ? fastAtk_ * fast_ + (1.0 - fastAtk_) * level : fastRel_ * fast_ + (1.0 - fastRel_) * level;
-            slow_ = level > slow_ ? slowAtk * slow_ + (1.0 - slowAtk) * level : slowRel * slow_ + (1.0 - slowRel) * level;
+            fast_ = level > fast_ ? fastAtk_ * fast_ + (1.0 - fastAtk_) * level
+                                  : fastRel_ * fast_ + (1.0 - fastRel_) * level;
+            slow_ =
+                level > slow_ ? slowAtk * slow_ + (1.0 - slowAtk) * level : slowRel * slow_ + (1.0 - slowRel) * level;
             const double amount = std::clamp((fast_ - slow_) / std::max(slow_, 1e-6), 0.0, 1.0);
             const auto gain = static_cast<float>(sustain + (attack - sustain) * amount);
-            for (int c = 0; c < nch; ++c) channels[c][i] *= gain;
+            for (int c = 0; c < nch; ++c)
+                channels[c][i] *= gain;
         }
         if (!std::isfinite(fast_) || !std::isfinite(slow_)) reset();
     }

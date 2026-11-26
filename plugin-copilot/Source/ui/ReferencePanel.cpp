@@ -156,14 +156,14 @@ void ReferencePanel::refresh()
     else if (status.isNotEmpty())
         name = status;
     else if (ref != nullptr)
-        name = ref->name() + "  (" + juce::String(ref->durationSec() / 60.0, 1) + " " + TRANS("min") + ")"
-               + (ref->truncated ? " - " + TRANS("first 15 min") : juce::String());
+        name = ref->name() + "  (" + juce::String(ref->durationSec() / 60.0, 1) + " " + TRANS("min") + ")" +
+               (ref->truncated ? " - " + TRANS("first 15 min") : juce::String());
     else
         name = TRANS("No reference - load one or drop a file here.");
     if (nameLabel_.getText() != name) nameLabel_.setText(name, juce::dontSendNotification);
-    nameLabel_.setColour(juce::Label::textColourId,
-                         status.isNotEmpty() && !processor_.isReferenceLoading() ? PluginLookAndFeel::statusWarn
-                                                                                 : PluginLookAndFeel::textPrimary);
+    nameLabel_.setColour(juce::Label::textColourId, status.isNotEmpty() && !processor_.isReferenceLoading()
+                                                        ? PluginLookAndFeel::statusWarn
+                                                        : PluginLookAndFeel::textPrimary);
 
     const bool have = ref != nullptr;
     clearButton_.setEnabled(have || processor_.getReferencePath().isNotEmpty());
@@ -179,10 +179,10 @@ void ReferencePanel::refresh()
     else if (!player.isMatched())
         offset = TRANS("Level offset: waiting for track audio to match against");
     else
-        offset = TRANS("Reference") + " " + (player.offsetDb() >= 0.0f ? "+" : "") + juce::String(player.offsetDb(), 1)
-                 + " dB " + TRANS("to match the track")
-                 + (processor_.getReferenceMatchMode() == MatchMode::ShortTerm ? " (" + TRANS("short-term") + ")"
-                                                                               : " (" + TRANS("integrated") + ")");
+        offset = TRANS("Reference") + " " + (player.offsetDb() >= 0.0f ? "+" : "") +
+                 juce::String(player.offsetDb(), 1) + " dB " + TRANS("to match the track") +
+                 (processor_.getReferenceMatchMode() == MatchMode::ShortTerm ? " (" + TRANS("short-term") + ")"
+                                                                             : " (" + TRANS("integrated") + ")");
     if (offsetLabel_.getText() != offset) offsetLabel_.setText(offset, juce::dontSendNotification);
 
     // The track's long-term spectrum from its own hub frames (new ones only).
@@ -206,16 +206,18 @@ juce::StringArray ReferencePanel::dynamicsLines() const
     const auto ref = shownReference_;
     const bool haveRef = ref != nullptr;
     const auto refStats = haveRef ? ref->stats : copilot::reference::LoudnessStats::Result{};
-    const auto row = [&](const juce::String& name, float t, float r, bool tValid, bool rValid, const juce::String& unit) {
-        lines.add(name + ": " + TRANS("track") + " " + (tValid ? juce::String(t, 1) : juce::String("-")) + ", "
-                  + TRANS("reference") + " " + (rValid ? juce::String(r, 1) : juce::String("-")) + ", "
-                  + TRANS("difference") + " " + deltaText(t, r, tValid && rValid) + " " + unit);
+    const auto row = [&](const juce::String& name, float t, float r, bool tValid, bool rValid,
+                         const juce::String& unit) {
+        lines.add(name + ": " + TRANS("track") + " " + (tValid ? juce::String(t, 1) : juce::String("-")) + ", " +
+                  TRANS("reference") + " " + (rValid ? juce::String(r, 1) : juce::String("-")) + ", " +
+                  TRANS("difference") + " " + deltaText(t, r, tValid && rValid) + " " + unit);
     };
     row(TRANS("Integrated"), track.integratedLufs, refStats.integratedLufs, track.integratedLufs > -90.0f,
         haveRef && refStats.integratedLufs > -90.0f, "LU");
     row(TRANS("Short-term"), track.shortTermLufs,
-        haveRef ? ref->shortTermAt(static_cast<juce::int64>(processor_.referencePlayer().positionSec() * ref->sampleRate))
-                : -96.0f,
+        haveRef
+            ? ref->shortTermAt(static_cast<juce::int64>(processor_.referencePlayer().positionSec() * ref->sampleRate))
+            : -96.0f,
         track.shortTermLufs > -90.0f, haveRef, "LU");
     row(TRANS("Loudness range"), track.loudnessRangeLu, refStats.loudnessRangeLu, track.valid, haveRef, "LU");
     row(TRANS("Crest factor"), track.crestDb, refStats.crestDb, track.valid, haveRef, "dB");
@@ -269,9 +271,10 @@ void ReferencePanel::paintDynamics(juce::Graphics& g, juce::Rectangle<int> area)
     const auto track = processor_.getTrackStats();
     const auto ref = shownReference_;
     const auto rs = ref != nullptr ? ref->stats : copilot::reference::LoudnessStats::Result{};
-    const float refShort = ref != nullptr ? ref->shortTermAt(static_cast<juce::int64>(
-                                                processor_.referencePlayer().positionSec() * ref->sampleRate))
-                                          : -96.0f;
+    const float refShort =
+        ref != nullptr
+            ? ref->shortTermAt(static_cast<juce::int64>(processor_.referencePlayer().positionSec() * ref->sampleRate))
+            : -96.0f;
     struct Row {
         juce::String name;
         float t, r;
@@ -300,7 +303,8 @@ void ReferencePanel::paintDynamics(juce::Graphics& g, juce::Rectangle<int> area)
         g.drawText(row.rv ? juce::String(row.r, 1) : juce::String("-"), r.removeFromLeft(colW),
                    juce::Justification::centredRight);
         g.setColour(P::accentTeal);
-        g.drawText(deltaText(row.t, row.r, row.tv && row.rv), r.removeFromLeft(colW), juce::Justification::centredRight);
+        g.drawText(deltaText(row.t, row.r, row.tv && row.rv), r.removeFromLeft(colW),
+                   juce::Justification::centredRight);
     }
 }
 

@@ -36,9 +36,12 @@ void LoudnessStats::prepare(double sampleRate) noexcept
     blockLength_ = juce::jmax(1, static_cast<int>(std::lround(sampleRate_ * 0.1)));
     const auto k = analysis::kWeightingCoefficients(sampleRate_);
     for (auto* set : {&preTemplate_, &rlbTemplate_})
-        for (auto& bq : *set) bq = Biquad{};
-    for (auto& bq : preTemplate_) load(k.preFilter, bq.b0, bq.b1, bq.b2, bq.a1, bq.a2);
-    for (auto& bq : rlbTemplate_) load(k.rlbFilter, bq.b0, bq.b1, bq.b2, bq.a1, bq.a2);
+        for (auto& bq : *set)
+            bq = Biquad{};
+    for (auto& bq : preTemplate_)
+        load(k.preFilter, bq.b0, bq.b1, bq.b2, bq.a1, bq.a2);
+    for (auto& bq : rlbTemplate_)
+        load(k.rlbFilter, bq.b0, bq.b1, bq.b2, bq.a1, bq.a2);
     reset();
 }
 
@@ -51,8 +54,10 @@ void LoudnessStats::reset() noexcept
     blockRawCount_ = 0;
     recent_.fill(0.0);
     recentPos_ = recentCount_ = 0;
-    for (auto& bin : momentaryHist_) bin.store(0, std::memory_order_relaxed);
-    for (auto& bin : shortTermHist_) bin.store(0, std::memory_order_relaxed);
+    for (auto& bin : momentaryHist_)
+        bin.store(0, std::memory_order_relaxed);
+    for (auto& bin : shortTermHist_)
+        bin.store(0, std::memory_order_relaxed);
     gatedRawSq_.store(0.0, std::memory_order_relaxed);
     gatedRawCount_.store(0.0, std::memory_order_relaxed);
     peak_.store(0.0f, std::memory_order_relaxed);

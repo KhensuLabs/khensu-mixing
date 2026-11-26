@@ -118,7 +118,10 @@ ReferenceScanPanel::ReferenceScanPanel(IAppController& controller, std::string b
 
     searchEditor_.setTitle(TRANS("Search the scanned references"));
     searchEditor_.setTooltip(TRANS("Filter by title, artist, author, pack or album"));
-    searchEditor_.onTextChange = [this] { startTimer(250); listDirty_ = true; };
+    searchEditor_.onTextChange = [this] {
+        startTimer(250);
+        listDirty_ = true;
+    };
     addAndMakeVisible(searchEditor_);
 
     list_.setModel(this);
@@ -269,14 +272,13 @@ void ReferenceScanPanel::loadRootsAndSummary()
                 if (self->onSummary) self->onSummary(s);
             }
             if (!self->scanning_)
-                self->summaryLabel_.setText(
-                    self->rootPath_.isEmpty() && self->songs_ + self->samples_ == 0
-                        ? juce::String()
-                        : TRANS("%s songs, %m samples, %k packs found")
-                              .replace("%s", juce::String(self->songs_))
-                              .replace("%m", juce::String(self->samples_))
-                              .replace("%k", juce::String(self->packs_)),
-                    juce::dontSendNotification);
+                self->summaryLabel_.setText(self->rootPath_.isEmpty() && self->songs_ + self->samples_ == 0
+                                                ? juce::String()
+                                                : TRANS("%s songs, %m samples, %k packs found")
+                                                      .replace("%s", juce::String(self->songs_))
+                                                      .replace("%m", juce::String(self->samples_))
+                                                      .replace("%k", juce::String(self->packs_)),
+                                            juce::dontSendNotification);
             self->updateButtons();
             self->updateEmptyState();
         });
@@ -306,8 +308,7 @@ void ReferenceScanPanel::loadList()
                 // (a few times), instead of an empty pane.
                 if (ipc::engineDidNotAnswer(result.error()) && self->listRetries_ < 6) {
                     ++self->listRetries_;
-                    self->statusLabel_.setText(TRANS("Waiting for the analysis engine..."),
-                                               juce::dontSendNotification);
+                    self->statusLabel_.setText(TRANS("Waiting for the analysis engine..."), juce::dontSendNotification);
                     juce::Timer::callAfterDelay(5000, [self] {
                         if (self != nullptr && self->isShowing()) self->refresh();
                     });
@@ -354,35 +355,36 @@ void ReferenceScanPanel::loadList()
 void ReferenceScanPanel::chooseFolder()
 {
     chooser_ = std::make_unique<juce::FileChooser>(
-        TRANS("Choose your reference folder"),
-        rootPath_.isNotEmpty() ? juce::File(rootPath_)
-                               : juce::File::getSpecialLocation(juce::File::userMusicDirectory));
+        TRANS("Choose your reference folder"), rootPath_.isNotEmpty()
+                                                   ? juce::File(rootPath_)
+                                                   : juce::File::getSpecialLocation(juce::File::userMusicDirectory));
     juce::Component::SafePointer<ReferenceScanPanel> self(this);
-    chooser_->launchAsync(
-        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-        [self](const juce::FileChooser& fc) {
-            if (self == nullptr) return;
-            const juce::File dir = fc.getResult();
-            if (!dir.isDirectory()) return;
-            const bool rescan = self->rescanToggle_.getToggleState();
-            self->statusLabel_.setText(TRANS("Saving the folder..."), juce::dontSendNotification);
-            self->controller_.runLongInBackground([self, path = dir.getFullPathName(), rescan, baseUrl = self->baseUrl_] {
-                auto result = ipc::HttpServiceBridge(baseUrl).referenceScanSetRoot(path, rescan, true);
-                juce::MessageManager::callAsync([self, result] {
-                    if (self == nullptr) return;
-                    // The library is per machine, not per session: no epoch check.
-                    if (result.is_err()) {
-                        self->statusLabel_.setText(classifyServiceError(result.error()).message,
-                                                   juce::dontSendNotification);
-                        return;
-                    }
-                    self->rootPath_ = result.value()[af::ReferenceScanRoot::path].toString();
-                    self->folderPath_.setText(self->rootPath_, juce::dontSendNotification);
-                    self->folderPath_.setTooltip(self->rootPath_);
-                    self->startScan(); // a new folder is scanned straight away
-                });
-            });
-        });
+    chooser_->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                          [self](const juce::FileChooser& fc) {
+                              if (self == nullptr) return;
+                              const juce::File dir = fc.getResult();
+                              if (!dir.isDirectory()) return;
+                              const bool rescan = self->rescanToggle_.getToggleState();
+                              self->statusLabel_.setText(TRANS("Saving the folder..."), juce::dontSendNotification);
+                              self->controller_.runLongInBackground(
+                                  [self, path = dir.getFullPathName(), rescan, baseUrl = self->baseUrl_] {
+                                      auto result =
+                                          ipc::HttpServiceBridge(baseUrl).referenceScanSetRoot(path, rescan, true);
+                                      juce::MessageManager::callAsync([self, result] {
+                                          if (self == nullptr) return;
+                                          // The library is per machine, not per session: no epoch check.
+                                          if (result.is_err()) {
+                                              self->statusLabel_.setText(classifyServiceError(result.error()).message,
+                                                                         juce::dontSendNotification);
+                                              return;
+                                          }
+                                          self->rootPath_ = result.value()[af::ReferenceScanRoot::path].toString();
+                                          self->folderPath_.setText(self->rootPath_, juce::dontSendNotification);
+                                          self->folderPath_.setTooltip(self->rootPath_);
+                                          self->startScan(); // a new folder is scanned straight away
+                                      });
+                                  });
+                          });
 }
 
 void ReferenceScanPanel::startScan()
@@ -428,9 +430,8 @@ void ReferenceScanPanel::cancelScan()
 {
     if (jobId_.isEmpty()) return;
     statusLabel_.setText(TRANS("Stopping the scan..."), juce::dontSendNotification);
-    controller_.runLongInBackground([jobId = jobId_, baseUrl = baseUrl_] {
-        (void)ipc::HttpServiceBridge(baseUrl).referenceScanCancel(jobId);
-    });
+    controller_.runLongInBackground(
+        [jobId = jobId_, baseUrl = baseUrl_] { (void)ipc::HttpServiceBridge(baseUrl).referenceScanCancel(jobId); });
 }
 
 void ReferenceScanPanel::forgetFolder()
@@ -450,9 +451,12 @@ void ReferenceScanPanel::forgetFolder()
                     if (self == nullptr) return;
                     // The library is per machine, not per session: no epoch check.
                     self->statusLabel_.setText(
-                        r.is_err() ? classifyServiceError(r.error()).message
-                                   : TRANS("Folder forgotten (%n items).")
-                                         .replace("%n", juce::String((int)r.value()[af::ReferenceScanRootRemoveResponse::forgotten_items])),
+                        r.is_err()
+                            ? classifyServiceError(r.error()).message
+                            : TRANS("Folder forgotten (%n items).")
+                                  .replace("%n",
+                                           juce::String(
+                                               (int)r.value()[af::ReferenceScanRootRemoveResponse::forgotten_items])),
                         juce::dontSendNotification);
                     self->loadRootsAndSummary();
                     self->loadList();
@@ -554,7 +558,8 @@ void ReferenceScanPanel::showProgress(const juce::var& status)
                    .replace("%n", juce::String((int)r[af::ReferenceScanResult::processed]))
                    .replace("%u", juce::String((int)r[af::ReferenceScanResult::unchanged]));
         if ((int)r[af::ReferenceScanResult::failed] > 0)
-            text << ", " << TRANS("%f could not be read").replace("%f", juce::String((int)r[af::ReferenceScanResult::failed]));
+            text << ", "
+                 << TRANS("%f could not be read").replace("%f", juce::String((int)r[af::ReferenceScanResult::failed]));
         if ((int)r[af::ReferenceScanResult::removed] > 0)
             text << ", " << TRANS("%r removed").replace("%r", juce::String((int)r[af::ReferenceScanResult::removed]));
         if ((bool)r[af::ReferenceScanResult::truncated]) text << " " << TRANS("(stopped at the file limit)");
@@ -676,7 +681,8 @@ void ReferenceScanPanel::applyGenre(const Row& row, const juce::String& genre, b
             const int n = (int)result.value()[af::ReferenceScanGenreResponse::updated];
             juce::String text = genre.isEmpty()
                                     ? TRANS("Genre cleared.")
-                                    : TRANS("Genre set to %g").replace("%g", referenceGenreName(self->controller_.genreDatabase(), genre));
+                                    : TRANS("Genre set to %g")
+                                          .replace("%g", referenceGenreName(self->controller_.genreDatabase(), genre));
             if (n > 1) text << " (" << TRANS("%n items").replace("%n", juce::String(n)) << ")";
             if ((bool)result.value()[af::ReferenceScanGenreResponse::learned])
                 text << " " << TRANS("The genre model will learn from it.");
@@ -724,8 +730,8 @@ void ReferenceScanPanel::updateEmptyState()
         emptyState_.setMessage(TRANS("No matches"), TRANS("Nothing in this genre matches the search."));
         emptyState_.clearAction();
     } else {
-        const juce::String what = view_ == View::Songs ? TRANS("songs") : (view_ == View::Samples ? TRANS("samples")
-                                                                                                    : TRANS("packs"));
+        const juce::String what =
+            view_ == View::Songs ? TRANS("songs") : (view_ == View::Samples ? TRANS("samples") : TRANS("packs"));
         emptyState_.setMessage(TRANS("No %w in this genre").replace("%w", what),
                                TRANS("Pick another genre, or scan the folder again to pick up new files."));
         emptyState_.setAction(TRANS("Scan now"), [this] { startScan(); });
@@ -753,8 +759,8 @@ void ReferenceScanPanel::drawChip(juce::Graphics& g, juce::Rectangle<int>& area,
 {
     if (text.isEmpty()) return;
     const auto font = KhensuTheme::bodyFont(type::caption);
-    const int w = juce::jmin(area.getWidth(),
-                             juce::roundToInt(juce::GlyphArrangement::getStringWidth(font, text)) + 12);
+    const int w =
+        juce::jmin(area.getWidth(), juce::roundToInt(juce::GlyphArrangement::getStringWidth(font, text)) + 12);
     if (w < 24) return;
     auto chip = area.removeFromLeft(w).toFloat();
     area.removeFromLeft(4);
@@ -777,7 +783,8 @@ void ReferenceScanPanel::paintListBoxItem(int rowNumber, juce::Graphics& g, int 
     auto thumbR = juce::Rectangle<int>(8, (height - kThumb) / 2, kThumb, kThumb);
     const juce::Image img = thumbnailFor(r.artworkPath);
     if (img.isValid()) {
-        g.drawImage(img, thumbR.toFloat(), juce::RectanglePlacement::centred | juce::RectanglePlacement::fillDestination);
+        g.drawImage(img, thumbR.toFloat(),
+                    juce::RectanglePlacement::centred | juce::RectanglePlacement::fillDestination);
     } else {
         g.setColour(KhensuTheme::bgOverlay);
         g.fillRoundedRectangle(thumbR.toFloat(), 4.0f);
@@ -793,9 +800,10 @@ void ReferenceScanPanel::paintListBoxItem(int rowNumber, juce::Graphics& g, int 
     // Right side of line 1: confidence; line 2: chips.
     const auto& db = controller_.genreDatabase();
     if (r.kind != "pack" && (r.genre.isNotEmpty() || r.family.isNotEmpty())) {
-        const juce::String conf = r.source == "user" ? TRANS("yours")
-                                                     : juce::String(juce::roundToInt(r.confidence * 100.0f)) + "%";
-        g.setColour(r.confidence >= 0.6f || r.source == "user" ? KhensuTheme::textSecondary : KhensuTheme::textTertiary);
+        const juce::String conf =
+            r.source == "user" ? TRANS("yours") : juce::String(juce::roundToInt(r.confidence * 100.0f)) + "%";
+        g.setColour(r.confidence >= 0.6f || r.source == "user" ? KhensuTheme::textSecondary
+                                                               : KhensuTheme::textTertiary);
         g.setFont(KhensuTheme::metricFont(type::caption));
         g.drawText(conf, line1.removeFromRight(48), juce::Justification::centredRight);
     }
@@ -807,7 +815,9 @@ void ReferenceScanPanel::paintListBoxItem(int rowNumber, juce::Graphics& g, int 
     if (r.kind == "pack") {
         meta = r.author;
         meta << (meta.isEmpty() ? "" : "  -  ")
-             << TRANS("%n samples, %l loops").replace("%n", juce::String(r.samples)).replace("%l", juce::String(r.loops));
+             << TRANS("%n samples, %l loops")
+                    .replace("%n", juce::String(r.samples))
+                    .replace("%l", juce::String(r.loops));
     } else if (r.kind == "sample") {
         meta = r.author;
         if (r.pack.isNotEmpty()) meta << (meta.isEmpty() ? "" : "  -  ") << r.pack;

@@ -9,10 +9,14 @@ namespace khensu::palette_search {
 int capFor(Kind kind) noexcept
 {
     switch (kind) {
-    case Kind::Card: return kMaxCards;
-    case Kind::Finding: return kMaxFindings;
-    case Kind::Genre: return kMaxGenres;
-    case Kind::Command: break;
+    case Kind::Card:
+        return kMaxCards;
+    case Kind::Finding:
+        return kMaxFindings;
+    case Kind::Genre:
+        return kMaxGenres;
+    case Kind::Command:
+        break;
     }
     return std::numeric_limits<int>::max();
 }
@@ -95,10 +99,14 @@ std::vector<int> rank(const juce::String& query, const std::vector<Entry>& entri
 juce::String kindTag(Kind kind)
 {
     switch (kind) {
-    case Kind::Card: return TRANS("Card");
-    case Kind::Finding: return TRANS("Finding");
-    case Kind::Genre: return TRANS("Genre");
-    case Kind::Command: break;
+    case Kind::Card:
+        return TRANS("Card");
+    case Kind::Finding:
+        return TRANS("Finding");
+    case Kind::Genre:
+        return TRANS("Genre");
+    case Kind::Command:
+        break;
     }
     return TRANS("Do");
 }

@@ -81,8 +81,10 @@ void LivePreviewToggle::refreshNote()
     note_.setText(text, juce::dontSendNotification);
     juce::StringArray detail;
     if (!status.live.isEmpty()) detail.add(TRANS("Live:") + " " + status.live.joinIntoString(", "));
-    for (const auto& s : status.substituted) detail.add(s);
-    for (const auto& s : status.skipped) detail.add(s);
+    for (const auto& s : status.substituted)
+        detail.add(s);
+    for (const auto& s : status.skipped)
+        detail.add(s);
     note_.setTooltip(detail.joinIntoString("\n"));
 }
 

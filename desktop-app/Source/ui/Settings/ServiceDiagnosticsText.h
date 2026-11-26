@@ -48,8 +48,7 @@ inline juce::StringArray memoryLines(const juce::var& v)
             pools.add(p[api::fields::PoolInfo::name].toString() + " " +
                       juce::String(juce::roundToInt(num(p[api::fields::PoolInfo::workers]))));
     second << (pools.isEmpty() ? juce::String("-") : pools.joinIntoString(", "));
-    second << " " << TRANS("on") << " " << juce::String(juce::roundToInt(num(v[F::cpu_count]))) << " "
-           << TRANS("CPUs");
+    second << " " << TRANS("on") << " " << juce::String(juce::roundToInt(num(v[F::cpu_count]))) << " " << TRANS("CPUs");
     if (const auto gate = v[F::memory_gate]; gate.isObject()) {
         namespace G = api::fields::MemoryGateInfo;
         if (static_cast<bool>(gate[G::enabled]))
@@ -116,7 +115,8 @@ inline juce::StringArray securityLines(const juce::var& v, int maxEvents = 3)
     if (auto* obj = v[F::anomalies].getDynamicObject())
         for (const auto& p : obj->getProperties())
             anomalies.add(p.name.toString() + " x" + juce::String(juce::roundToInt(num(p.value))));
-    if (!anomalies.isEmpty()) line << " - " << TRANS("repeated in the last hour:") << " " << anomalies.joinIntoString(", ");
+    if (!anomalies.isEmpty())
+        line << " - " << TRANS("repeated in the last hour:") << " " << anomalies.joinIntoString(", ");
     out.add(line);
     // Each event is a free-form {ts, kind, detail} record (security_log.py).
     if (auto* arr = v[F::events].getArray())
@@ -158,11 +158,13 @@ inline juce::String registryLine(const juce::var& v)
                 ++it->second;
         }
     if (n == 0) return TRANS("Model registry: no models listed");
-    std::stable_sort(licences.begin(), licences.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+    std::stable_sort(licences.begin(), licences.end(),
+                     [](const auto& a, const auto& b) { return a.second > b.second; });
     juce::StringArray parts;
-    for (const auto& [lic, count] : licences) parts.add(lic + " " + juce::String(count));
-    return TRANS("Model registry:") + " " + juce::String(n) + " " + (n == 1 ? TRANS("model") : TRANS("models")) +
-           " (" + parts.joinIntoString(", ") + ")";
+    for (const auto& [lic, count] : licences)
+        parts.add(lic + " " + juce::String(count));
+    return TRANS("Model registry:") + " " + juce::String(n) + " " + (n == 1 ? TRANS("model") : TRANS("models")) + " (" +
+           parts.joinIntoString(", ") + ")";
 }
 
 /// The names of the registry's models, for a tooltip.
@@ -190,10 +192,13 @@ inline juce::String genreExamplesLine(const juce::var& v)
     if (total <= 0) return TRANS("No genre examples stored yet.");
     std::vector<std::pair<juce::String, int>> perGenre;
     if (auto* obj = v[F::genres].getDynamicObject())
-        for (const auto& p : obj->getProperties()) perGenre.emplace_back(p.name.toString(), juce::roundToInt(num(p.value)));
-    std::stable_sort(perGenre.begin(), perGenre.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+        for (const auto& p : obj->getProperties())
+            perGenre.emplace_back(p.name.toString(), juce::roundToInt(num(p.value)));
+    std::stable_sort(perGenre.begin(), perGenre.end(),
+                     [](const auto& a, const auto& b) { return a.second > b.second; });
     juce::StringArray parts;
-    for (const auto& [genre, count] : perGenre) parts.add(genre + " " + juce::String(count));
+    for (const auto& [genre, count] : perGenre)
+        parts.add(genre + " " + juce::String(count));
     return TRANS("Your genre examples:") + " " + juce::String(total) +
            (parts.isEmpty() ? juce::String() : " (" + parts.joinIntoString(", ") + ")");
 }

@@ -21,7 +21,7 @@ inline constexpr float kFreqMinHz = 20.0f;
 inline constexpr float kFreqMaxHz = 20000.0f;
 
 /// The labelled ticks (1-2-5 per decade, as ChartKit's log axis draws them).
-inline constexpr std::array<float, 10> kFreqTicksHz{20.0f,   50.0f,   100.0f,  200.0f,  500.0f,
+inline constexpr std::array<float, 10> kFreqTicksHz{20.0f,   50.0f,   100.0f,  200.0f,   500.0f,
                                                     1000.0f, 2000.0f, 5000.0f, 10000.0f, 20000.0f};
 
 /// The standard axis as a ChartKit Axis (a ChartView sets `x = viz::frequencyAxis();`).

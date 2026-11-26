@@ -1,14 +1,16 @@
 // desktop-app/Source/midi/MidiCiResponder.cpp
 #include "MidiCiResponder.h"
 
+#include <algorithm>
+#include <string_view>
+
 namespace khensu {
 
 namespace ci = juce::midi_ci;
 
 MidiCiResponder::MidiCiResponder(Midi2DeviceManager* midi, const MacroMappingEngine& engine, ValueOf valueOf)
     : midi_(midi), engine_(engine), valueOf_(std::move(valueOf))
-{
-}
+{}
 
 MidiCiResponder::~MidiCiResponder() { setEnabled(false); }
 
@@ -29,9 +31,8 @@ void MidiCiResponder::setEnabled(bool enabled)
     info.modelNumber = {std::byte{0x01}, std::byte{0x00}};
     info.revision = {std::byte{0x01}, std::byte{0x00}, std::byte{0x00}, std::byte{0x00}};
     std::array<char, 16> instance{};
-    const char* id = "KhensuMixing";
-    for (size_t i = 0; id[i] != 0 && i < instance.size(); ++i)
-        instance[i] = id[i];
+    constexpr std::string_view id{"KhensuMixing"};
+    std::copy_n(id.begin(), std::min(id.size(), instance.size()), instance.begin());
     const auto options = ci::DeviceOptions{}
                              .withOutputs({this})
                              .withDeviceInfo(info)
@@ -68,7 +69,8 @@ void MidiCiResponder::processMessage(juce::ump::BytesOnGroup message)
         return;
     }
     if (midi_ != nullptr)
-        midi_->sendSysEx(message.group, reinterpret_cast<const std::uint8_t*>(message.bytes.data()), message.bytes.size());
+        midi_->sendSysEx(message.group, reinterpret_cast<const std::uint8_t*>(message.bytes.data()),
+                         message.bytes.size());
 }
 
 juce::String MidiCiResponder::resourceNameFor(const juce::String& target)
@@ -100,7 +102,8 @@ juce::var MidiCiResponder::resourceList(const juce::StringArray& targets)
     return list;
 }
 
-juce::var MidiCiResponder::propertyBody(const juce::String& target, double value, const MacroMappingEngine::Mapping* mapping)
+juce::var MidiCiResponder::propertyBody(const juce::String& target, double value,
+                                        const MacroMappingEngine::Mapping* mapping)
 {
     auto* body = new juce::DynamicObject();
     body->setProperty("name", target);

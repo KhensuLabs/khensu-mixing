@@ -131,10 +131,12 @@ void LineChart::paintData(juce::Graphics& g, juce::Rectangle<float> plot)
         g.setColour(sp.colour);
         if (sp.vertical) {
             const float x0 = px(sp.lo), x1 = px(sp.hi);
-            g.fillRect(juce::Rectangle<float>(std::min(x0, x1), plot.getY(), std::max(1.0f, std::abs(x1 - x0)), plot.getHeight()));
+            g.fillRect(juce::Rectangle<float>(std::min(x0, x1), plot.getY(), std::max(1.0f, std::abs(x1 - x0)),
+                                              plot.getHeight()));
         } else {
             const float y0 = py(sp.lo), y1 = py(sp.hi);
-            g.fillRect(juce::Rectangle<float>(plot.getX(), std::min(y0, y1), plot.getWidth(), std::max(1.0f, std::abs(y1 - y0))));
+            g.fillRect(juce::Rectangle<float>(plot.getX(), std::min(y0, y1), plot.getWidth(),
+                                              std::max(1.0f, std::abs(y1 - y0))));
         }
     }
     for (const auto& b : bands_) {
@@ -151,8 +153,10 @@ void LineChart::paintData(juce::Graphics& g, juce::Rectangle<float> plot)
             p.lineTo(plot.getRight(), py(l.value));
         }
         g.setColour(l.colour);
-        if (l.dashed) g.fillPath(dashedOf(p, 1.2f, 4.0f, 3.0f));
-        else g.strokePath(p, juce::PathStrokeType(1.2f));
+        if (l.dashed)
+            g.fillPath(dashedOf(p, 1.2f, 4.0f, 3.0f));
+        else
+            g.strokePath(p, juce::PathStrokeType(1.2f));
     }
     paintUnder(g, plot);
     for (const auto& s : series_) {
@@ -173,7 +177,8 @@ void LineChart::paintData(juce::Graphics& g, juce::Rectangle<float> plot)
                 continue;
             }
             const float X = px(s.xs[i]), Y = yFor(s, s.ys[i]);
-            if (!pen) p.startNewSubPath(X, Y);
+            if (!pen)
+                p.startNewSubPath(X, Y);
             else if (s.kind == Series::Kind::Steps) {
                 p.lineTo(X, lastY);
                 p.lineTo(X, Y);
@@ -184,7 +189,9 @@ void LineChart::paintData(juce::Graphics& g, juce::Rectangle<float> plot)
         }
         if (s.kind == Series::Kind::Steps && pen && n > 0) p.lineTo(plot.getRight(), lastY);
         switch (s.kind) {
-        case Series::Kind::Dashed: g.fillPath(dashedOf(p, s.width, 5.0f, 4.0f)); break;
+        case Series::Kind::Dashed:
+            g.fillPath(dashedOf(p, s.width, 5.0f, 4.0f));
+            break;
         case Series::Kind::Area: {
             juce::Path fill;
             bool open = false;
@@ -222,7 +229,9 @@ void LineChart::paintData(juce::Graphics& g, juce::Rectangle<float> plot)
         }
         case Series::Kind::Line:
         case Series::Kind::Steps:
-        case Series::Kind::Dots: g.strokePath(p, juce::PathStrokeType(s.width, juce::PathStrokeType::curved)); break;
+        case Series::Kind::Dots:
+            g.strokePath(p, juce::PathStrokeType(s.width, juce::PathStrokeType::curved));
+            break;
         }
     }
     paintOver(g, plot);
@@ -243,8 +252,10 @@ void LineChart::paintData(juce::Graphics& g, juce::Rectangle<float> plot)
                 g.drawText(l.label, juce::Rectangle<float>(px(l.value) + 3.0f, plot.getY() + 2.0f, 120.0f, 13.0f),
                            juce::Justification::centredLeft, false);
             else
-                g.drawText(l.label, juce::Rectangle<float>(plot.getX() + 4.0f, py(l.value) - 14.0f, plot.getWidth() * 0.6f, 13.0f),
-                           juce::Justification::centredLeft, false);
+                g.drawText(
+                    l.label,
+                    juce::Rectangle<float>(plot.getX() + 4.0f, py(l.value) - 14.0f, plot.getWidth() * 0.6f, 13.0f),
+                    juce::Justification::centredLeft, false);
         }
 }
 
@@ -267,7 +278,8 @@ Readout LineChart::readoutAt(double xv, double)
         Series lo{b.name, b.colour, b.xs, b.lo};
         Series hi{b.name, b.colour, b.xs, b.hi};
         const auto a = valueAt(lo, xv), c = valueAt(hi, xv);
-        if (a && c) r.lines.push_back({b.name + " " + y.label(*a) + " to " + y.label(*c, true), b.colour.withAlpha(1.0f)});
+        if (a && c)
+            r.lines.push_back({b.name + " " + y.label(*a) + " to " + y.label(*c, true), b.colour.withAlpha(1.0f)});
     }
     extendReadout(r, xv);
     return r;
@@ -342,13 +354,15 @@ void BarChart::layoutAxes()
     auto& val = horizontal_ ? x : y;
     val.inverted = false;
     if (val.format == Format::Category) val.format = Format::Number;
-    const auto fixed = fixedMargins_.value_or(horizontal_ ? juce::Rectangle<int>(36, 6, 44, 20) : juce::Rectangle<int>(44, 8, 10, 20));
+    const auto fixed =
+        fixedMargins_.value_or(horizontal_ ? juce::Rectangle<int>(36, 6, 44, 20) : juce::Rectangle<int>(44, 8, 10, 20));
     if (horizontal_) {
         float w = 0.0f;
         const auto f = font();
         for (const auto& b : bars_)
             w = std::max(w, juce::GlyphArrangement::getStringWidth(f, b.label));
-        setMargins(juce::jlimit(fixed.getX(), 150, juce::roundToInt(w) + 12), fixed.getY(), fixed.getWidth(), fixed.getHeight());
+        setMargins(juce::jlimit(fixed.getX(), 150, juce::roundToInt(w) + 12), fixed.getY(), fixed.getWidth(),
+                   fixed.getHeight());
         setGridLines(true, false);
     } else {
         setMargins(fixed.getX(), fixed.getY(), fixed.getWidth(), fixed.getHeight());
@@ -395,10 +409,12 @@ void BarChart::paintData(juce::Graphics& g, juce::Rectangle<float> plot)
             const double end = has ? v : base;
             if (horizontal_) {
                 const float a = px(base), b = px(end), t0 = py(c0), t1 = py(c1);
-                r = juce::Rectangle<float>::leftTopRightBottom(std::min(a, b), std::min(t0, t1), std::max(a, b), std::max(t0, t1));
+                r = juce::Rectangle<float>::leftTopRightBottom(std::min(a, b), std::min(t0, t1), std::max(a, b),
+                                                               std::max(t0, t1));
             } else {
                 const float a = py(base), b = py(end), t0 = px(c0), t1 = px(c1);
-                r = juce::Rectangle<float>::leftTopRightBottom(std::min(t0, t1), std::min(a, b), std::max(t0, t1), std::max(a, b));
+                r = juce::Rectangle<float>::leftTopRightBottom(std::min(t0, t1), std::min(a, b), std::max(t0, t1),
+                                                               std::max(a, b));
             }
             const auto colour = (bar.colour.isOpaque() || bar.colour.getAlpha() > 0 ? bar.colour : series_[s].colour)
                                     .withMultipliedAlpha(bar.alpha);
@@ -417,7 +433,8 @@ void BarChart::paintData(juce::Graphics& g, juce::Rectangle<float> plot)
                 const auto bounds = getLocalBounds().toFloat();
                 if (tr.getRight() > bounds.getRight()) tr.setX(r.getRight() - tw - 3.0f);
                 if (tr.getHeight() < 11.0f) tr = tr.withSizeKeepingCentre(tr.getWidth(), 11.0f);
-                g.drawText(text, tr, positive ? juce::Justification::centredLeft : juce::Justification::centredRight, false);
+                g.drawText(text, tr, positive ? juce::Justification::centredLeft : juce::Justification::centredRight,
+                           false);
             } else {
                 auto tr = juce::Rectangle<float>(r.getCentreX() - tw * 0.5f, r.getY() - 14.0f, tw, 13.0f);
                 if (tr.getY() < plot.getY()) tr.setY(r.getY() + 2.0f);
@@ -428,9 +445,11 @@ void BarChart::paintData(juce::Graphics& g, juce::Rectangle<float> plot)
             const double c0 = static_cast<double>(i) - 0.42, c1 = static_cast<double>(i) + 0.42;
             g.setColour(style().text.withAlpha(0.9f));
             if (horizontal_)
-                g.fillRect(juce::Rectangle<float>(px(*bar.target) - 1.0f, std::min(py(c0), py(c1)), 2.0f, std::abs(py(c1) - py(c0))));
+                g.fillRect(juce::Rectangle<float>(px(*bar.target) - 1.0f, std::min(py(c0), py(c1)), 2.0f,
+                                                  std::abs(py(c1) - py(c0))));
             else
-                g.fillRect(juce::Rectangle<float>(std::min(px(c0), px(c1)), py(*bar.target) - 1.0f, std::abs(px(c1) - px(c0)), 2.0f));
+                g.fillRect(juce::Rectangle<float>(std::min(px(c0), px(c1)), py(*bar.target) - 1.0f,
+                                                  std::abs(px(c1) - px(c0)), 2.0f));
         }
     }
 }
@@ -443,9 +462,11 @@ void BarChart::paintHoverMark(juce::Graphics& g, juce::Rectangle<float> plot, fl
     const double c0 = i - 0.5, c1 = i + 0.5;
     g.setColour(style().crosshair.withMultipliedAlpha(0.25f));
     if (horizontal_)
-        g.fillRect(juce::Rectangle<float>(plot.getX(), std::min(py(c0), py(c1)), plot.getWidth(), std::abs(py(c1) - py(c0))));
+        g.fillRect(
+            juce::Rectangle<float>(plot.getX(), std::min(py(c0), py(c1)), plot.getWidth(), std::abs(py(c1) - py(c0))));
     else
-        g.fillRect(juce::Rectangle<float>(std::min(px(c0), px(c1)), plot.getY(), std::abs(px(c1) - px(c0)), plot.getHeight()));
+        g.fillRect(
+            juce::Rectangle<float>(std::min(px(c0), px(c1)), plot.getY(), std::abs(px(c1) - px(c0)), plot.getHeight()));
 }
 
 Readout BarChart::readoutAt(double xv, double yv)
@@ -457,7 +478,9 @@ Readout BarChart::readoutAt(double xv, double yv)
     r.title = bar.label;
     for (size_t s = 0; s < series_.size(); ++s) {
         const double v = s < bar.values.size() ? bar.values[s] : kNaN;
-        auto text = bar.note.isNotEmpty() ? bar.note : std::isfinite(v) ? textFor(static_cast<size_t>(i), s, v) : juce::String("-");
+        auto text = bar.note.isNotEmpty() ? bar.note
+                    : std::isfinite(v)    ? textFor(static_cast<size_t>(i), s, v)
+                                          : juce::String("-");
         if (series_[s].name.isNotEmpty()) text = series_[s].name + " " + text;
         const auto colour = bar.colour.getAlpha() > 0 ? bar.colour : series_[s].colour;
         r.lines.push_back({text, colour.withAlpha(1.0f)});
@@ -474,7 +497,9 @@ juce::String BarChart::autoSummary() const
         juce::StringArray vals;
         for (size_t s = 0; s < series_.size(); ++s) {
             const double v = s < bar.values.size() ? bar.values[s] : kNaN;
-            auto t = bar.note.isNotEmpty() ? bar.note : std::isfinite(v) ? textFor(i, s, v) : juce::String("not measured");
+            auto t = bar.note.isNotEmpty() ? bar.note
+                     : std::isfinite(v)    ? textFor(i, s, v)
+                                           : juce::String("not measured");
             if (series_.size() > 1 && series_[s].name.isNotEmpty()) t = series_[s].name + " " + t;
             vals.add(t);
         }
@@ -655,7 +680,8 @@ juce::String RadarChart::summary() const
     juce::StringArray parts;
     for (size_t i = 0; i < spokes_.size(); ++i) {
         const auto& s = spokes_[i];
-        auto t = s.label + " " + (s.valueText.isNotEmpty() ? s.valueText : juce::String(juce::roundToInt(s.value * 100.0)) + " %");
+        auto t = s.label + " " +
+                 (s.valueText.isNotEmpty() ? s.valueText : juce::String(juce::roundToInt(s.value * 100.0)) + " %");
         if (i < reference_.size())
             t << " (" << (referenceName_.isNotEmpty() ? referenceName_ : juce::String("reference")) << " "
               << juce::roundToInt(reference_[i] * 100.0) << " %)";
@@ -680,7 +706,8 @@ float RadarChart::radius() const noexcept
 {
     const auto b = getLocalBounds().toFloat();
     // Room for the spoke labels (two text lines) around the web.
-    return std::min(b.getWidth() * 0.5f - 46.0f, b.getHeight() * 0.5f - 26.0f - (referenceName_.isNotEmpty() ? 8.0f : 0.0f));
+    return std::min(b.getWidth() * 0.5f - 46.0f,
+                    b.getHeight() * 0.5f - 26.0f - (referenceName_.isNotEmpty() ? 8.0f : 0.0f));
 }
 
 juce::Point<float> RadarChart::pointFor(size_t i, double norm) const noexcept
@@ -739,8 +766,10 @@ void RadarChart::paint(juce::Graphics& g)
         juce::Path p;
         for (size_t i = 0; i < n; ++i) {
             const auto pt = pointFor(i, valueOf(i));
-            if (i == 0) p.startNewSubPath(pt);
-            else p.lineTo(pt);
+            if (i == 0)
+                p.startNewSubPath(pt);
+            else
+                p.lineTo(pt);
         }
         p.closeSubPath();
         return p;
@@ -757,8 +786,9 @@ void RadarChart::paint(juce::Graphics& g)
     g.setColour(style_.muted);
     for (const double f : {0.5, 1.0}) {
         const auto pt = pointFor(0, f);
-        g.drawText(juce::String(juce::roundToInt(f * 100.0)) + " %", juce::Rectangle<float>(pt.x + 3.0f, pt.y - 1.0f, 40.0f, 11.0f),
-                   juce::Justification::centredLeft, false);
+        g.drawText(juce::String(juce::roundToInt(f * 100.0)) + " %",
+                   juce::Rectangle<float>(pt.x + 3.0f, pt.y - 1.0f, 40.0f, 11.0f), juce::Justification::centredLeft,
+                   false);
     }
 
     if (reference_.size() >= n) {
@@ -784,12 +814,15 @@ void RadarChart::paint(juce::Graphics& g)
         const auto dir = (tip - c) / std::max(1.0f, radius());
         const auto at = tip + dir * 16.0f;
         auto box = juce::Rectangle<float>(84.0f, 26.0f).withCentre(at);
-        if (dir.x > 0.35f) box.setX(at.x - 8.0f);
-        else if (dir.x < -0.35f) box.setRight(at.x + 8.0f);
+        if (dir.x > 0.35f)
+            box.setX(at.x - 8.0f);
+        else if (dir.x < -0.35f)
+            box.setRight(at.x + 8.0f);
         box = box.constrainedWithin(bounds);
         const bool hov = static_cast<int>(i) == hovered_;
-        const auto just = dir.x > 0.35f ? juce::Justification::left : dir.x < -0.35f ? juce::Justification::right
-                                                                                     : juce::Justification::centred;
+        const auto just = dir.x > 0.35f    ? juce::Justification::left
+                          : dir.x < -0.35f ? juce::Justification::right
+                                           : juce::Justification::centred;
         g.setFont(hov ? f.boldened() : f);
         g.setColour(hov ? style_.text : style_.muted);
         g.drawText(spokes_[i].label, box.removeFromTop(13.0f), just, false);
@@ -817,8 +850,7 @@ void RadarChart::paint(juce::Graphics& g)
         g.drawText(referenceName_, key.withTrimmedLeft(4.0f), juce::Justification::centredLeft, false);
     }
 
-    if (hovered_ >= 0)
-        ChartView::paintReadout(g, readoutFor(hovered_), hoverPos_, getLocalBounds().toFloat(), style_);
+    if (hovered_ >= 0) ChartView::paintReadout(g, readoutFor(hovered_), hoverPos_, getLocalBounds().toFloat(), style_);
 }
 
 void RadarChart::mouseMove(const juce::MouseEvent& e)

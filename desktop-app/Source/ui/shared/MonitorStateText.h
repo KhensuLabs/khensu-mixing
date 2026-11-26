@@ -13,10 +13,17 @@ inline juce::String buttonText(IPlayback::MonitorMode mode, bool dim)
 {
     juce::String text;
     switch (mode) {
-        case IPlayback::MonitorMode::Mono: text = TRANS("Mono"); break;
-        case IPlayback::MonitorMode::Side: text = TRANS("Side"); break;
-        case IPlayback::MonitorMode::Sub: text = TRANS("Sub"); break;
-        case IPlayback::MonitorMode::Full: break;
+    case IPlayback::MonitorMode::Mono:
+        text = TRANS("Mono");
+        break;
+    case IPlayback::MonitorMode::Side:
+        text = TRANS("Side");
+        break;
+    case IPlayback::MonitorMode::Sub:
+        text = TRANS("Sub");
+        break;
+    case IPlayback::MonitorMode::Full:
+        break;
     }
     if (dim) text = text.isEmpty() ? TRANS("Dim") : text + " + " + TRANS("Dim");
     return text.isEmpty() ? TRANS("Monitor") : text;

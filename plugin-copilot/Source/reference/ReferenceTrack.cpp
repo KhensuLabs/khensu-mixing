@@ -39,9 +39,10 @@ mixhub::BandLevels averageBands(const juce::AudioBuffer<float>& audio, double sa
     juce::dsp::FFT fft(order);
     std::vector<float> window(static_cast<size_t>(n));
     juce::dsp::WindowingFunction<float>::fillWindowingTables(window.data(), static_cast<size_t>(n),
-                                                            juce::dsp::WindowingFunction<float>::hann, false);
+                                                             juce::dsp::WindowingFunction<float>::hann, false);
     double sumW2 = 0.0;
-    for (const float w : window) sumW2 += static_cast<double>(w) * w;
+    for (const float w : window)
+        sumW2 += static_cast<double>(w) * w;
     std::vector<float> buffer(static_cast<size_t>(n) * 2);
     std::vector<double> power(static_cast<size_t>(n / 2), 0.0);
     int frames = 0;
@@ -51,7 +52,8 @@ mixhub::BandLevels averageBands(const juce::AudioBuffer<float>& audio, double sa
         const int len = juce::jmin(n, total - start);
         for (int i = 0; i < len; ++i) {
             float mono = 0.0f;
-            for (int c = 0; c < channels; ++c) mono += audio.getSample(c, start + i);
+            for (int c = 0; c < channels; ++c)
+                mono += audio.getSample(c, start + i);
             buffer[static_cast<size_t>(i)] = mono / static_cast<float>(channels) * window[static_cast<size_t>(i)];
         }
         fft.performFrequencyOnlyForwardTransform(buffer.data(), true);
@@ -64,7 +66,8 @@ mixhub::BandLevels averageBands(const juce::AudioBuffer<float>& audio, double sa
     }
     const double norm = 2.0 / (static_cast<double>(n) * sumW2 * juce::jmax(1, frames));
     std::vector<float> binPower(power.size());
-    for (size_t k = 0; k < power.size(); ++k) binPower[k] = static_cast<float>(power[k] * norm);
+    for (size_t k = 0; k < power.size(); ++k)
+        binPower[k] = static_cast<float>(power[k] * norm);
     return mixhub::bandLevelsFromPower(binPower.data(), static_cast<int>(binPower.size()), sampleRate / n);
 }
 
@@ -234,8 +237,8 @@ void ReferencePlayer::process(juce::AudioBuffer<float>& buffer, const HostSide& 
     if (n <= 0 || channels <= 0) return;
 
     const ReferenceData* ref = active_ != nullptr ? active_->data.get() : nullptr;
-    const bool playable = ref != nullptr && ref->audio.getNumSamples() > 0 && ref->audio.getNumChannels() > 0
-                          && std::abs(ref->sampleRate - sampleRate_) < 0.5;
+    const bool playable = ref != nullptr && ref->audio.getNumSamples() > 0 && ref->audio.getNumChannels() > 0 &&
+                          std::abs(ref->sampleRate - sampleRate_) < 0.5;
     playable_.store(playable, std::memory_order_relaxed);
     const juce::int64 length = playable ? ref->audio.getNumSamples() : 0;
 

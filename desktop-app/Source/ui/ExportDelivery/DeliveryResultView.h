@@ -47,10 +47,14 @@ struct DeliveryResult {
     static juce::String statusWord(Status s)
     {
         switch (s) {
-        case Status::Pass: return TRANS("Pass");
-        case Status::Warn: return TRANS("Warn");
-        case Status::Fail: return TRANS("Fail");
-        case Status::Info: break;
+        case Status::Pass:
+            return TRANS("Pass");
+        case Status::Warn:
+            return TRANS("Warn");
+        case Status::Fail:
+            return TRANS("Fail");
+        case Status::Info:
+            break;
         }
         return {};
     }
@@ -60,8 +64,10 @@ struct DeliveryResult {
         Status worst = Status::Info;
         for (const auto& r : rows) {
             if (r.status == Status::Fail) return Status::Fail;
-            if (r.status == Status::Warn) worst = Status::Warn;
-            else if (r.status == Status::Pass && worst == Status::Info) worst = Status::Pass;
+            if (r.status == Status::Warn)
+                worst = Status::Warn;
+            else if (r.status == Status::Pass && worst == Status::Info)
+                worst = Status::Pass;
         }
         return worst;
     }
@@ -119,10 +125,14 @@ class DeliveryResultView final : public juce::Component {
     static juce::Colour colourFor(DeliveryResult::Status s)
     {
         switch (s) {
-        case DeliveryResult::Status::Pass: return KhensuTheme::accentGreen;
-        case DeliveryResult::Status::Warn: return KhensuTheme::accentAmber;
-        case DeliveryResult::Status::Fail: return KhensuTheme::accentRed;
-        case DeliveryResult::Status::Info: break;
+        case DeliveryResult::Status::Pass:
+            return KhensuTheme::accentGreen;
+        case DeliveryResult::Status::Warn:
+            return KhensuTheme::accentAmber;
+        case DeliveryResult::Status::Fail:
+            return KhensuTheme::accentRed;
+        case DeliveryResult::Status::Info:
+            break;
         }
         return KhensuTheme::textTertiary;
     }
@@ -145,7 +155,8 @@ class DeliveryResultView final : public juce::Component {
         int lines = 0;
         for (const auto& n : result_.notes) {
             const float w = juce::GlyphArrangement::getStringWidth(font, n);
-            lines += juce::jmax(1, static_cast<int>(std::ceil(w / static_cast<float>(juce::jmax(40, width - 2 * kPad)))));
+            lines +=
+                juce::jmax(1, static_cast<int>(std::ceil(w / static_cast<float>(juce::jmax(40, width - 2 * kPad)))));
         }
         return lines;
     }
@@ -153,7 +164,8 @@ class DeliveryResultView final : public juce::Component {
     void layoutContent()
     {
         const int w = juce::jmax(0, viewport_.getMaximumVisibleWidth());
-        const int h = kPad + (result_.title.isNotEmpty() ? kTitleH : 0) + static_cast<int>(result_.rows.size()) * kRowH +
+        const int h = kPad + (result_.title.isNotEmpty() ? kTitleH : 0) +
+                      static_cast<int>(result_.rows.size()) * kRowH +
                       (result_.notes.isEmpty() ? 0 : 6 + noteLines(w) * kNoteLineH) + kPad;
         content_.setSize(w, h);
         content_.repaint();
@@ -202,8 +214,8 @@ class DeliveryResultView final : public juce::Component {
                     g.fillRect(dot);
                 }
                 g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
-                g.drawText(DeliveryResult::statusWord(r.status), cell.withTrimmedLeft(4), juce::Justification::centredLeft,
-                           false);
+                g.drawText(DeliveryResult::statusWord(r.status), cell.withTrimmedLeft(4),
+                           juce::Justification::centredLeft, false);
             }
             auto target = row.removeFromRight(targetW);
             auto value = row.removeFromRight(valueW);
@@ -214,7 +226,8 @@ class DeliveryResultView final : public juce::Component {
             g.drawText(r.value, value.reduced(4, 0), juce::Justification::centredLeft, true);
             g.setColour(KhensuTheme::textSecondary);
             if (r.target.isNotEmpty())
-                g.drawText(TRANS("target") + " " + r.target, target.reduced(4, 0), juce::Justification::centredLeft, true);
+                g.drawText(TRANS("target") + " " + r.target, target.reduced(4, 0), juce::Justification::centredLeft,
+                           true);
             y += kRowH;
         }
         if (!result_.notes.isEmpty()) {
@@ -224,7 +237,8 @@ class DeliveryResultView final : public juce::Component {
             const int textW = width - 2 * kPad;
             for (const auto& n : result_.notes) {
                 const float w = juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), n);
-                const int lines = juce::jmax(1, static_cast<int>(std::ceil(w / static_cast<float>(juce::jmax(40, textW)))));
+                const int lines =
+                    juce::jmax(1, static_cast<int>(std::ceil(w / static_cast<float>(juce::jmax(40, textW)))));
                 g.drawFittedText(n, kPad, y, textW, lines * kNoteLineH, juce::Justification::topLeft, lines, 1.0f);
                 y += lines * kNoteLineH;
             }

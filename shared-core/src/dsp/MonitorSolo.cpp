@@ -9,13 +9,20 @@ namespace khensu::dsp {
 juce::String MonitorSolo::modeName(Mode mode)
 {
     switch (mode) {
-        case Mode::Mono: return TRANS("Mono");
-        case Mode::Side: return TRANS("Side");
-        case Mode::Sub: return TRANS("Sub < 120 Hz");
-        case Mode::Low: return TRANS("Low < 250 Hz");
-        case Mode::Mid: return TRANS("Mid 250 Hz - 4 kHz");
-        case Mode::High: return TRANS("High > 4 kHz");
-        case Mode::Off: break;
+    case Mode::Mono:
+        return TRANS("Mono");
+    case Mode::Side:
+        return TRANS("Side");
+    case Mode::Sub:
+        return TRANS("Sub < 120 Hz");
+    case Mode::Low:
+        return TRANS("Low < 250 Hz");
+    case Mode::Mid:
+        return TRANS("Mid 250 Hz - 4 kHz");
+    case Mode::High:
+        return TRANS("High > 4 kHz");
+    case Mode::Off:
+        break;
     }
     return TRANS("Off");
 }
@@ -44,13 +51,20 @@ float MonitorSolo::valueFor(Mode mode, int channel, float left, float right) con
 {
     const auto c = static_cast<size_t>(channel);
     switch (mode) {
-        case Mode::Mono: return 0.5f * (left + right);
-        case Mode::Side: return 0.5f * (left - right);
-        case Mode::Sub: return sub_[c];
-        case Mode::Low: return low_[c];
-        case Mode::Mid: return mid_[c];
-        case Mode::High: return high_[c];
-        case Mode::Off: break;
+    case Mode::Mono:
+        return 0.5f * (left + right);
+    case Mode::Side:
+        return 0.5f * (left - right);
+    case Mode::Sub:
+        return sub_[c];
+    case Mode::Low:
+        return low_[c];
+    case Mode::Mid:
+        return mid_[c];
+    case Mode::High:
+        return high_[c];
+    case Mode::Off:
+        break;
     }
     return channel == 0 ? left : right;
 }
@@ -66,8 +80,8 @@ void MonitorSolo::process(juce::AudioBuffer<float>& buffer, int startSample, int
     const int channels = juce::jmin(2, buffer.getNumChannels());
     if (n <= 0 || channels <= 0 || startSample < 0) return;
 
-    const float dimTarget = dimRequested_.load(std::memory_order_relaxed) ? juce::Decibels::decibelsToGain(kDimDb)
-                                                                          : 1.0f;
+    const float dimTarget =
+        dimRequested_.load(std::memory_order_relaxed) ? juce::Decibels::decibelsToGain(kDimDb) : 1.0f;
     if (offline) {
         // A bounce never carries a monitoring solo: plain signal, no fade.
         from_ = to_ = Mode::Off;

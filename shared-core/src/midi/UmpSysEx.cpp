@@ -65,16 +65,19 @@ std::vector<std::uint32_t> toSysEx7Packets(std::uint8_t group, const std::uint8_
         const std::size_t offset = k * 6;
         const auto count = static_cast<std::uint32_t>(std::min<std::size_t>(6, size - std::min(size, offset)));
         std::uint32_t status = kContinue;
-        if (packets == 1) status = kComplete;
-        else if (k == 0) status = kStart;
-        else if (k + 1 == packets) status = kEnd;
+        if (packets == 1)
+            status = kComplete;
+        else if (k == 0)
+            status = kStart;
+        else if (k + 1 == packets)
+            status = kEnd;
         std::uint8_t d[6] = {};
         for (std::uint32_t i = 0; i < count; ++i)
             d[i] = static_cast<std::uint8_t>(bytes[offset + i] & 0x7Fu);
-        const std::uint32_t w0 = (0x3u << 28) | ((static_cast<std::uint32_t>(group) & 0xFu) << 24) | (status << 20)
-                                 | (count << 16) | (static_cast<std::uint32_t>(d[0]) << 8) | d[1];
-        const std::uint32_t w1 = (static_cast<std::uint32_t>(d[2]) << 24) | (static_cast<std::uint32_t>(d[3]) << 16)
-                                 | (static_cast<std::uint32_t>(d[4]) << 8) | d[5];
+        const std::uint32_t w0 = (0x3u << 28) | ((static_cast<std::uint32_t>(group) & 0xFu) << 24) | (status << 20) |
+                                 (count << 16) | (static_cast<std::uint32_t>(d[0]) << 8) | d[1];
+        const std::uint32_t w1 = (static_cast<std::uint32_t>(d[2]) << 24) | (static_cast<std::uint32_t>(d[3]) << 16) |
+                                 (static_cast<std::uint32_t>(d[4]) << 8) | d[5];
         words.push_back(w0);
         words.push_back(w1);
     }

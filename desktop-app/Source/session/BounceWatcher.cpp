@@ -2,7 +2,7 @@
 #include "BounceWatcher.h"
 #include <regex>
 #include "../ui/shared/AppFileDrop.h" // isSupportedAudio
-#include "../ui/shared/RenderPaths.h"              // isAppRenderFileFor
+#include "../ui/shared/RenderPaths.h" // isAppRenderFileFor
 
 namespace khensu {
 

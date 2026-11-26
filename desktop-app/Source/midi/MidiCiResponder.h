@@ -67,8 +67,7 @@ class MidiCiResponder final : private Midi2DeviceManager::Listener,
     }
     void subscriptionDidStart(juce::midi_ci::MUID, const juce::String&,
                               const juce::midi_ci::PropertySubscriptionHeader&) override
-    {
-    }
+    {}
     void subscriptionWillEnd(juce::midi_ci::MUID, const juce::midi_ci::Subscription&) override {}
 
     Midi2DeviceManager* midi_;

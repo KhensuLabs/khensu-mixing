@@ -32,7 +32,7 @@ class LoudnessStats {
     static constexpr float kFloorLufs = -70.0f;
     static constexpr float kTopLufs = 5.0f;
     static constexpr float kBinLu = 0.1f;
-    static constexpr int kBins = 750; ///< (kTopLufs - kFloorLufs) / kBinLu
+    static constexpr int kBins = 750;           ///< (kTopLufs - kFloorLufs) / kBinLu
     static constexpr int kShortTermBlocks = 30; ///< 3 s of 100 ms blocks
     static constexpr int kMomentaryBlocks = 4;  ///< 400 ms
 
@@ -40,9 +40,9 @@ class LoudnessStats {
         float integratedLufs = -96.0f; ///< -96 until a block passes the gates
         float shortTermLufs = -96.0f;  ///< the latest 3 s
         float loudnessRangeLu = 0.0f;
-        float crestDb = 0.0f;          ///< sample peak over gated RMS
+        float crestDb = 0.0f; ///< sample peak over gated RMS
         float peakDb = -96.0f;
-        bool valid = false;            ///< at least one block over the absolute gate
+        bool valid = false; ///< at least one block over the absolute gate
     };
 
     /// Prepared for 48 kHz and zeroed (the atomics' value-initialisation is

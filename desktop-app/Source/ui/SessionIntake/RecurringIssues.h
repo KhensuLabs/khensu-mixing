@@ -11,8 +11,8 @@
 namespace khensu::recurring_issues {
 
 struct Finding {
-    juce::String code;   ///< "agent:mud_rel_db"
-    juce::String title;  ///< "Low-mid build-up (mud)"
+    juce::String code;  ///< "agent:mud_rel_db"
+    juce::String title; ///< "Low-mid build-up (mud)"
     double severity = 0.0;
 };
 
@@ -27,9 +27,9 @@ enum class Trend { MoreOften, Steady, LessOften };
 
 struct Recurring {
     juce::String code, title;
-    int count = 0;              ///< tracks it was found in
-    int scanned = 0;            ///< tracks scanned
-    juce::String lastSeen;      ///< the newest such track's updatedAt
+    int count = 0;         ///< tracks it was found in
+    int scanned = 0;       ///< tracks scanned
+    juce::String lastSeen; ///< the newest such track's updatedAt
     std::string latestSessionId;
     juce::String latestSessionName;
     double meanSeverity = 0.0;
@@ -44,7 +44,8 @@ inline Trend trendOf(const std::vector<bool>& foundNewestFirst, double margin = 
     if (n < 4) return Trend::Steady; // too few to say
     const size_t newer = n / 2;
     int a = 0, b = 0;
-    for (size_t i = 0; i < n; ++i) (i < newer ? a : b) += foundNewestFirst[i] ? 1 : 0;
+    for (size_t i = 0; i < n; ++i)
+        (i < newer ? a : b) += foundNewestFirst[i] ? 1 : 0;
     const double rateNew = static_cast<double>(a) / static_cast<double>(newer);
     const double rateOld = static_cast<double>(b) / static_cast<double>(n - newer);
     if (rateNew - rateOld > margin) return Trend::MoreOften;
@@ -89,8 +90,8 @@ inline std::vector<Recurring> aggregate(const std::vector<SessionFindings>& sess
         if (r.count > 0) r.meanSeverity /= r.count;
         std::vector<bool> found;
         for (const auto& s : sessions)
-            found.push_back(std::any_of(s.findings.begin(), s.findings.end(),
-                                        [&](const Finding& f) { return f.code == r.code; }));
+            found.push_back(
+                std::any_of(s.findings.begin(), s.findings.end(), [&](const Finding& f) { return f.code == r.code; }));
         r.trend = trendOf(found);
     }
     out.erase(std::remove_if(out.begin(), out.end(), [minCount](const Recurring& r) { return r.count < minCount; }),
@@ -105,9 +106,12 @@ inline std::vector<Recurring> aggregate(const std::vector<SessionFindings>& sess
 inline juce::String trendText(Trend t)
 {
     switch (t) {
-    case Trend::MoreOften: return TRANS("more often lately");
-    case Trend::LessOften: return TRANS("less often lately");
-    case Trend::Steady: break;
+    case Trend::MoreOften:
+        return TRANS("more often lately");
+    case Trend::LessOften:
+        return TRANS("less often lately");
+    case Trend::Steady:
+        break;
     }
     return TRANS("steady");
 }

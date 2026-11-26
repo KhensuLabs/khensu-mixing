@@ -15,8 +15,8 @@ namespace khensu::dsp {
 
 namespace {
 
-constexpr double kMatchSeconds = 0.8;     ///< power averaging time constant
-constexpr double kSilencePower = 1.0e-7;  ///< -70 dBFS mean square: freeze the match
+constexpr double kMatchSeconds = 0.8;    ///< power averaging time constant
+constexpr double kSilencePower = 1.0e-7; ///< -70 dBFS mean square: freeze the match
 constexpr float kMaxMatchDb = 18.0f;
 constexpr double kLimiterLookaheadSeconds = 1.5e-3; ///< the offline Limiter's lookahead
 
@@ -158,7 +158,8 @@ class ExciterLive final : public RealtimeChain::LiveStage {
         for (int c = 0; c < nch; ++c) {
             const auto ch = static_cast<size_t>(c);
             float* x = channels[c];
-            for (int i = 0; i < n; ++i) band_[static_cast<size_t>(i)] = static_cast<double>(x[i]);
+            for (int i = 0; i < n; ++i)
+                band_[static_cast<size_t>(i)] = static_cast<double>(x[i]);
             bandHp_.process(c, band_.data(), n);
             for (int i = 0; i < n; ++i) {
                 const double b = band_[static_cast<size_t>(i)];
@@ -189,9 +190,8 @@ class ExciterLive final : public RealtimeChain::LiveStage {
 
 /// A stand-in for `spec`, or nullptr (with `note` empty) when the offline
 /// stage would pass the signal unchanged; `note` says how it differs.
-std::unique_ptr<RealtimeChain::LiveStage> makeLiveStage(const ChainStageSpec& spec, const Params& p,
-                                                        double sampleRate, int numChannels, int maxBlock,
-                                                        std::string& note)
+std::unique_ptr<RealtimeChain::LiveStage> makeLiveStage(const ChainStageSpec& spec, const Params& p, double sampleRate,
+                                                        int numChannels, int maxBlock, std::string& note)
 {
     const auto& e = spec.effect;
     const double nyq = sampleRate * 0.5;
@@ -342,10 +342,12 @@ bool RealtimeChain::prepare(const std::vector<ChainStageSpec>& chain, double sam
     }
 
     scratch_.ch.assign(static_cast<size_t>(numChannels), {});
-    for (auto& c : scratch_.ch) c.reserve(static_cast<size_t>(maxBlockSize));
+    for (auto& c : scratch_.ch)
+        c.reserve(static_cast<size_t>(maxBlockSize));
     liveBuf_.assign(static_cast<size_t>(numChannels), std::vector<float>(static_cast<size_t>(maxBlockSize), 0.0f));
     livePtrs_.assign(static_cast<size_t>(numChannels), nullptr);
-    for (size_t c = 0; c < liveBuf_.size(); ++c) livePtrs_[c] = liveBuf_[c].data();
+    for (size_t c = 0; c < liveBuf_.size(); ++c)
+        livePtrs_[c] = liveBuf_[c].data();
     resetMatch();
     return true;
 }
@@ -372,10 +374,7 @@ void RealtimeChain::adoptMatchState(const RealtimeChain& previous) noexcept
     }
 }
 
-float RealtimeChain::matchGainDb() const noexcept
-{
-    return 20.0f * std::log10(std::max(gain_, 1.0e-6f));
-}
+float RealtimeChain::matchGainDb() const noexcept { return 20.0f * std::log10(std::max(gain_, 1.0e-6f)); }
 
 void RealtimeChain::process(float* const* channels, int numChannels, int numSamples) noexcept
 {
@@ -394,10 +393,12 @@ void RealtimeChain::processChunk(float* const* channels, int numChannels, int of
         dst.resize(un); // within the reserved capacity: no allocation
         // A mono output feeds every prepared channel from its one channel.
         const float* src = channels[std::min(c, used - 1)] + offset;
-        for (size_t i = 0; i < un; ++i) dst[i] = static_cast<double>(src[i]);
+        for (size_t i = 0; i < un; ++i)
+            dst[i] = static_cast<double>(src[i]);
     }
     for (int c = 0; c < used; ++c)
-        for (double v : scratch_.ch[static_cast<size_t>(c)]) inSum += v * v;
+        for (double v : scratch_.ch[static_cast<size_t>(c)])
+            inSum += v * v;
 
     for (auto& slot : slots_) {
         if (slot.stage) {
@@ -407,13 +408,15 @@ void RealtimeChain::processChunk(float* const* channels, int numChannels, int of
         for (int c = 0; c < numChannels_; ++c) {
             const auto& s = scratch_.ch[static_cast<size_t>(c)];
             float* f = livePtrs_[static_cast<size_t>(c)];
-            for (size_t i = 0; i < un; ++i) f[i] = static_cast<float>(s[i]);
+            for (size_t i = 0; i < un; ++i)
+                f[i] = static_cast<float>(s[i]);
         }
         slot.live->process(livePtrs_.data(), numChannels_, n);
         for (int c = 0; c < numChannels_; ++c) {
             auto& s = scratch_.ch[static_cast<size_t>(c)];
             const float* f = livePtrs_[static_cast<size_t>(c)];
-            for (size_t i = 0; i < un; ++i) s[i] = static_cast<double>(f[i]);
+            for (size_t i = 0; i < un; ++i)
+                s[i] = static_cast<double>(f[i]);
         }
     }
 
@@ -421,7 +424,8 @@ void RealtimeChain::processChunk(float* const* channels, int numChannels, int of
     if (match_) {
         double outSum = 0.0;
         for (int c = 0; c < used; ++c)
-            for (double v : scratch_.ch[static_cast<size_t>(c)]) outSum += v * v;
+            for (double v : scratch_.ch[static_cast<size_t>(c)])
+                outSum += v * v;
         const double denom = static_cast<double>(n) * used;
         const double inPow = inSum / denom, outPow = outSum / denom;
         if (inPow > kSilencePower) {
@@ -446,7 +450,8 @@ void RealtimeChain::processChunk(float* const* channels, int numChannels, int of
         const auto& s = scratch_.ch[static_cast<size_t>(c)];
         float* out = channels[c] + offset;
         if (!match_) {
-            for (size_t i = 0; i < un; ++i) out[i] = static_cast<float>(s[i]);
+            for (size_t i = 0; i < un; ++i)
+                out[i] = static_cast<float>(s[i]);
             continue;
         }
         for (size_t i = 0; i < un; ++i)

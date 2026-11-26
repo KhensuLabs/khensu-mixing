@@ -22,13 +22,15 @@ FixBatchResult combineFixes(const std::vector<Recommendation>& recs, float amoun
     for (const auto& rec : recs) {
         const auto title = utf8(rec.what.empty() ? rec.id : rec.what);
         if (requireSafe && !rec.safe_to_auto_apply) {
-            out.skipped.push_back({rec.id, title, TRANS("needs your judgement (not marked safe to apply automatically)")});
+            out.skipped.push_back(
+                {rec.id, title, TRANS("needs your judgement (not marked safe to apply automatically)")});
             continue;
         }
         const auto mapped = mixerchain::mapRecommendationToDsp(rec, amount, chained);
         if (mapped.empty()) {
             juce::StringArray keys;
-            for (const auto& key : mapped.unmappedKeys) keys.add(utf8(key));
+            for (const auto& key : mapped.unmappedKeys)
+                keys.add(utf8(key));
             out.skipped.push_back(
                 {rec.id, title,
                  keys.isEmpty() ? TRANS("has no parameter targets")
@@ -44,13 +46,17 @@ FixBatchResult combineFixes(const std::vector<Recommendation>& recs, float amoun
             }
         }
         if (clash.isNotEmpty()) {
-            out.skipped.push_back({rec.id, title, TRANS("would overwrite an earlier fix in this batch") + " (" + clash + ")"});
+            out.skipped.push_back(
+                {rec.id, title, TRANS("would overwrite an earlier fix in this batch") + " (" + clash + ")"});
             continue;
         }
-        for (const auto& [id, value] : mapped.values) out.values[id] = value;
+        for (const auto& [id, value] : mapped.values)
+            out.values[id] = value;
         out.appliedIds.push_back(rec.id);
-        for (const auto& note : mapped.notes) out.notes.push_back((rec.what.empty() ? rec.id : rec.what) + ": " + note);
-        for (const auto& key : mapped.unmappedKeys) out.unmappedKeys.push_back((rec.what.empty() ? rec.id : rec.what) + ": " + key);
+        for (const auto& note : mapped.notes)
+            out.notes.push_back((rec.what.empty() ? rec.id : rec.what) + ": " + note);
+        for (const auto& key : mapped.unmappedKeys)
+            out.unmappedKeys.push_back((rec.what.empty() ? rec.id : rec.what) + ": " + key);
     }
     return out;
 }
@@ -66,18 +72,18 @@ FixBatchResult recipeBatch(const mixerchain::RecipeDspMapping& mapping)
         const auto detail = utf8(s.detail);
         juce::String reason;
         switch (s.reason) {
-            case Reason::NoBuiltInStage:
-                reason = TRANS("the built-in chain has no stage for it");
-                break;
-            case Reason::NoUsableSettings:
-                reason = TRANS("no setting in its description could be read");
-                break;
-            case Reason::NoFreeEqBand:
-                reason = TRANS("all six EQ bands hold larger moves");
-                break;
-            case Reason::StageTaken:
-                reason = TRANS("an earlier plugin in the chain already set that stage");
-                break;
+        case Reason::NoBuiltInStage:
+            reason = TRANS("the built-in chain has no stage for it");
+            break;
+        case Reason::NoUsableSettings:
+            reason = TRANS("no setting in its description could be read");
+            break;
+        case Reason::NoFreeEqBand:
+            reason = TRANS("all six EQ bands hold larger moves");
+            break;
+        case Reason::StageTaken:
+            reason = TRANS("an earlier plugin in the chain already set that stage");
+            break;
         }
         if (detail.isNotEmpty()) reason << " (" << detail << ")";
         out.skipped.push_back({s.plugin, utf8(s.plugin), reason});
