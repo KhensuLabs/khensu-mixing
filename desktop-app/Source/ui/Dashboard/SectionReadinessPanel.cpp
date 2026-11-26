@@ -94,7 +94,7 @@ void SectionReadinessPanel::paint(juce::Graphics& g)
         g.fillRect(x0 + 1.0f, (float)body.getY() + h - barH, juce::jmax(1.0f, x1 - x0 - 2.0f), barH);
 
         g.setColour(KhensuTheme::textSecondary.withAlpha(0.6f));
-        g.setFont(khensu::KhensuTheme::uiFont(7.5f, juce::Font::plain));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
         g.drawText(sc.label, (int)x0, body.getY() + (int)h + 2, (int)(x1 - x0), 14, juce::Justification::centred,
                    false);
     }

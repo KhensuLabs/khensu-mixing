@@ -31,7 +31,7 @@ class CoachMarkCard final : public juce::Component {
         for (int i = 0; i < kSteps; ++i) {
             auto& row = rows_[(size_t)i];
             row.label.setText(juce::String(i + 1) + ". " + juce::translate(labels[i]), juce::dontSendNotification);
-            row.label.setFont(KhensuTheme::bodyFont(13.0f));
+            row.label.setFont(KhensuTheme::bodyFont(type::body));
             addAndMakeVisible(row.label);
             row.button.setButtonText(juce::translate(actions[i]));
             row.button.setTooltip(juce::translate(labels[i]));
@@ -79,7 +79,7 @@ class CoachMarkCard final : public juce::Component {
     {
         KhensuLookAndFeel::drawGlassPanel(g, getLocalBounds(), GlassPanelVariant::Raised);
         g.setColour(KhensuTheme::textPrimary);
-        g.setFont(KhensuTheme::uiFont(14.0f, juce::Font::bold));
+        g.setFont(KhensuTheme::uiFont(type::large, juce::Font::bold));
         g.drawText(TRANS("First session: three steps"), getLocalBounds().reduced(14, 10).removeFromTop(22),
                    juce::Justification::centredLeft, true);
     }

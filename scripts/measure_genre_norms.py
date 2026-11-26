@@ -215,6 +215,19 @@ def _engine_codes() -> set[str]:
     return {c for c, (_taste, origin) in ISSUE_CODES.items() if origin == "engine"}
 
 
+def _fix_results() -> list[dict]:
+    """Every fix-check result: the main run's, with a limited run's
+    (``fixcheck_extra.jsonl``) replacing it per track and defect."""
+    by: dict[tuple[str, str], dict] = {}
+    for f in (FIX_RAW, FIX_RAW_EXTRA):
+        if f.exists():
+            for line in f.read_text(encoding="utf-8").splitlines():
+                r = json.loads(line)
+                for d in r["defects"]:
+                    by[(r["key"], d["defect"])] = d
+    return list(by.values())
+
+
 def report() -> dict:
     """finding_evidence.json, per finding:
 
@@ -297,7 +310,7 @@ def report() -> dict:
             add_detection(name, DYN_FINDINGS[name], pairs, {})
 
     # Fix check: per finding, the defects it caught and whether the Fix cleared them.
-    if FIX_RAW.exists():
+    if FIX_RAW.exists() or FIX_RAW_EXTRA.exists():
         named = {name: codes for name, _h, _f, _g, codes in DEFECTS}
         named.update(DYN_FINDINGS)
         tally: dict[str, dict[str, int]] = {}
@@ -305,27 +318,28 @@ def report() -> dict:
         # (``new_findings``: in the regrade, not in the defective input) ->
         # [renders, of which the input already peaked over the ceiling].
         side: dict[str, dict[str, list[int]]] = {}
-        for line in FIX_RAW.read_text(encoding="utf-8").splitlines():
-            for d in json.loads(line)["defects"]:
-                if not d.get("fired"):
-                    continue
-                # Credit the finding whose chain was rendered: two findings can
-                # name one defect (centroid and tilt), and only one has a fix.
-                fired = [c for c in named[d["defect"]] if c in d.get("before", [])]
-                credited = [d["chain_from"]] if d.get("chain_from") else fired[:1]
-                for c in credited:
-                    t = tally.setdefault(c, {"tried": 0, "cleared": 0, "advice_only": 0})
-                    if d.get("outcome") == "advice_only":
-                        t["advice_only"] += 1
-                    elif d.get("outcome") in ("cleared", "not_cleared"):
-                        t["tried"] += 1
-                        t["cleared"] += d["outcome"] == "cleared"
-                        peak_over = "true_peak_over" in d.get("before", [])
-                        for nc in d.get("new_findings", []):
-                            for cc in credited:
-                                s_ = side.setdefault(cc, {}).setdefault(nc, [0, 0])
-                                s_[0] += 1
-                                s_[1] += peak_over
+        for d in _fix_results():
+            if not d.get("fired"):
+                continue
+            # Credit the finding whose chain was rendered: two findings can
+            # name one defect (centroid and tilt), and only one has a fix.
+            fired = [c for c in named[d["defect"]] if c in d.get("before", [])]
+            credited = [d["chain_from"]] if d.get("chain_from") else fired[:1]
+            for c in credited:
+                t = tally.setdefault(c, {"tried": 0, "cleared": 0, "advice_only": 0, "via": set()})
+                if d.get("via"):
+                    t["via"].add(d["via"])
+                if d.get("outcome") == "advice_only":
+                    t["advice_only"] += 1
+                elif d.get("outcome") in ("cleared", "not_cleared"):
+                    t["tried"] += 1
+                    t["cleared"] += d["outcome"] == "cleared"
+                    peak_over = "true_peak_over" in d.get("before", [])
+                    for nc in d.get("new_findings", []):
+                        for cc in credited:
+                            s_ = side.setdefault(cc, {}).setdefault(nc, [0, 0])
+                            s_[0] += 1
+                            s_[1] += peak_over
         for c, t in tally.items():
             entry = out["findings"].setdefault(c, {"false_alarm_rate": 0.0, "fired_on": 0})
             entry["fix"] = {"tried": t["tried"], "advice_only": t["tried"] == 0 and t["advice_only"] > 0,
@@ -341,6 +355,14 @@ def report() -> dict:
                     {"code": nc, "rate": round(n_ / t["tried"], 4), "tracks": n_,
                      "peak_guard_share": round(pk / n_, 4)}
                     for nc, (n_, pk) in sorted(side.get(c, {}).items(), key=lambda kv: (-kv[1][0], kv[0]))]
+            if "plugin" in t["via"]:
+                # STU-16: the desktop's Fix only advises on this finding
+                # (FindingEvidence.h / FixAllSafe read ``fix`` as the
+                # desktop's); what was rendered is the plugin's fix - its
+                # Apply at 100 %, the shared mapper - so it goes in its own
+                # block.
+                entry["plugin_fix"] = entry["fix"]
+                entry["fix"] = {"tried": 0, "advice_only": True}
     _add_full(out)
     _add_masking(out)
     EVIDENCE_OUT.parent.mkdir(parents=True, exist_ok=True)
@@ -809,6 +831,10 @@ def dynamics() -> None:
 
 # --- Does the app's own fix clear the defect? (MEAS-4) ----------------------
 FIX_RAW = ROOT / "bench-results" / "fixcheck_raw.jsonl"
+#: STU-16: a run limited to some defects (KHENSU_FIX_DEFECTS=a,b) appends
+#: here instead; ``report`` lets its (track, defect) results replace the
+#: main file's, so one finding's fix can be re-checked without the rest.
+FIX_RAW_EXTRA = ROOT / "bench-results" / "fixcheck_extra.jsonl"
 FIX_EXE = Path(os.environ.get("KHENSU_FIXCHAIN_EXE") or ROOT / "build" / "tests" / "Release" / "KhensuTests.exe")
 FIX_TRACKS_PER_GENRE = 1
 
@@ -837,11 +863,17 @@ def fixcheck() -> None:
 
     named = {name: codes for name, _h, _f, _g, codes in DEFECTS}
     named.update(DYN_FINDINGS)
+    only = {d for d in os.environ.get("KHENSU_FIX_DEFECTS", "").split(",") if d}
+    unknown = only - set(named)
+    if unknown:
+        raise SystemExit(f"unknown defect(s): {sorted(unknown)}")
+    raw = FIX_RAW_EXTRA if only else FIX_RAW
     manifest = json.loads((CORPUS / "manifest.json").read_text(encoding="utf-8"))
     done = set()
-    if FIX_RAW.exists():
-        done = {json.loads(x)["key"] for x in FIX_RAW.read_text(encoding="utf-8").splitlines()}
-    todo = [(g, t["file"]) for g, tracks in manifest.items() for t in tracks[:FIX_TRACKS_PER_GENRE]
+    if raw.exists():
+        done = {json.loads(x)["key"] for x in raw.read_text(encoding="utf-8").splitlines()}
+    per_genre = int(os.environ.get("KHENSU_FIX_TRACKS") or FIX_TRACKS_PER_GENRE)
+    todo = [(g, t["file"]) for g, tracks in manifest.items() for t in tracks[:per_genre]
             if (CORPUS / g / t["file"]).is_file() and f"{g}/{t['file']}" not in done]
     if os.environ.get("KHENSU_FIX_LIMIT"):  # a quick trial on the first N tracks
         todo = todo[:int(os.environ["KHENSU_FIX_LIMIT"])]
@@ -858,10 +890,14 @@ def fixcheck() -> None:
                     continue
                 x, sr = sf.read(str(src), dtype="float32", always_2d=True)
                 for name, high, freq, gain, _codes in DEFECTS:
+                    if only and name not in only:
+                        continue
                     v = tmp / f"{i:03d}_{name}.wav"
                     sf.write(str(v), _shelf(x, sr, high, freq, gain), sr, subtype="FLOAT")
                     variants[str(v)] = (f"{g}/{f}", g, name)
                 for j, name in enumerate(DYN_DEFECTS):
+                    if only and name not in only:
+                        continue
                     v = tmp / f"{i:03d}_{name}.wav"
                     sf.write(str(v), _dyn_variant(x, name, i * 7 + j), sr, subtype="FLOAT")
                     variants[str(v)] = (f"{g}/{f}", g, name)
@@ -876,6 +912,21 @@ def fixcheck() -> None:
                     source = next((f for f in fired if f["chain"]), None)
                     chain = source["chain"] if source else []
                     res["chain_from"] = source["code"] if source else fired[0]["code"]
+                    if not chain:
+                        # STU-16: the desktop only advises; check the plugin's
+                        # fix for the finding (its Apply, at 100 %).
+                        plugin = next((f for f in fired if f.get("plugin_chain")), None)
+                        if plugin is not None:
+                            chain = plugin["plugin_chain"]
+                            res["chain_from"] = plugin["code"]
+                            res["via"] = "plugin"
+                            res["safe_to_auto_apply"] = bool(plugin.get("safe_to_auto_apply"))
+                    for f_ in fired:
+                        if "width" in f_:
+                            res["width"] = f_["width"]
+                            res["width_edge"] = f_["width_edge"]
+                            if "ms_balance" in f_:
+                                res["ms_balance"] = f_["ms_balance"]
                     if not chain:
                         res["outcome"] = "advice_only"
                     else:
@@ -899,7 +950,9 @@ def fixcheck() -> None:
                 still = [c for c in after if c in named[res["defect"]]]
                 res["outcome"] = "cleared" if not still else "not_cleared"
                 res["new_findings"] = sorted(set(after) - set(res["before"]))
-            with FIX_RAW.open("a", encoding="utf-8") as fh:
+                if "width" in regraded.get(fp, {}):
+                    res["width_after"] = regraded[fp]["width"]
+            with raw.open("a", encoding="utf-8") as fh:
                 for g, f in batch:
                     key = f"{g}/{f}"
                     entry = {"key": key, "genre": g,

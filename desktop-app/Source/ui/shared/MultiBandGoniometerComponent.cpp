@@ -141,7 +141,7 @@ void MultiBandGoniometerComponent::paint(juce::Graphics& g)
 
     if (!hasData_) {
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
         g.drawText("Awaiting track data...", bounds, juce::Justification::centred, false);
         return;
     }
@@ -182,7 +182,7 @@ void MultiBandGoniometerComponent::paint(juce::Graphics& g)
     }
 
     // Legend labels
-    g.setFont(KhensuTheme::labelFont(8.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::accentTeal.withAlpha(0.7f));
     g.drawText("SUB/BASS", (int)cx - 30, (int)(cy - maxRadius * 0.28f + 2.0f), 60, 10, juce::Justification::centred);
 

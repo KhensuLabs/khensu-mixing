@@ -1,4 +1,5 @@
 #include "DspControlGridPanel.h"
+#include <khensu/mixerchain/RecommendationDspMapper.h>
 #include <khensu/ui/KhensuPalette.h>
 #include <khensu/ui/StudioStyle.h>
 #include "../CopilotUndoHistory.h"
@@ -6,7 +7,16 @@
 
 namespace khensu {
 
-DspControlGridPanel::DspControlGridPanel(KhensuCopilotProcessor& proc) : processor_(proc)
+DspControlGridPanel::DspControlGridPanel(KhensuCopilotProcessor& proc, Page page) : processor_(proc), page_(page)
+{
+    if (page_ == Page::Core)
+        buildCore();
+    else
+        buildMore();
+    visibilityChanged();
+}
+
+void DspControlGridPanel::buildCore()
 {
     using P = KhensuCopilotProcessor::ParamIDs;
 
@@ -61,7 +71,105 @@ DspControlGridPanel::DspControlGridPanel(KhensuCopilotProcessor& proc) : process
     addToggle(P::limOn, "Limiter", stageToggles_);
     addKnob(P::limThreshDb, "Ceiling");
 
-    visibilityChanged();
+    // Construction order: HPF, LPF, EQ1, EQ2, EQ3 | Comp, Multiband, De-esser, Out/Mix, Limiter.
+    const auto row = [](int knobs, bool toggle, bool shape = false) {
+        RowSpec r;
+        r.knobs = knobs;
+        r.toggle = toggle;
+        r.shapeUnderToggle = shape;
+        return r;
+    };
+    rows_ = {row(1, true),       row(1, true), row(3, true, true), row(3, true, true), row(3, true, true),
+             row(4, true),       row(5, true), row(3, true),       row(2, false),      row(1, true)};
+}
+
+void DspControlGridPanel::buildMore()
+{
+    using P = KhensuCopilotProcessor::ParamIDs;
+    const auto& bands = mixerchain::kEqBandParamIds;
+
+    // EQ bands 4-6, laid out like bands 1-3 on the Chain page.
+    for (int b = 3; b < mixerchain::kNumEqBands; ++b) {
+        const auto& ids = bands[b];
+        addToggle(ids.on, TRANS("EQ") + " " + juce::String(ids.number), stageToggles_);
+        addShape(ids.type);
+        addKnob(ids.freq, TRANS("Freq"));
+        addKnob(ids.gain, TRANS("Gain"));
+        addKnob(ids.q, TRANS("Q"));
+    }
+
+    // The selected band's filter kind, channels and dynamic mode: one set of
+    // controls, rebound by the band selector (bands 1-6).
+    for (int b = 1; b <= mixerchain::kNumEqBands; ++b) bandSelector_.addItem(TRANS("Band") + " " + juce::String(b), b);
+    bandSelector_.setTitle(TRANS("EQ band to edit"));
+    bandSelector_.setTooltip(TRANS("Which EQ band the filter, channel and dynamic controls below edit."));
+    bandSelector_.setColour(juce::ComboBox::backgroundColourId, PluginLookAndFeel::bgDark);
+    bandSelector_.setColour(juce::ComboBox::textColourId, PluginLookAndFeel::textPrimary);
+    bandSelector_.setColour(juce::ComboBox::outlineColourId, PluginLookAndFeel::controlOutline);
+    bandSelector_.setColour(juce::ComboBox::arrowColourId, PluginLookAndFeel::textMuted);
+    bandSelector_.setSelectedId(selectedBand_, juce::dontSendNotification);
+    bandSelector_.onChange = [this] { selectBand(bandSelector_.getSelectedId()); };
+    addAndMakeVisible(bandSelector_);
+
+    const auto& first = bands[0];
+    firstBandShape_ = shapes_.size();
+    addShape(first.kind);
+    addShape(first.mode);
+    bandToggle_ = stageToggles_.size();
+    addToggle(first.dynOn, TRANS("Dynamic"), stageToggles_);
+    firstBandKnob_ = knobs_.size();
+    addKnob(first.dynThreshDb, TRANS("Thresh"));
+    addKnob(first.dynRangeDb, TRANS("Range"));
+    addKnob(first.dynAttackMs, TRANS("Attack"));
+    addKnob(first.dynReleaseMs, TRANS("Release"));
+
+    addToggle(P::tsOn, TRANS("Transient"), stageToggles_);
+    addKnob(P::tsAttackDb, TRANS("Attack"));
+    addKnob(P::tsSustainDb, TRANS("Sustain"));
+    addKnob(P::tsAttackMs, TRANS("Att time"));
+    addKnob(P::tsReleaseMs, TRANS("Rel time"));
+
+    addToggle(P::satOn, TRANS("Saturate"), stageToggles_);
+    addKnob(P::satDriveDb, TRANS("Drive"));
+    addKnob(P::satWarmth, TRANS("Warmth"));
+    addKnob(P::satMix, TRANS("Mix"));
+    addKnob(P::satTrimDb, TRANS("Trim"));
+
+    addToggle(P::bassMonoOn, TRANS("Bass mono"), stageToggles_);
+    addKnob(P::bassMonoFreq, TRANS("Below"));
+
+    addToggle(P::widthOn, TRANS("Width"), stageToggles_);
+    addKnob(P::widthAmount, TRANS("Width"));
+
+    // EQ4, EQ5, EQ6, band, dynamics | transient, saturation, bass mono, width.
+    const auto row = [](int knobs, bool toggle, bool shape = false) {
+        RowSpec r;
+        r.knobs = knobs;
+        r.toggle = toggle;
+        r.shapeUnderToggle = shape;
+        return r;
+    };
+    RowSpec bandRow;
+    bandRow.headSelector = true;
+    bandRow.cellShapes = 2;
+    rows_ = {row(3, true, true), row(3, true, true), row(3, true, true), bandRow, row(4, true),
+             row(4, true),       row(4, true),       row(1, true),       row(1, true)};
+}
+
+void DspControlGridPanel::selectBand(int number)
+{
+    if (page_ != Page::More) return;
+    number = juce::jlimit(1, mixerchain::kNumEqBands, number);
+    selectedBand_ = number;
+    bandSelector_.setSelectedId(number, juce::dontSendNotification);
+    const auto& ids = mixerchain::kEqBandParamIds[number - 1];
+    bindShape(shapes_[firstBandShape_], ids.kind);
+    bindShape(shapes_[firstBandShape_ + 1], ids.mode);
+    bindToggle(stageToggles_[bandToggle_], ids.dynOn);
+    const char* knobIds[] = {ids.dynThreshDb, ids.dynRangeDb, ids.dynAttackMs, ids.dynReleaseMs};
+    for (size_t k = 0; k < std::size(knobIds); ++k) bindKnob(knobs_[firstBandKnob_ + k], knobIds[k]);
+    lastAiFlags_.clear(); // the dots belong to the new band
+    repaint();
 }
 
 void DspControlGridPanel::visibilityChanged()
@@ -85,10 +193,19 @@ ui::KhensuKnob* DspControlGridPanel::knobForTest(const juce::String& paramId) co
 void DspControlGridPanel::addKnob(const char* paramId, const juce::String& labelText)
 {
     KnobRow row;
-    row.paramId = paramId;
     row.knob = std::make_unique<ui::KhensuKnob>(labelText);
     addAndMakeVisible(*row.knob);
+    bindKnob(row, paramId);
+    // The AI-set dot clears on ANY value change that is not an AI write
+    // (drag, arrow keys, typed value, host automation) - the processor's
+    // parameter listener does it (PLG-20), so no per-control hook is needed.
+    knobs_.push_back(std::move(row));
+}
 
+void DspControlGridPanel::bindKnob(KnobRow& row, const char* paramId)
+{
+    row.attachment.reset();
+    row.paramId = paramId;
     auto* param = processor_.getAPVTS().getParameter(paramId);
     // The undo history (UX2-6b) records the gesture, not the APVTS.
     row.attachment = std::make_unique<juce::SliderParameterAttachment>(*param, *row.knob, nullptr);
@@ -106,58 +223,64 @@ void DspControlGridPanel::addKnob(const char* paramId, const juce::String& label
     const auto fullName = param->getName(64);
     row.knob->setTitle(fullName);
     row.knob->setTooltip(fullName + ". " + ui::KhensuKnob::usageHint());
-
-    // The AI-set dot clears on ANY value change that is not an AI write
-    // (drag, arrow keys, typed value, host automation) - the processor's
-    // parameter listener does it (PLG-20), so no per-control hook is needed.
-    knobs_.push_back(std::move(row));
 }
 
 void DspControlGridPanel::addToggle(const char* paramId, const juce::String& labelText, std::vector<ToggleRow>& into)
 {
     ToggleRow row;
-    row.paramId = paramId;
     row.button = std::make_unique<juce::ToggleButton>(labelText);
     addAndMakeVisible(*row.button);
+    bindToggle(row, paramId);
+    into.push_back(std::move(row));
+}
 
+void DspControlGridPanel::bindToggle(ToggleRow& row, const char* paramId)
+{
+    row.attachment.reset();
+    row.paramId = paramId;
     auto* param = processor_.getAPVTS().getParameter(paramId);
     row.button->setTitle(param->getName(64));
-    row.button->setTooltip("Enable or disable " + param->getName(64) + ".");
+    row.button->setTooltip(TRANS("Enable or disable") + " " + param->getName(64) + ".");
     row.attachment = std::make_unique<juce::ButtonParameterAttachment>(*param, *row.button, nullptr);
-
-    into.push_back(std::move(row));
 }
 
 void DspControlGridPanel::addShape(const char* paramId)
 {
     ShapeRow row;
     row.box = std::make_unique<juce::ComboBox>();
-    auto* param = processor_.getAPVTS().getParameter(paramId);
-    row.box->addItemList(param->getAllValueStrings(), 1);
-    row.box->setTitle(param->getName(64));
-    row.box->setTooltip(param->getName(64) + ": bell, low shelf or high shelf.");
     row.box->setColour(juce::ComboBox::backgroundColourId, PluginLookAndFeel::bgDark);
     row.box->setColour(juce::ComboBox::textColourId, PluginLookAndFeel::textPrimary);
     row.box->setColour(juce::ComboBox::outlineColourId, PluginLookAndFeel::controlOutline);
     row.box->setColour(juce::ComboBox::arrowColourId, PluginLookAndFeel::textMuted);
     addAndMakeVisible(*row.box);
-    row.attachment = std::make_unique<juce::ComboBoxParameterAttachment>(*param, *row.box, nullptr);
+    bindShape(row, paramId);
     shapes_.push_back(std::move(row));
+}
+
+void DspControlGridPanel::bindShape(ShapeRow& row, const char* paramId)
+{
+    row.attachment.reset();
+    auto* param = processor_.getAPVTS().getParameter(paramId);
+    row.box->clear(juce::dontSendNotification);
+    row.box->addItemList(param->getAllValueStrings(), 1);
+    row.box->setTitle(param->getName(64));
+    row.box->setTooltip(param->getName(64) + ": " + param->getAllValueStrings().joinIntoString(", ") + ".");
+    row.attachment = std::make_unique<juce::ComboBoxParameterAttachment>(*param, *row.box, nullptr);
 }
 
 void DspControlGridPanel::timerCallback()
 {
     // Repaint only when an AI-set dot actually changed (it used to repaint the
     // whole grid 33 times a second, shown or not).
-    std::uint64_t mask = 0;
-    for (size_t i = 0; i < knobs_.size(); ++i)
-        if (processor_.isAiSet(knobs_[i].paramId.toRawUTF8())) mask |= (std::uint64_t{1} << i);
-    for (size_t i = 0; i < stageToggles_.size(); ++i)
-        if (processor_.isAiSet(stageToggles_[i].paramId.toRawUTF8())) mask |= (std::uint64_t{1} << (32 + i));
-    if (mask != lastAiMask_) {
-        lastAiMask_ = mask;
+    std::vector<bool> flags;
+    flags.reserve(knobs_.size() + stageToggles_.size());
+    for (const auto& row : knobs_) flags.push_back(processor_.isAiSet(row.paramId.toRawUTF8()));
+    for (const auto& row : stageToggles_) flags.push_back(processor_.isAiSet(row.paramId.toRawUTF8()));
+    if (flags != lastAiFlags_) {
+        lastAiFlags_ = std::move(flags);
         repaint();
     }
+    if (page_ != Page::Core) return;
     // VIZ-6b: the live meters move every tick.
     auto push = [](std::vector<float>& h, float v) {
         h.push_back(v);
@@ -176,7 +299,7 @@ void DspControlGridPanel::paint(juce::Graphics& g)
     g.drawRect(getLocalBounds(), 1);
 
     // A hairline between rows, so each stage reads as one line.
-    g.setColour(ui::studio::hairline());
+    g.setColour(PluginLookAndFeel::textPrimary.withAlpha(0.10f));
     for (size_t i = 0; i < rowBounds_.size(); ++i) {
         const auto& r = rowBounds_[i];
         if (i % 5 != 0) g.fillRect(r.getX(), r.getY() - 3, r.getWidth(), 1);
@@ -220,6 +343,22 @@ void DspControlGridPanel::paintViz(juce::Graphics& g, int row, juce::Rectangle<f
         b.q = param(q);
         return b;
     };
+    if (page_ == Page::More) {
+        if (row < 0 || row > 2) return;
+        const auto& ids = mixerchain::kEqBandParamIds[row + 3];
+        auto b = eqBand(ids.type, ids.freq, ids.gain, ids.q);
+        switch (juce::roundToInt(param(ids.kind))) {
+        case 1: // a notch draws as a deep, narrow cut
+            b.type = EqBandType::Peak;
+            b.gain_db = -24.0f;
+            break;
+        case 2: b.type = EqBandType::HighPass; break;
+        case 3: b.type = EqBandType::LowPass; break;
+        default: break;
+        }
+        ui::module_viz::paintEqResponse(g, r, {b}, sr, style);
+        return;
+    }
     switch (row) {
     case 0: {
         EqBand b;
@@ -261,13 +400,6 @@ void DspControlGridPanel::resized()
     // Two columns of five rows. Every knob gets the same cell - sized from
     // the widest row (five knobs) and the row height - so dials, values and
     // names sit on one grid across both columns, and scale with the window.
-    struct RowSpec {
-        int knobs;
-        bool toggle;
-    };
-    // Construction order: HPF, LPF, EQ1, EQ2, EQ3 | Comp, Multiband, De-esser, Out/Mix, Limiter.
-    static constexpr RowSpec kRows[] = {{1, true}, {1, true}, {3, true}, {3, true}, {3, true},
-                                        {4, true}, {5, true}, {3, true}, {2, false}, {1, true}};
     constexpr int kRowsPerColumn = 5;
     constexpr int kMaxKnobsPerRow = 5;
     constexpr int kRowGap = 6;
@@ -283,21 +415,24 @@ void DspControlGridPanel::resized()
     rowBounds_.clear();
     vizBounds_.clear();
     size_t knobIdx = 0, toggleIdx = 0, shapeIdx = 0;
-    for (int i = 0; i < static_cast<int>(std::size(kRows)); ++i) {
+    for (int i = 0; i < static_cast<int>(rows_.size()); ++i) {
+        const auto& spec = rows_[static_cast<size_t>(i)];
         const int col = i / kRowsPerColumn;
         const int rowInCol = i % kRowsPerColumn;
         juce::Rectangle<int> row(b.getX() + col * (colW + kColGap), b.getY() + rowInCol * (rowH + kRowGap), colW, rowH);
         rowBounds_.push_back(row);
         auto toggleArea = row.removeFromLeft(toggleW);
         row.removeFromLeft(8);
-        if (kRows[i].toggle && toggleIdx < stageToggles_.size()) {
-            const bool eqRow = i >= 2 && i <= 4 && shapeIdx < shapes_.size();
-            if (eqRow && toggleArea.getHeight() >= 52) {
+        if (spec.headSelector) {
+            bandSelector_.setBounds(toggleArea.withSizeKeepingCentre(toggleW - 6, 24));
+        } else if (spec.toggle && toggleIdx < stageToggles_.size()) {
+            const bool withShape = spec.shapeUnderToggle && shapeIdx < shapes_.size();
+            if (withShape && toggleArea.getHeight() >= 52) {
                 // The band's switch over its shape.
                 auto top = toggleArea.removeFromTop(toggleArea.getHeight() / 2);
                 stageToggles_[toggleIdx].button->setBounds(top.withSizeKeepingCentre(toggleW, 24).withY(top.getBottom() - 26));
                 shapes_[shapeIdx++].box->setBounds(toggleArea.withHeight(22).translated(0, 2).withWidth(toggleW - 6));
-            } else if (eqRow) {
+            } else if (withShape) {
                 // Too short for two lines: switch and shape side by side is
                 // too wide, so the shape takes the switch's lower half.
                 stageToggles_[toggleIdx].button->setBounds(toggleArea.removeFromTop(toggleArea.getHeight() / 2));
@@ -307,7 +442,11 @@ void DspControlGridPanel::resized()
             }
             ++toggleIdx;
         }
-        for (int k = 0; k < kRows[i].knobs && knobIdx < knobs_.size(); ++k, ++knobIdx)
+        // Selectors in the knob cells (STU-10's band row): a cell and a half each.
+        for (int s = 0; s < spec.cellShapes && shapeIdx < shapes_.size(); ++s)
+            shapes_[shapeIdx++].box->setBounds(row.removeFromLeft(cellW * 3 / 2).reduced(3, 0).withSizeKeepingCentre(
+                juce::jmax(20, cellW * 3 / 2 - 6), 24));
+        for (int k = 0; k < spec.knobs && knobIdx < knobs_.size(); ++k, ++knobIdx)
             knobs_[knobIdx].knob->setBounds(row.removeFromLeft(cellW).reduced(3, 0));
         // VIZ-6b: what the module does, in the room right of its knobs.
         row.removeFromLeft(6);

@@ -56,6 +56,11 @@ struct OfflineRenderOptions {
     /// False keeps a render the guardrail would refuse (blocks are still
     /// reported): the parity tests compare the processing, not the gate.
     bool enforceGuardrail = true;
+    /// ENH-6: a KEY signal (a stem, e.g. the vocal keying a DynamicEQ cut in
+    /// the bed) for the stages that key on one (DynamicEQ use_key = 1),
+    /// read block by block beside the input. Empty, unreadable or at another
+    /// sample rate: those stages key on their own input (with a warning).
+    std::string keyPath;
 };
 
 struct OfflineRenderResult {

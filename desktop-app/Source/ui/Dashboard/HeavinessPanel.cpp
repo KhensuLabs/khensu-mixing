@@ -15,24 +15,28 @@ const juce::String kHeavinessExplainerBase =
 HeavinessPanel::HeavinessPanel(IAppController& c) : PanelCard(c, "Heaviness")
 {
     setExplainer(TRANS("Heaviness"), kHeavinessExplainerBase, "heaviness_panel");
+    radar_.setTitle(TRANS("Heaviness profile"));
     addAndMakeVisible(radar_);
 }
 
 void HeavinessPanel::setData(const AnalysisResult& r)
 {
     const auto& h = r.python_data.heaviness;
+    // VIS-1: the facets' full names; each 0..1 score read out as a percent.
     std::vector<RadarAxis> axes = {
-        {"Distort", juce::jlimit(0.0f, 1.0f, h.distortion)},
-        {"Weight", juce::jlimit(0.0f, 1.0f, h.weight)},
-        {"Clarity", juce::jlimit(0.0f, 1.0f, h.clarity)},
-        {"Extreme", juce::jlimit(0.0f, 1.0f, h.extremity)},
+        {TRANS("Distortion"), juce::jlimit(0.0f, 1.0f, h.distortion), {}},
+        {TRANS("Weight"), juce::jlimit(0.0f, 1.0f, h.weight), {}},
+        {TRANS("Clarity"), juce::jlimit(0.0f, 1.0f, h.clarity), {}},
+        {TRANS("Extremity"), juce::jlimit(0.0f, 1.0f, h.extremity), {}},
     };
     radar_.setAxes(std::move(axes));
 
+    radar_.setReference({});
     if (auto* session = controller_.getActiveSession()) {
         if (auto g = controller_.genreDatabase().findById(session->target.primary_genre)) {
             radar_.setReference({g->heaviness_distortion_norm, g->heaviness_weight_norm, g->heaviness_clarity_norm,
-                                 g->heaviness_extremity_norm});
+                                 g->heaviness_extremity_norm},
+                                juce::String(g->name));
         }
     }
 

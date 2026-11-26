@@ -23,6 +23,9 @@ class KhensuEmptyState final : public juce::Component {
     {
         headline_ = headline;
         body_ = body;
+        // A screen reader reads the empty state like the label it replaces (UXR-6).
+        setTitle(headline);
+        setDescription(body);
         repaint();
     }
 
@@ -57,20 +60,29 @@ class KhensuEmptyState final : public juce::Component {
 
         auto inner = bounds.reduced(20);
         if (reserveActionRow) inner.removeFromBottom(40);
+        // UXR-6: a short host (a chart strip, a sidebar chart) keeps the text
+        // and drops the glyph row, instead of losing the text to the padding.
+        if (inner.getHeight() < 60) {
+            inner = bounds.reduced(8, 4);
+            const int textH = body.isEmpty() ? 20 : 36; // headline row (+ one body line)
+            inner.removeFromTop(juce::jmax(0, (inner.getHeight() - textH) / 2));
+        } else {
+            g.setFont(KhensuTheme::metricFont(type::display));
+            g.setColour(KhensuTheme::textTertiary);
+            g.drawText("-", inner.removeFromTop(juce::jmax(1, inner.getHeight() / 2)), juce::Justification::centred,
+                       false);
+        }
 
-        g.setFont(KhensuTheme::metricFont(28.0f));
-        g.setColour(KhensuTheme::textTertiary);
-        g.drawText("-", inner.removeFromTop(juce::jmax(1, inner.getHeight() / 2)), juce::Justification::centred, false);
-
-        g.setFont(KhensuTheme::labelFont(12.0f).boldened());
+        g.setFont(KhensuTheme::labelFont(type::secondary).boldened());
         g.setColour(KhensuTheme::textSecondary);
         // Ellipsize: headlines are caller-supplied and a long one was silently
         // clipped mid-word in a narrow panel (kimi audit P1 #18).
         g.drawText(headline, inner.removeFromTop(20), juce::Justification::centred, true);
 
-        g.setFont(KhensuTheme::bodyFont(11.0f));
+        g.setFont(KhensuTheme::bodyFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
-        g.drawText(body, inner, juce::Justification::centredTop, true);
+        // Wraps (up to 3 lines) so a sentence-long body is not cut to one line (UXR-6).
+        g.drawFittedText(body, inner, juce::Justification::centredTop, 3, 1.0f);
     }
 
     void paint(juce::Graphics& g) override

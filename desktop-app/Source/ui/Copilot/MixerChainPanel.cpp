@@ -68,7 +68,7 @@ void MixerChainPanel::ConsensusChartComponent::paint(juce::Graphics& g)
     auto b = getLocalBounds().toFloat();
 
     g.setColour(KhensuTheme::textSecondary);
-    g.setFont(juce::Font(juce::FontOptions{8.f}));
+    g.setFont(KhensuTheme::uiFont(type::caption));
     g.drawText("PROVIDER CONSENSUS", b.removeFromTop(11.f), juce::Justification::centredLeft);
 
     const int n = c.providers_queried.size();
@@ -81,7 +81,7 @@ void MixerChainPanel::ConsensusChartComponent::paint(juce::Graphics& g)
             g.setColour((responded ? KhensuTheme::accentTeal : KhensuTheme::borderSubtle).withAlpha(responded ? 0.8f : 0.5f));
             g.fillRoundedRectangle(cell, 2.0f);
             g.setColour(KhensuTheme::bgVoid.withAlpha(0.8f));
-            g.setFont(juce::Font(juce::FontOptions{7.f}));
+            g.setFont(KhensuTheme::uiFont(type::caption));
             g.drawText(c.providers_queried[i], cell.toNearestInt(), juce::Justification::centred, false);
         }
     }
@@ -95,7 +95,7 @@ void MixerChainPanel::ConsensusChartComponent::paint(juce::Graphics& g)
         g.setColour(KhensuTheme::accentBlue);
         g.fillRect(scoreRow.withWidth(scoreRow.getWidth() * frac));
         g.setColour(KhensuTheme::textPrimary.withAlpha(0.85f));
-        g.setFont(juce::Font(juce::FontOptions{7.5f}));
+        g.setFont(KhensuTheme::uiFont(type::caption));
         g.drawText(juce::String(juce::roundToInt(frac * 100.0f)) + "% agreement", scoreRow, juce::Justification::centred, false);
     }
 }
@@ -179,7 +179,7 @@ MixerChainPanel::MixerChainPanel(IAppController& c) : controller_(c)
 {
     applyThemeColours();
     auto setupLabel = [&](juce::Label& l) {
-        l.setFont(juce::Font(juce::FontOptions{11.f}));
+        l.setFont(KhensuTheme::uiFont(type::caption));
         addAndMakeVisible(l);
     };
     setupLabel(targetLabel_);
@@ -253,12 +253,12 @@ MixerChainPanel::MixerChainPanel(IAppController& c) : controller_(c)
     }
 
     // Status
-    statusLabel_.setFont(juce::Font(juce::FontOptions{12.f}));
+    statusLabel_.setFont(KhensuTheme::uiFont(type::secondary));
     statusLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(statusLabel_);
 
     // Ecosystem Coverage Badge
-    ecosystemCoverageBadge_.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::bold));
+    ecosystemCoverageBadge_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
     ecosystemCoverageBadge_.setJustificationType(juce::Justification::centred);
     ecosystemCoverageBadge_.setVisible(false);
     addChildComponent(ecosystemCoverageBadge_);
@@ -289,7 +289,7 @@ MixerChainPanel::MixerChainPanel(IAppController& c) : controller_(c)
     decisionTraceButton_.onClick = [this] { showDecisionTrace(); };
     addAndMakeVisible(decisionTraceButton_);
 
-    consensusBadge_.setFont(juce::Font(juce::FontOptions{10.f, juce::Font::bold}));
+    consensusBadge_.setFont(KhensuTheme::uiFont(type::caption, juce::Font::bold));
     consensusBadge_.setJustificationType(juce::Justification::centredLeft);
     consensusBadge_.setVisible(false);
     addChildComponent(consensusBadge_);
@@ -303,7 +303,7 @@ MixerChainPanel::MixerChainPanel(IAppController& c) : controller_(c)
     retrySkippedButton_.onClick = [this] { retrySkippedPlugins(); };
     addChildComponent(retrySkippedButton_);
 
-    libraryBadge_.setFont(juce::Font(juce::FontOptions{10.f}));
+    libraryBadge_.setFont(KhensuTheme::uiFont(type::caption));
     libraryBadge_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(libraryBadge_);
     refreshLibraryBadge();
@@ -338,7 +338,7 @@ void MixerChainPanel::paint(juce::Graphics& g)
     g.setColour(KhensuTheme::accentTeal.withAlpha(0.12f));
     g.fillRect(header);
     g.setColour(KhensuTheme::accentTeal);
-    g.setFont(juce::Font(juce::FontOptions{15.f, juce::Font::bold}));
+    g.setFont(KhensuTheme::uiFont(type::subtitle, juce::Font::bold));
     g.drawText("  " + TRANS("Mixer Chain Generator"), header.toNearestInt(), juce::Justification::centredLeft);
 
     // Column separators
@@ -692,7 +692,7 @@ void MixerChainPanel::onResultsReady(std::vector<khensu::ipc::HttpServiceBridge:
 
     auto setupLabel = [](juce::Label& l, const juce::String& text, float sz, juce::Colour col, bool bold = false) {
         l.setText(text, juce::dontSendNotification);
-        l.setFont(juce::Font(juce::FontOptions{sz, bold ? juce::Font::bold : juce::Font::plain}));
+        l.setFont(KhensuTheme::uiFont(sz, bold ? juce::Font::bold : juce::Font::plain));
         l.setColour(juce::Label::textColourId, col);
     };
 
@@ -700,10 +700,10 @@ void MixerChainPanel::onResultsReady(std::vector<khensu::ipc::HttpServiceBridge:
         auto card = std::make_unique<PluginCard>();
         const auto& p = plugins[i];
 
-        setupLabel(card->nameLabel_, juce::String(p.name), 13.f, KhensuTheme::accentTeal, true);
-        setupLabel(card->categoryLabel_, juce::String(p.category), 11.f, KhensuTheme::textPrimary);
-        setupLabel(card->ecosystemLabel_, juce::String(p.ecosystem), 10.f, KhensuTheme::accentBlue);
-        setupLabel(card->settingsLabel_, juce::String(p.settings_description), 10.f, KhensuTheme::textSecondary);
+        setupLabel(card->nameLabel_, juce::String(p.name), type::body, KhensuTheme::accentTeal, true);
+        setupLabel(card->categoryLabel_, juce::String(p.category), type::caption, KhensuTheme::textPrimary);
+        setupLabel(card->ecosystemLabel_, juce::String(p.ecosystem), type::caption, KhensuTheme::accentBlue);
+        setupLabel(card->settingsLabel_, juce::String(p.settings_description), type::caption, KhensuTheme::textSecondary);
         card->settingsLabel_.setMinimumHorizontalScale(0.5f);
 
         resultsGrid_.addAndMakeVisible(*card);
@@ -872,7 +872,7 @@ void MixerChainPanel::resolveAgainstLibrary()
     if (auto lib = controller_.sessions().sessionManager().listScannedPlugins(); lib.is_err() || lib.value().empty()) {
         for (auto& card : cards_) {
             card->matchLabel_.setText(TRANS("Scan your plugins to see local matches"), juce::dontSendNotification);
-            card->matchLabel_.setFont(juce::Font(juce::FontOptions{10.f, juce::Font::italic}));
+            card->matchLabel_.setFont(KhensuTheme::uiFont(type::caption, juce::Font::italic));
             card->matched_ = false;
             card->applyColours();
         }
@@ -914,13 +914,13 @@ void MixerChainPanel::resolveAgainstLibrary()
                     const auto& m = *resolved[row].matched_plugin;
                     label.setText(TRANS("Yours: %n (%f)").replace("%n", m.name).replace("%f", m.format),
                                   juce::dontSendNotification);
-                    label.setFont(juce::Font(juce::FontOptions{10.f, juce::Font::bold}));
+                    label.setFont(KhensuTheme::uiFont(type::caption, juce::Font::bold));
                     card.matched_ = true;
                     ++matched;
                 } else {
                     label.setText(TRANS("No local match - use built-in DSP or the suggested ecosystem"),
                                   juce::dontSendNotification);
-                    label.setFont(juce::Font(juce::FontOptions{10.f, juce::Font::italic}));
+                    label.setFont(KhensuTheme::uiFont(type::caption, juce::Font::italic));
                     card.matched_ = false;
                     gaps.add(resolved[row].effect);
                 }

@@ -96,6 +96,9 @@ class PanelCard : public juce::Component {
     void childrenChanged() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseEnter(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
 
   protected:
     PanelCardController& controller_;
@@ -151,6 +154,8 @@ class PanelCard : public juce::Component {
 
     KhensuSkeleton skeleton_;
     bool isLoading_ = false;
+    bool cursorHovered_ = false;
+    juce::Point<float> cursorPos_{};
 
     /// Re-applies the palette to widgets whose colours are cached rather than
     /// read live in paint(). Called at construction and on every theme change.

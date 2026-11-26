@@ -69,7 +69,7 @@ void RenderJobManager::startChainRender(const juce::String& description, const j
                                         const juce::String& sessionId, const juce::String& sourceRecommendationId,
                                         Callback onDone, bool genreRelative, bool genreActionAllowed,
                                         const juce::String& abstainedReason, const juce::String& targetStem,
-                                        const juce::String& decisionHash)
+                                        const juce::String& decisionHash, const juce::String& keyStem)
 {
     rememberChain(chain, decisionHash);
     const auto stemPaths = stemProvenanceProvider_ ? stemProvenanceProvider_() : std::map<juce::String, juce::String>{};
@@ -82,10 +82,12 @@ void RenderJobManager::startChainRender(const juce::String& description, const j
     job.decisionHash = decisionHash;
     registerStart(std::move(job), [filePath, outputPath, chain, sessionId, sourceRecommendationId, stemPaths,
                                    genreRelative, genreActionAllowed, abstainedReason, targetStem,
-                                   decisionHash](ipc::HttpServiceBridge& bridge) {
+                                   decisionHash, keyStem](ipc::HttpServiceBridge& bridge) {
+        // ENH-6: key_stem names a stem in stem_paths (the provider's separated
+        // stems); the service falls back to self-keying when it is not there.
         return bridge.startApplyChainJob(filePath, outputPath, chain, sessionId, sourceRecommendationId, stemPaths,
                                          genreRelative, genreActionAllowed, abstainedReason, targetStem,
-                                         decisionHash);
+                                         decisionHash, keyStem);
     });
 }
 

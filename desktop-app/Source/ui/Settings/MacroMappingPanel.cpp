@@ -54,8 +54,8 @@ MacroMappingPanel::MacroMappingPanel(IAppController& c) : controller_(c), router
         auto& r = rows_[static_cast<size_t>(i)];
         const auto target = targets[i];
         r.name.setText(target, juce::dontSendNotification);
-        r.name.setFont(KhensuTheme::bodyFont(12.0f));
-        r.source.setFont(KhensuTheme::labelFont(11.0f));
+        r.name.setFont(KhensuTheme::bodyFont(type::secondary));
+        r.source.setFont(KhensuTheme::labelFont(type::caption));
         r.learn.setClickingTogglesState(true);
         r.learn.setTitle(TRANS("Learn ") + target);
         r.learn.setTooltip(TRANS("Arm, then move a MIDI control or send an OSC message to bind it to ") + target + ".");
@@ -135,10 +135,10 @@ MacroMappingPanel::MacroMappingPanel(IAppController& c) : controller_(c), router
     oscPort_.setTitle(TRANS("OSC port"));
     oscPort_.setText(juce::String(MacroControlRouter::kDefaultOscPort), juce::dontSendNotification);
     addAndMakeVisible(oscPort_);
-    oscNote_.setFont(KhensuTheme::labelFont(10.0f));
+    oscNote_.setFont(KhensuTheme::labelFont(type::caption));
     oscNote_.setText(TRANS("Any address via Learn; arg float 0-1 or int 0-127."), juce::dontSendNotification);
     addAndMakeVisible(oscNote_);
-    status_.setFont(KhensuTheme::labelFont(11.0f));
+    status_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(status_);
 
     router_.onChange = [safe = juce::Component::SafePointer<MacroMappingPanel>(this)] {

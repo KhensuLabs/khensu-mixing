@@ -25,7 +25,7 @@ FeedbackDecoderPanel::FeedbackDecoderPanel(IAppController& c) : controller_(c)
 {
     applyThemeColours();
     titleLabel_.setText(TRANS("CLIENT REVISION DECODER"), juce::dontSendNotification);
-    titleLabel_.setFont(khensu::KhensuTheme::uiFont(16.0f, juce::Font::bold));
+    titleLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::title, juce::Font::bold));
     addAndMakeVisible(titleLabel_);
 
     feedbackInput_.setMultiLine(true, true);
@@ -33,13 +33,13 @@ FeedbackDecoderPanel::FeedbackDecoderPanel(IAppController& c) : controller_(c)
     feedbackInput_.setTextToShowWhenEmpty(
         TRANS("Paste the client's note...  e.g. \"love it, but can it be warmer and the vocals feel a bit buried\""),
         KhensuTheme::textTertiary);
-    feedbackInput_.setFont(KhensuTheme::bodyFont(13.0f));
+    feedbackInput_.setFont(KhensuTheme::bodyFont(type::body));
     addAndMakeVisible(feedbackInput_);
 
     decodeButton_.onClick = [this] { decode(); };
     addAndMakeVisible(decodeButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setText(TRANS("Clients describe feelings; this turns them into moves."), juce::dontSendNotification);
     addAndMakeVisible(statusLabel_);
 
@@ -138,17 +138,17 @@ void FeedbackDecoderPanel::Card::paint(juce::Graphics& g)
 
     auto inner = b.reduced(10, 6);
     auto top = inner.removeFromTop(16);
-    g.setFont(KhensuTheme::bodyFont(12.0f).boldened());
+    g.setFont(KhensuTheme::bodyFont(type::secondary).boldened());
     g.setColour(KhensuTheme::textPrimary);
     g.drawText(data.reading, top.removeFromLeft(top.getWidth() - 140), juce::Justification::centredLeft, true);
 
-    g.setFont(KhensuTheme::labelFont(9.0f).boldened());
+    g.setFont(KhensuTheme::labelFont(type::caption).boldened());
     g.setColour(KhensuTheme::accentTeal);
     g.drawText(data.concept.toUpperCase() + "  " + juce::String((int)(data.confidence * 100)) + "%", top,
                juce::Justification::centredRight, false);
 
     inner.removeFromBottom(26); // apply button row
-    g.setFont(KhensuTheme::labelFont(10.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textSecondary);
     g.drawFittedText(data.explanation, inner, juce::Justification::topLeft, 3);
 }

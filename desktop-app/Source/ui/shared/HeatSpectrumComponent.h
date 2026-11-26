@@ -1,6 +1,7 @@
 // desktop-app/Source/ui/shared/HeatSpectrumComponent.h
 #pragma once
 #include <JuceHeader.h>
+#include <khensu/ui/ChartKit.h>
 #include <vector>
 
 namespace khensu {
@@ -14,7 +15,7 @@ class HeatSpectrumComponent final : public juce::Component {
   public:
     HeatSpectrumComponent() = default;
 
-    // API matches SpectrumComponent
+    // Spectrum API (setBands / pins / genre reference)
     void setBands(const std::vector<float>& dbPerOctave);
     void setResonancePins(std::vector<SpectrumPin> pins);
     void setGenreReference(float centroid_hz, float low_end_weight);
@@ -47,6 +48,9 @@ class HeatSpectrumComponent final : public juce::Component {
     void paint(juce::Graphics& g) override;
     void mouseMove(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
+    /// VIS-8: what a screen reader reads.
+    juce::String summary() const;
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
     // Public for testing
     static juce::Colour colourForRank(float rank); // rank 0..1

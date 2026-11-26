@@ -21,14 +21,14 @@ void PreflightPanel::CheckRow::paint(juce::Graphics& g)
                                           : KhensuTheme::textTertiary;
     g.setColour(col);
     const char* mark = state == 1 ? "+" : state == 0 ? "-" : "!";
-    g.setFont(KhensuTheme::labelFont(11.0f).boldened());
+    g.setFont(KhensuTheme::labelFont(type::caption).boldened());
     g.drawText(mark, b.removeFromLeft(16), juce::Justification::centred, false);
 
-    g.setFont(KhensuTheme::bodyFont(10.5f).boldened());
+    g.setFont(KhensuTheme::bodyFont(type::caption).boldened());
     g.setColour(KhensuTheme::textPrimary);
     g.drawText(title, b.removeFromLeft(juce::jmin(150, b.getWidth() / 3)), juce::Justification::centredLeft, true);
 
-    g.setFont(KhensuTheme::labelFont(9.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(state >= 2 ? col : KhensuTheme::textSecondary);
     g.drawFittedText(detail, b, juce::Justification::centredLeft, 2);
 }

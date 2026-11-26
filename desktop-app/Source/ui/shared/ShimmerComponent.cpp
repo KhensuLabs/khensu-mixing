@@ -1,4 +1,5 @@
 #include "ShimmerComponent.h"
+#include "ReducedMotion.h"
 
 namespace khensu {
 
@@ -6,6 +7,11 @@ void ShimmerComponent::start()
 {
     phase_ = 0.0f;
     setVisible(true);
+    if (ui::motion::reduced()) { // VIS-7: a still placeholder, no sweep
+        phase_ = 0.5f;
+        repaint();
+        return;
+    }
     startTimerHz(30);
 }
 

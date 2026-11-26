@@ -108,7 +108,7 @@ void MixNotesTimeline::paint(juce::Graphics& g)
 
     if (durationSec_ <= 0.0 || notes_.empty()) {
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::labelFont(9.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText("No time-anchored mix notes", getLocalBounds(), juce::Justification::centred, false);
         return;
     }

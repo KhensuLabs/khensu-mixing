@@ -37,7 +37,7 @@ class ExperimentalBadge final : public juce::Component, public juce::SettableToo
         return f != nullptr;
     }
 
-    static juce::Font font() { return KhensuTheme::labelFont(10.0f); }
+    static juce::Font font() { return KhensuTheme::labelFont(type::caption); }
     static juce::String text() { return TRANS("Experimental"); }
     static int preferredWidth() { return juce::GlyphArrangement::getStringWidthInt(font(), text()) + 14; }
     static constexpr int kHeight = 16;

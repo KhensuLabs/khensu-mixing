@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/SystemBrain/FeatureDetailPanel.cpp
 #include "FeatureDetailPanel.h"
+#include "../shared/KhensuEmptyState.h"
 #include "../shared/KhensuLookAndFeel.h"
 #include "../shared/KhensuTheme.h"
 
@@ -123,7 +124,7 @@ int FeatureDetailPanel::walkSections(juce::Graphics* g, int width)
 
     // ── Section 1: Feature name + category badge ──────────────────────
     if (g != nullptr) {
-        g->setFont(KhensuTheme::labelFont(20.0f));
+        g->setFont(KhensuTheme::labelFont(type::heading));
         g->setColour(KhensuTheme::textPrimary);
         g->drawText(featureName_, x, y, w, 28, juce::Justification::centredLeft, true);
     }
@@ -132,7 +133,7 @@ int FeatureDetailPanel::walkSections(juce::Graphics* g, int width)
         juce::Rectangle<int> badge(x, y + 2, 100, 20);
         g->setColour(KhensuTheme::bgOverlay);
         g->fillRoundedRectangle(badge.toFloat(), 4.0f);
-        g->setFont(KhensuTheme::labelFont(10.0f));
+        g->setFont(KhensuTheme::labelFont(type::caption));
         g->setColour(KhensuTheme::textTertiary);
         g->drawText(featureCategory_.toUpperCase(), badge, juce::Justification::centred, false);
     }
@@ -140,12 +141,12 @@ int FeatureDetailPanel::walkSections(juce::Graphics* g, int width)
     divider();
 
     // ── Section 2: Description ────────────────────────────────────────
-    y += textBlock(g, description_, KhensuTheme::bodyFont(13.0f), KhensuTheme::textSecondary, x, y, w) +
+    y += textBlock(g, description_, KhensuTheme::bodyFont(type::body), KhensuTheme::textSecondary, x, y, w) +
          KhensuTheme::sp3;
 
     // ── Section 3: HOW KHENSU MEASURES IT ────────────────────────────
     header("HOW KHENSU MEASURES IT");
-    y += textBlock(g, measurementMethod_, KhensuTheme::bodyFont(12.0f), KhensuTheme::textSecondary, x, y, w) +
+    y += textBlock(g, measurementMethod_, KhensuTheme::bodyFont(type::secondary), KhensuTheme::textSecondary, x, y, w) +
          KhensuTheme::sp3;
 
     // ── Section 3b: THE LOGIC & MATH (thresholds/formulas) ───────────
@@ -153,7 +154,7 @@ int FeatureDetailPanel::walkSections(juce::Graphics* g, int width)
         header("THE LOGIC & MATH");
         // Monospace so formulas/thresholds line up and read as "the actual
         // rule", not prose.
-        y += textBlock(g, logicAndMath_, KhensuTheme::monoFont(10.5f), KhensuTheme::textSecondary, x, y, w) +
+        y += textBlock(g, logicAndMath_, KhensuTheme::monoFont(type::caption), KhensuTheme::textSecondary, x, y, w) +
              KhensuTheme::sp3;
     }
 
@@ -162,13 +163,13 @@ int FeatureDetailPanel::walkSections(juce::Graphics* g, int width)
         divider();
         header("YOUR SESSION VALUE");
         if (g != nullptr) {
-            g->setFont(KhensuTheme::metricFont(24.0f));
+            g->setFont(KhensuTheme::metricFont(type::headline));
             g->setColour(KhensuTheme::textPrimary);
             g->drawText(sessionValue_ + " " + sessionUnit_, x, y, w, 32, juce::Justification::centredLeft, false);
         }
         y += 32;
         if (g != nullptr) {
-            g->setFont(KhensuTheme::labelFont(11.0f));
+            g->setFont(KhensuTheme::labelFont(type::caption));
             g->setColour(KhensuTheme::textTertiary);
             g->drawText(sessionHasMeter_ ? "Genre target: " + genreTarget_ : genreTarget_, x, y, w, 16,
                         juce::Justification::centredLeft, false);
@@ -195,7 +196,7 @@ int FeatureDetailPanel::walkSections(juce::Graphics* g, int width)
         }
     }
 
-    y += textBlock(g, mainWhy, KhensuTheme::bodyFont(12.0f), KhensuTheme::textSecondary, x, y, w) + 10;
+    y += textBlock(g, mainWhy, KhensuTheme::bodyFont(type::secondary), KhensuTheme::textSecondary, x, y, w) + 10;
 
     if (misconception.isNotEmpty()) {
         // bodyFont(), not FontOptions{"Sans-Serif", ...}: that placeholder token
@@ -204,7 +205,7 @@ int FeatureDetailPanel::walkSections(juce::Graphics* g, int width)
         // uiTypefaceName() comment warns about. The hardcoded #e74c3c also
         // ignored the theme, so this callout stayed the same red in all three
         // themes (kimi audit P0 #14).
-        const juce::Font miscFont = KhensuTheme::bodyFont(9.5f);
+        const juce::Font miscFont = KhensuTheme::bodyFont(type::caption);
         const int innerW = w - 16;
         const int textH = textBlock(nullptr, misconception, miscFont, KhensuTheme::textSecondary, 0, 0, innerW);
         const int boxH = 14 + 4 + textH + 12;
@@ -216,7 +217,7 @@ int FeatureDetailPanel::walkSections(juce::Graphics* g, int width)
             g->drawRoundedRectangle(box.toFloat(), 4.0f, 1.0f);
 
             auto inside = box.reduced(8, 6);
-            g->setFont(khensu::KhensuTheme::uiFont(9.5f, juce::Font::bold));
+            g->setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
             g->setColour(KhensuTheme::accentRed);
             g->drawText("COMMON MISCONCEPTION DEBUNKED:", inside.removeFromTop(14), juce::Justification::topLeft, true);
             inside.removeFromTop(4);
@@ -240,10 +241,8 @@ void FeatureDetailPanel::paint(juce::Graphics& g)
     KhensuLookAndFeel::drawGlassPanel(g, getLocalBounds(), GlassPanelVariant::Default);
 
     if (!hasFeature_) {
-        g.setFont(KhensuTheme::bodyFont(13.0f));
-        g.setColour(KhensuTheme::textSecondary);
-        g.drawText("Select a feature to learn how Khensu analyses your mix",
-                   getLocalBounds().reduced(KhensuTheme::panelPadding), juce::Justification::centred, true);
+        KhensuEmptyState::paintInto(g, getLocalBounds().reduced(KhensuTheme::panelPadding),
+                                    TRANS("Select a feature to learn how Khensu analyses your mix"), {}); // UXR-6
         return;
     }
 

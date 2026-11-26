@@ -19,7 +19,7 @@ StemRebalancePanel::StemRebalancePanel(IAppController& c) : PanelCard(c, TRANS("
     for (size_t i = 0; i < kStems.size(); ++i) {
         names_[i].setText(juce::String(kStems[i]).substring(0, 1).toUpperCase() + juce::String(kStems[i]).substring(1),
                           juce::dontSendNotification);
-        names_[i].setFont(KhensuTheme::labelFont(11.0f));
+        names_[i].setFont(KhensuTheme::labelFont(type::caption));
         addAndMakeVisible(names_[i]);
         auto& s = gains_[i];
         s.setSliderStyle(juce::Slider::LinearHorizontal);

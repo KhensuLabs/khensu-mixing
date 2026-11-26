@@ -14,4 +14,4 @@ import os as _os
 # separately (common/torch_runtime.py) and does not read this variable.
 _os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
-__version__ = "1.0.4"
+__version__ = "1.0.5"

@@ -17,10 +17,13 @@ class CompareDeltaChip final : public juce::Component {
     void setDelta(float delta, const juce::String& unit)
     {
         hasValue_ = true;
-        text_ = "vs ref: " + juce::String(delta >= 0 ? "+" : "") + juce::String(delta, 1) + unit;
-        colour_ = std::abs(delta) < 0.5f   ? KhensuTheme::accentGreen
-                  : std::abs(delta) < 2.0f ? KhensuTheme::accentAmber
-                                           : KhensuTheme::accentRed;
+        // VIS-4: how close the track is to the reference is written as a word
+        // (match / near / off) - the chip is neutral, never green-vs-red.
+        const float a = std::abs(delta);
+        const juce::String word = a < 0.5f ? TRANS("match") : a < 2.0f ? TRANS("near") : TRANS("off");
+        text_ = "vs ref " + juce::String(delta >= 0 ? "+" : "") + juce::String(delta, 1) + unit + " - " + word;
+        far_ = a >= 2.0f;
+        setTitle(TRANS("Difference from the reference") + ": " + text_);
         setVisible(true);
         repaint();
     }
@@ -33,11 +36,13 @@ class CompareDeltaChip final : public juce::Component {
     void paint(juce::Graphics& g) override
     {
         if (!hasValue_) return;
-        g.setColour(colour_.withAlpha(0.15f));
+        g.setColour(KhensuTheme::bgRaised.withAlpha(0.8f));
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 3.0f);
-        g.setColour(colour_);
-        g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::bold));
-        g.drawText(text_, getLocalBounds(), juce::Justification::centred, false);
+        g.setColour(far_ ? KhensuTheme::borderActive : KhensuTheme::borderSubtle);
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 3.0f, 1.0f);
+        g.setColour(KhensuTheme::textPrimary);
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
+        g.drawFittedText(text_, getLocalBounds().reduced(3, 0), juce::Justification::centred, 1, 0.8f);
     }
 
     /// Looks up `key` (e.g. "lufs", "crest_db") in a ReferenceDeltas set.
@@ -51,7 +56,7 @@ class CompareDeltaChip final : public juce::Component {
   private:
     bool hasValue_ = false;
     juce::String text_;
-    juce::Colour colour_;
+    bool far_ = false;
 };
 
 } // namespace khensu

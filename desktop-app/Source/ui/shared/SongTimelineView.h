@@ -7,6 +7,8 @@
 //                 true-peak events marked where they happen (VIZ-4c) and,
 //                 when set, a comparison line (the original, or a reference
 //                 track - VIZ-3a / VIZ-N1)
+//   PSR           the peak to short-term loudness ratio (STU-3) on its own
+//                 dB axis; passages under 6 dB are marked "squashed"
 //   spectrogram   log frequency over time; findings with a frequency range
 //                 drawn as boxes on it
 //   findings      every finding that happens at a moment, where it happens
@@ -22,6 +24,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <khensu/analysis/PeakToLoudness.h>
 #include <khensu/analysis/SectionAnalysis.h>
 #include <khensu/analysis/TrackTimeline.h>
 #include <khensu/ui/ChartKit.h>
@@ -39,7 +42,7 @@ class SongTimelineView final : public juce::Component, public juce::SettableTool
         float lowHz = 0.0f, highHz = 0.0f; ///< 0 = no frequency range
     };
 
-    enum Lane { kSections = 0, kWaveform, kLoudness, kSpectrogram, kFindings, kLaneCount };
+    enum Lane { kSections = 0, kWaveform, kLoudness, kPsr, kSpectrogram, kFindings, kLaneCount };
 
     SongTimelineView();
     ~SongTimelineView() override;
@@ -75,12 +78,18 @@ class SongTimelineView final : public juce::Component, public juce::SettableTool
     std::optional<int> selectedMarker() const noexcept { return selected_; }
     const ui::chart::Axis& timeAxis() const noexcept { return time_; }
     ui::chart::Readout readoutAt(double sec) const;
+    /// STU-3: PSR per timeline hop (psr::kUnmeasured in silence) and the
+    /// passages under psr::kSquashedBelowDb.
+    const std::vector<float>& psrSeries() const noexcept { return psr_; }
+    const std::vector<psr::Passage>& squashedPassages() const noexcept { return squashed_; }
+    const ui::chart::Axis& psrAxis() const noexcept { return psrAxis_; }
     static constexpr int kLabelW = 86;
 
   private:
     void paintSections(juce::Graphics& g, juce::Rectangle<float> r) const;
     void paintWaveform(juce::Graphics& g, juce::Rectangle<float> r) const;
     void paintLoudness(juce::Graphics& g, juce::Rectangle<float> r) const;
+    void paintPsr(juce::Graphics& g, juce::Rectangle<float> r) const;
     void paintSpectrogram(juce::Graphics& g, juce::Rectangle<float> r);
     void paintFindings(juce::Graphics& g, juce::Rectangle<float> r) const;
     void paintTimeAxis(juce::Graphics& g) const;
@@ -95,6 +104,9 @@ class SongTimelineView final : public juce::Component, public juce::SettableTool
     std::vector<SectionData> sections_;
     std::vector<Marker> markers_;
     std::optional<std::pair<float, float>> lufsWindow_;
+    std::vector<float> psr_;
+    std::vector<psr::Passage> squashed_;
+    ui::chart::Axis psrAxis_;
     juce::String status_;
     double playhead_ = -1.0;
     ui::chart::Axis time_;

@@ -102,7 +102,7 @@ AutoMixPanel::AutoMixPanel(IAppController& c, std::string baseUrl) : controller_
 {
     applyThemeColours();
     for (auto* l : {&targetLabel_, &stepsLabel_})
-        l->setFont(KhensuTheme::labelFont(11.0f));
+        l->setFont(KhensuTheme::labelFont(type::caption));
 
     targetSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
     targetSlider_.setRange(-24.0, -6.0, 0.5);
@@ -127,12 +127,12 @@ AutoMixPanel::AutoMixPanel(IAppController& c, std::string baseUrl) : controller_
     acceptButton_.setTooltip(TRANS("Add every kept step to the render history, each one derived from the last"));
     acceptButton_.onClick = [this] { acceptResult(); };
 
-    statusLabel_.setFont(KhensuTheme::labelFont(12.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::secondary));
     statusLabel_.setText(TRANS("Ready. Nothing is changed until you accept the result."), juce::dontSendNotification);
     log_.setMultiLine(true);
     log_.setReadOnly(true);
     log_.setScrollbarsShown(true);
-    log_.setFont(KhensuTheme::monoFont(11.0f));
+    log_.setFont(KhensuTheme::monoFont(type::caption));
     log_.setTitle(TRANS("Auto-mix step log"));
 
     for (juce::Component* comp :
@@ -157,7 +157,7 @@ void AutoMixPanel::paint(juce::Graphics& g)
     g.setColour(KhensuTheme::accentTeal.withAlpha(0.12f));
     g.fillRect(header);
     g.setColour(KhensuTheme::accentTeal);
-    g.setFont(KhensuTheme::uiFont(15.0f, juce::Font::bold));
+    g.setFont(KhensuTheme::uiFont(type::subtitle, juce::Font::bold));
     g.drawText("  " + TRANS("Auto-mix (verified) - every step is measured before it is kept"), header.toNearestInt(),
                juce::Justification::centredLeft);
 }

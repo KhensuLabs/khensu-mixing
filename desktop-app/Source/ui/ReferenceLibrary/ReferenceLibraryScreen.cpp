@@ -2,34 +2,38 @@
 #include "../shared/KhensuTheme.h"
 #include "../../IAppController.h"
 #include <algorithm>
-#include <numeric>
 #include <cmath>
+#include <map>
+#include <khensu/ipc/generated/ApiSchema.h>
 #include <khensu/targets/GenreDatabase.h>
 
 namespace khensu {
 
+namespace af = api::fields; // generated service field names (ApiSchema.h)
+
+namespace {
+constexpr int kIdAll = 1;
+constexpr int kIdUnsorted = 2;
+} // namespace
 
 // Every cached palette colour on this component, in one place (UI-01).
 void ReferenceLibraryScreen::applyThemeColours()
 {
     percentileLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     stemEnergyLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
-    rankingLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
-    genreList_.setColour(juce::ListBox::backgroundColourId, KhensuTheme::bgBase);
-    // The cloud's point colours come from the theme: rebuild them from the
-    // cached sample so a theme switch reaches the cloud too (UIX-20).
-    if (!lastPoints_.empty()) rebuildCloud(lastPointsGenre_, lastPoints_);
+    genreCaption_.setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
+    genreHint_.setColour(juce::Label::textColourId, KhensuTheme::textTertiary);
 }
 
 ReferenceLibraryScreen::ReferenceLibraryScreen(IAppController& controller, const std::string& baseUrl)
-    : controller_(controller), similarPanel_(controller, baseUrl),
-      profilesBar_(controller, [this] {
-          return (selectedRow_ >= 0 && selectedRow_ < genreIds_.size()) ? genreIds_[selectedRow_] : juce::String();
-      }, baseUrl)
+    : controller_(controller), scanPanel_(controller, baseUrl), similarPanel_(controller, baseUrl),
+      profilesBar_(controller, [this] { return selectedGenreId(); }, baseUrl)
 {
     applyThemeColours();
+    addAndMakeVisible(scanPanel_);
     addAndMakeVisible(similarPanel_);
     addAndMakeVisible(profilesBar_);
+    addAndMakeVisible(fitChart_);
     profilesBar_.onProfilesChanged = [this](const juce::String& genreId,
                                             std::vector<ReferenceProfilesBar::UserProfile> profiles) {
         userProfiles_ = std::move(profiles);
@@ -38,69 +42,171 @@ ReferenceLibraryScreen::ReferenceLibraryScreen(IAppController& controller, const
     titleLabel_.setScreen(ScreenType::ReferenceLibrary);
     addAndMakeVisible(titleLabel_);
 
-    percentileLabel_.setFont(KhensuTheme::bodyFont(12.0f));
+    genreCaption_.setText(TRANS("Genre"), juce::dontSendNotification);
+    genreCaption_.setFont(KhensuTheme::labelFont(type::body));
+    addAndMakeVisible(genreCaption_);
+    genrePicker_.setTitle(TRANS("Genre"));
+    genrePicker_.setTooltip(TRANS("Pick a genre: its scanned songs and samples, its norms and your mix against them"));
+    genrePicker_.onChange = [this] { pickerChanged(); };
+    addAndMakeVisible(genrePicker_);
+    genreHint_.setText(TRANS("Shows the songs and samples sorted into the genre, its loudness and stem targets, "
+                             "and where your mix sits against them."),
+                       juce::dontSendNotification);
+    genreHint_.setFont(KhensuTheme::bodyFont(type::caption));
+    genreHint_.setMinimumHorizontalScale(0.85f);
+    addAndMakeVisible(genreHint_);
+
+    percentileLabel_.setFont(KhensuTheme::bodyFont(type::secondary));
     percentileLabel_.setJustificationType(juce::Justification::topLeft);
     percentileLabel_.setMinimumHorizontalScale(1.0f);
     addAndMakeVisible(percentileLabel_);
 
-    stemEnergyLabel_.setFont(KhensuTheme::bodyFont(11.0f));
+    stemEnergyLabel_.setFont(KhensuTheme::bodyFont(type::caption));
     stemEnergyLabel_.setJustificationType(juce::Justification::topLeft);
     stemEnergyLabel_.setMinimumHorizontalScale(1.0f);
     addAndMakeVisible(stemEnergyLabel_);
 
-    rankingLabel_.setFont(KhensuTheme::bodyFont(11.5f));
-    rankingLabel_.setJustificationType(juce::Justification::topLeft);
-    rankingLabel_.setMinimumHorizontalScale(1.0f);
-    addAndMakeVisible(rankingLabel_);
+    fitChart_.onGenreClicked = [this](const juce::String& id) { selectGenre(id); };
 
-    for (const auto& g : controller_.genreDatabase().listAll()) {
-        genreIds_.add(g.id);
-        genreNames_.add(g.name);
-    }
+    scanPanel_.onSummary = [this](const juce::var& summary) {
+        counts_ = summary;
+        rebuildPicker();
+    };
+    scanPanel_.onScanFinished = [this] { similarPanel_.showLibrary(); };
 
-    genreList_.setModel(this);
-    addAndMakeVisible(genreList_);
-
+    rebuildPicker();
 }
 
-ReferenceLibraryScreen::~ReferenceLibraryScreen() { genreList_.setModel(nullptr); }
+ReferenceLibraryScreen::~ReferenceLibraryScreen() = default;
+
+// --- the genre picker ----------------------------------------------------------
+
+void ReferenceLibraryScreen::rebuildPicker()
+{
+    const auto& db = controller_.genreDatabase();
+    auto count = [this](const char* key, const juce::String& id) {
+        const juce::var m = counts_[key];
+        return m.isObject() ? (int)m[juce::Identifier(id)] : 0;
+    };
+    auto withCount = [](const juce::String& name, int n) {
+        return n > 0 ? name + " (" + juce::String(n) + ")" : name;
+    };
+
+    // Families in display order, their genres under each.
+    std::map<juce::String, std::vector<const GenreEntry*>> byFamily;
+    for (const auto& g : db.listAll())
+        byFamily[juce::String(g.parent.empty() ? g.id : g.parent)].push_back(&g);
+    std::vector<juce::String> families;
+    for (const auto& [fam, _] : byFamily)
+        families.push_back(fam);
+    std::sort(families.begin(), families.end(), [&db](const juce::String& a, const juce::String& b) {
+        return referenceGenreName(db, a).compareIgnoreCase(referenceGenreName(db, b)) < 0;
+    });
+
+    const PickerChoice keep = (selectedId_ >= 1 && selectedId_ <= (int)choices_.size())
+                                  ? choices_[(size_t)(selectedId_ - 1)]
+                                  : PickerChoice{};
+    choices_.clear();
+    genrePicker_.clear(juce::dontSendNotification);
+    choices_.push_back({});
+    genrePicker_.addItem(TRANS("All genres"), kIdAll);
+    choices_.push_back({{}, {}, true});
+    const int unsorted = counts_.isObject() ? (int)counts_[af::ReferenceScanSummaryResponse::unsorted] : 0;
+    genrePicker_.addItem(withCount(TRANS("Unsorted"), unsorted), kIdUnsorted);
+    for (const auto& fam : families) {
+        genrePicker_.addSectionHeading(referenceGenreName(db, fam));
+        choices_.push_back({{}, fam, false});
+        genrePicker_.addItem(withCount(TRANS("All %f").replace("%f", referenceGenreName(db, fam)),
+                                       count(af::ReferenceScanSummaryResponse::families, fam)),
+                             (int)choices_.size());
+        auto members = byFamily[fam];
+        std::sort(members.begin(), members.end(), [](const GenreEntry* a, const GenreEntry* b) {
+            return juce::String(a->name).compareIgnoreCase(juce::String(b->name)) < 0;
+        });
+        for (const auto* g : members) {
+            if (juce::String(g->id) == fam) continue; // "All <family>" covers it
+            choices_.push_back({juce::String(g->id), {}, false});
+            genrePicker_.addItem(withCount(juce::String(g->name),
+                                           count(af::ReferenceScanSummaryResponse::genres, juce::String(g->id))),
+                                 (int)choices_.size());
+        }
+    }
+    // Keep the pick across a rebuild (new counts).
+    int id = kIdAll;
+    for (size_t i = 0; i < choices_.size(); ++i)
+        if (choices_[i].genre == keep.genre && choices_[i].family == keep.family
+            && choices_[i].unsorted == keep.unsorted)
+            id = (int)i + 1;
+    selectedId_ = id;
+    genrePicker_.setSelectedId(id, juce::dontSendNotification);
+}
+
+juce::String ReferenceLibraryScreen::selectedGenreId() const
+{
+    if (selectedId_ < 1 || selectedId_ > (int)choices_.size()) return {};
+    const auto& c = choices_[(size_t)(selectedId_ - 1)];
+    if (c.genre.isNotEmpty()) return c.genre;
+    if (c.family.isNotEmpty() && controller_.genreDatabase().findById(c.family.toStdString())) return c.family;
+    return {};
+}
+
+void ReferenceLibraryScreen::selectGenre(const juce::String& id)
+{
+    for (size_t i = 0; i < choices_.size(); ++i) {
+        const auto& c = choices_[i];
+        if ((c.genre.isNotEmpty() && c.genre == id) || (c.genre.isEmpty() && !c.unsorted && c.family == id)) {
+            genrePicker_.setSelectedId((int)i + 1, juce::dontSendNotification);
+            pickerChanged();
+            return;
+        }
+    }
+}
+
+void ReferenceLibraryScreen::pickerChanged()
+{
+    const int id = genrePicker_.getSelectedId();
+    if (id < 1 || id > (int)choices_.size()) return;
+    selectedId_ = id;
+    const auto& c = choices_[(size_t)(id - 1)];
+    ReferenceScanPanel::GenreScope scope;
+    scope.genre = c.genre;
+    scope.family = c.family;
+    scope.unsorted = c.unsorted;
+    scanPanel_.setGenreScope(scope);
+    fitChart_.setSelectedGenre(selectedGenreId());
+    refreshForSelectedGenre();
+}
+
+// --- showing the screen -----------------------------------------------------------
 
 void ReferenceLibraryScreen::visibilityChanged()
 {
     if (!isVisible()) return;
     similarPanel_.showLibrary(); // FEAT-5: the user's references, listed on open
+    scanPanel_.refresh();        // REFS-1: the folder, its counts, a running scan
     computeGenreRanking();
-    if (selectedRow_ >= 0) return;
+    if (pickerInitialised_) return;
+    pickerInitialised_ = true;
 
-    // Default the selection to the loaded song's own (detected or chosen)
-    // genre, if any, so opening this screen for the first time on a loaded
-    // session shows something relevant instead of an arbitrary first row.
+    // The first time: the loaded song's own (detected or chosen) genre, if
+    // any; else every genre.
     juce::String defaultGenreId;
     if (controller_.hasAnalysis() && controller_.currentAnalysis().benchmark)
         defaultGenreId = juce::String(controller_.currentAnalysis().benchmark->genre_id);
     else if (auto* session = controller_.getActiveSession())
         defaultGenreId = juce::String(session->target.primary_genre);
-
-    int row = genreIds_.indexOf(defaultGenreId);
-    if (row < 0) row = 0;
-    if (genreIds_.isEmpty()) return;
-
-    // selectRow notifies selectedRowsChanged, which fetches; fetch here only
-    // when it did not (the row was already selected), so the first show asks
-    // the service once, not twice (found by VER-6).
-    genreList_.selectRow(row);
-    if (selectedRow_ != row) {
-        selectedRow_ = row;
-        refreshForSelectedGenre();
+    if (defaultGenreId.isNotEmpty()) {
+        selectGenre(defaultGenreId);
+        if (selectedGenreId() == defaultGenreId) return;
     }
+    genrePicker_.setSelectedId(kIdAll, juce::dontSendNotification);
+    pickerChanged();
 }
 
 void ReferenceLibraryScreen::computeGenreRanking()
 {
-    genreRanking_.clear();
     if (!controller_.hasAnalysis()) {
-        rankingLabel_.setText(TRANS("Load and analyze a track to see a comparative genre ranking."),
-                              juce::dontSendNotification);
+        fitChart_.setEntries({}, TRANS("Load and analyse a track to see which genres it sits closest to."));
         return;
     }
 
@@ -110,11 +216,11 @@ void ReferenceLibraryScreen::computeGenreRanking()
     const float songTilt = analysis.spectral.tilt_db_per_octave;
     const float songCrest = analysis.dynamics.crest_factor_db;
 
-    // A plain normalized-Euclidean-distance fit score against each genre's
-    // own hand-tuned target curve (GenreDatabase already derives/stores
-    // these fields per genre -- no extra backend calls needed). This is a
-    // "how close does this mix sit to that genre's typical numbers" ranking,
-    // not a claim about matching real reference tracks.
+    // A normalised Euclidean distance to each genre's targets (GenreDatabase
+    // already stores these per genre - no backend call): "how close does
+    // this mix sit to that genre's typical numbers", not a claim about real
+    // reference tracks.
+    std::vector<GenreFitChart::Entry> entries;
     for (const auto& g : controller_.genreDatabase().listAll()) {
         const float genreLra = (g.lra_range_min + g.lra_range_max) * 0.5f;
         const float dLufs = (songLufs - g.lufs_target) / 3.0f;
@@ -122,19 +228,11 @@ void ReferenceLibraryScreen::computeGenreRanking()
         const float dTilt = (songTilt - g.spectral_tilt_target_db_per_octave) / 3.0f;
         const float dCrest = (songCrest - g.crest_factor_target_db) / 4.0f;
         const float dist = std::sqrt(dLufs * dLufs + dLra * dLra + dTilt * dTilt + dCrest * dCrest);
-        genreRanking_.push_back({juce::String(g.id), dist});
+        entries.push_back({juce::String(g.id), juce::String(g.name), dist});
     }
-    std::sort(genreRanking_.begin(), genreRanking_.end(),
-              [](const auto& a, const auto& b) { return a.second < b.second; });
-
-    juce::String text = "COMPARATIVE RANKING\nClosest genre fit to this mix:\n\n";
-    for (int i = 0; i < juce::jmin(10, (int)genreRanking_.size()); ++i) {
-        auto entry = controller_.genreDatabase().findById(genreRanking_[(size_t)i].first.toStdString());
-        const juce::String name = entry ? juce::String(entry->name) : genreRanking_[(size_t)i].first;
-        text << (i + 1) << ". " << name << juce::String(juce::CharPointer_UTF8("  (fit \xce\x94")) << juce::String(genreRanking_[(size_t)i].second, 2)
-             << ")\n";
-    }
-    rankingLabel_.setText(text, juce::dontSendNotification);
+    std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) { return a.distance < b.distance; });
+    fitChart_.setEntries(std::move(entries));
+    fitChart_.setSelectedGenre(selectedGenreId());
 }
 
 void ReferenceLibraryScreen::paint(juce::Graphics& g) { g.fillAll(KhensuTheme::bgBase); }
@@ -147,49 +245,42 @@ void ReferenceLibraryScreen::resized()
     profilesBar_.setBounds(b.removeFromTop(44)); // CE-COL-4
     b.removeFromTop(4);
 
-    genreList_.setBounds(b.removeFromLeft(180));
-    b.removeFromLeft(10);
+    auto pickerRow = b.removeFromTop(KhensuTheme::buttonHSmall);
+    genreCaption_.setBounds(pickerRow.removeFromLeft(56));
+    genrePicker_.setBounds(pickerRow.removeFromLeft(260));
+    pickerRow.removeFromLeft(10);
+    genreHint_.setBounds(pickerRow);
+    b.removeFromTop(8);
 
-    auto right = b.removeFromRight(260);
+    auto right = b.removeFromRight(juce::jlimit(260, 340, b.getWidth() / 4));
     b.removeFromRight(10);
-    percentileLabel_.setBounds(right.removeFromTop(right.getHeight() * 40 / 100));
-    right.removeFromTop(8);
-    stemEnergyLabel_.setBounds(right.removeFromTop(right.getHeight() * 30 / 100));
-    right.removeFromTop(8);
-    rankingLabel_.setBounds(right);
+    auto chart = right.removeFromBottom(juce::jmax(250, right.getHeight() * 45 / 100));
+    fitChart_.setBounds(chart);
+    right.removeFromBottom(8);
+    percentileLabel_.setBounds(right.removeFromTop(right.getHeight() * 55 / 100));
+    right.removeFromTop(6);
+    stemEnergyLabel_.setBounds(right);
 
-    // FEAT-5: the user's reference library is the centre of the screen.
+    // REFS-1 above, the user's reference library (FEAT-5) below.
+    auto scan = b.removeFromTop(b.getHeight() * 60 / 100);
+    scanPanel_.setBounds(scan);
+    b.removeFromTop(8);
     similarPanel_.setBounds(b);
-}
-
-int ReferenceLibraryScreen::getNumRows() { return genreIds_.size(); }
-
-void ReferenceLibraryScreen::paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height,
-                                              bool rowIsSelected)
-{
-    if (rowNumber < 0 || rowNumber >= genreNames_.size()) return;
-    g.fillAll(rowIsSelected ? KhensuTheme::bgRaised : KhensuTheme::bgBase);
-    g.setColour(rowIsSelected ? KhensuTheme::textPrimary : KhensuTheme::textSecondary);
-    g.setFont(KhensuTheme::bodyFont(12.0f));
-    g.drawText(genreNames_[rowNumber], 8, 0, width - 16, height, juce::Justification::centredLeft);
-}
-
-void ReferenceLibraryScreen::selectedRowsChanged(int lastRowSelected)
-{
-    if (lastRowSelected < 0) return;
-    selectedRow_ = lastRowSelected;
-    refreshForSelectedGenre();
 }
 
 void ReferenceLibraryScreen::refreshStemEnergyLabel(const juce::String& genreId)
 {
+    if (genreId.isEmpty()) {
+        stemEnergyLabel_.setText({}, juce::dontSendNotification);
+        return;
+    }
     auto entry = controller_.genreDatabase().findById(genreId.toStdString());
     if (!entry || entry->stem_energy_balance_pct.empty()) {
         stemEnergyLabel_.setText(TRANS("No explicit stem-energy targets for this genre."), juce::dontSendNotification);
         return;
     }
 
-    juce::String text = "STEM ENERGY TARGETS\n";
+    juce::String text = TRANS("Stem energy targets") + "\n";
     const juce::StringArray order{"vocals", "bass",  "kick",          "snare", "percussion",
                                   "drums",  "synth", "atmosphere_fx", "other"};
     for (const auto& bucket : order) {
@@ -201,7 +292,6 @@ void ReferenceLibraryScreen::refreshStemEnergyLabel(const juce::String& genreId)
         // showing "Drums: 0.0%" right next to those non-zero siblings reads
         // as a data bug rather than the intentional zero it is, so skip it.
         if (it->second == 0.0f) continue;
-        // Capitalize / pretty-print bucket id.
         juce::String label = bucket.replace("_", "/").toUpperCase();
         if (label == "ATMOSPHERE/FX")
             label = "Atmosphere/FX";
@@ -214,27 +304,31 @@ void ReferenceLibraryScreen::refreshStemEnergyLabel(const juce::String& genreId)
 
 void ReferenceLibraryScreen::refreshForSelectedGenre()
 {
-    if (selectedRow_ < 0 || selectedRow_ >= genreIds_.size()) return;
-    const juce::String genreId = genreIds_[selectedRow_];
-
-    percentileLabel_.setText(TRANS("Loading reference data for %g...").replace("%g", genreNames_[selectedRow_]),
-                             juce::dontSendNotification);
+    const juce::String genreId = selectedGenreId();
     refreshStemEnergyLabel(genreId);
     if (lastPointsGenre_ != genreId) userProfiles_.clear();
     profilesBar_.refresh(genreId); // CE-COL-4: the user's own profiles for this genre
+    if (genreId.isEmpty()) {
+        lastPointsGenre_.clear();
+        lastPoints_.clear();
+        percentileLabel_.setText(TRANS("Pick a genre to see its norms and where your mix sits in it."),
+                                 juce::dontSendNotification);
+        return;
+    }
+    const juce::String name = referenceGenreName(controller_.genreDatabase(), genreId);
+    percentileLabel_.setText(TRANS("Loading reference data for %g...").replace("%g", name),
+                             juce::dontSendNotification);
 
     juce::Component::SafePointer<ReferenceLibraryScreen> self(this);
     controller_.lifecycle().getReferenceLibraryPoints(genreId,
-                                          [self, genreId](std::vector<khensu::ipc::GenreReferencePoint> points) {
-                                              auto* s = self.getComponent();
-                                              if (s == nullptr) return;
-                                              // A quick A -> B switch: A's late reply must
-                                              // not paint A's points under B (UIX-20).
-                                              if (s->selectedRow_ < 0 || s->selectedRow_ >= s->genreIds_.size()
-                                                  || s->genreIds_[s->selectedRow_] != genreId)
-                                                  return;
-                                              s->rebuildCloud(genreId, std::move(points));
-                                          });
+                                                      [self, genreId](std::vector<khensu::ipc::GenreReferencePoint> points) {
+                                                          auto* s = self.getComponent();
+                                                          if (s == nullptr) return;
+                                                          // A quick A -> B switch: A's late reply must
+                                                          // not paint A's points under B (UIX-20).
+                                                          if (s->selectedGenreId() != genreId) return;
+                                                          s->rebuildCloud(genreId, std::move(points));
+                                                      });
 }
 
 void ReferenceLibraryScreen::rebuildCloud(const juce::String& genreId,
@@ -242,15 +336,16 @@ void ReferenceLibraryScreen::rebuildCloud(const juce::String& genreId,
 {
     // CUT-6: the synthetic 3D reference cloud is gone; what stays is the
     // genre fit - where the mix sits against this genre's reference samples,
-    // as numbers. The user's own references are the library below (FEAT-5).
+    // as numbers.
     lastPointsGenre_ = genreId;
     lastPoints_ = points;
     if (points.empty()) {
         percentileLabel_.setText(TRANS("No reference data available for this genre yet."), juce::dontSendNotification);
         return;
     }
-    juce::String text = TRANS("Genre: %g").replace("%g", genreNames_[juce::jlimit(0, genreNames_.size() - 1, selectedRow_)]) +
-                        "\n" + TRANS("%n reference sample points").replace("%n", juce::String((int)points.size())) + "\n\n";
+    const juce::String name = referenceGenreName(controller_.genreDatabase(), genreId);
+    juce::String text = TRANS("Genre: %g").replace("%g", name) + "\n" +
+                        TRANS("%n reference sample points").replace("%n", juce::String((int)points.size())) + "\n\n";
     if (controller_.hasAnalysis()) {
         const auto& analysis = controller_.currentAnalysis();
         // Share of the genre's samples below the mix, per metric.

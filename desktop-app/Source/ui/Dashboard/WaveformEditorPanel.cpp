@@ -88,7 +88,7 @@ WaveformEditorPanel::WaveformEditorPanel(IAppController& c)
                     &explainButton_})
         addAndMakeVisible(*b);
 
-    statusLabel_.setFont(KhensuTheme::monoFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::monoFont(type::caption));
     addAndMakeVisible(statusLabel_);
 
     // CE-COL-1: the comments lane follows this view and seeks through it.
@@ -378,7 +378,7 @@ void WaveformEditorPanel::paint(juce::Graphics& g)
         g.drawImage(img, area);
     } else if (showSpectrogram_) {
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::labelFont(11.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText(spectroPending_ ? "Computing spectrogram..." : "No spectrogram", area, juce::Justification::centred);
     } else if (!peaks_.empty()) {
         const float mid = area.getCentreY();
@@ -407,7 +407,7 @@ void WaveformEditorPanel::paint(juce::Graphics& g)
     }
 
     // Annotations: bands + tags along the top.
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     for (const auto& a : state_.annotations()) {
         if (a.endSec < state_.viewStart() || a.startSec > state_.viewEnd()) continue;
         const float x0 = area.getX() + state_.xForTime(a.startSec, w);

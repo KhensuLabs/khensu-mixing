@@ -50,6 +50,7 @@ void ChatConsolePanel::applyThemeColours()
     decisionsSidebar_.setColour(juce::TextEditor::outlineColourId, KhensuTheme::borderSubtle);
     decisionsSidebar_.setColour(juce::TextEditor::textColourId, KhensuTheme::textPrimary);
     statusLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
+    updateSidebarText(); // its runs carry the theme's text colours
 }
 
 ChatConsolePanel::ChatConsolePanel(IAppController& controller) : controller_(controller)
@@ -59,12 +60,14 @@ ChatConsolePanel::ChatConsolePanel(IAppController& controller) : controller_(con
     transcript_.setReadOnly(true);
     transcript_.setCaretVisible(false);
     transcript_.setScrollbarsShown(true);
+    transcript_.setFont(KhensuTheme::bodyFont(KhensuTheme::kFontBody)); // UXR-3: theme text
     transcript_.setTitle(TRANS("Conversation with the copilot"));
     transcript_.setTooltip(TRANS("The conversation so far. Read-only."));
     addAndMakeVisible(transcript_);
 
     input_.setMultiLine(false);
     input_.setReturnKeyStartsNewLine(false);
+    input_.setFont(KhensuTheme::bodyFont(KhensuTheme::kFontBody));
     input_.setTextToShowWhenEmpty(TRANS("Ask the copilot... e.g. \"make the vocals dreamy\" or \"clean up low-mid mud\""),
                                   KhensuTheme::textSecondary);
     input_.onReturnKey = [this] { sendMessage(); };
@@ -126,9 +129,9 @@ ChatConsolePanel::ChatConsolePanel(IAppController& controller) : controller_(con
     decisionsSidebar_.setTooltip(TRANS("Decisions recorded during this session. Read-only."));
     addAndMakeVisible(decisionsSidebar_);
     addAndMakeVisible(harmonicChart_);
-    addAndMakeVisible(gainStagingChart_);
+    addAndMakeVisible(gainStagingLink_);
 
-    statusLabel_.setFont(juce::Font(juce::FontOptions{12.0f}));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::secondary));
     addAndMakeVisible(statusLabel_);
 
     appendTranscript(TRANS("Copilot"),
@@ -369,7 +372,7 @@ void ChatConsolePanel::resized()
     transcript_.setBounds(chatArea);
     harmonicChart_.setBounds(sidebarArea.removeFromBottom(130));
     sidebarArea.removeFromBottom(6);
-    gainStagingChart_.setBounds(sidebarArea.removeFromBottom(110));
+    gainStagingLink_.setBounds(sidebarArea.removeFromBottom(gainStagingLink_.preferredHeight(sidebarArea.getWidth())));
     sidebarArea.removeFromBottom(6);
     decisionsSidebar_.setBounds(sidebarArea);
 }
@@ -849,21 +852,37 @@ void ChatConsolePanel::performApplyChain()
             // stage) - computed server-side on every render but never shown
             // anywhere until now.
             if (auto* resultObj = fullResult.getDynamicObject()) {
+                // ENH-8: one line here; the gain staging view is Mix / Master's.
+                juce::String stagingLine;
                 if (auto* stages = resultObj->getProperty(af::RenderJobResult::stage_levels).getArray()) {
-                    std::vector<GainStagingWaterfallChart::Stage> waterfall;
+                    double firstIn = 0.0, lastOut = 0.0, biggest = 0.0;
+                    juce::String biggestLabel;
+                    int count = 0;
                     for (const auto& stg : *stages) {
                         auto* stgObj = stg.getDynamicObject();
                         if (stgObj == nullptr) continue;
-                        GainStagingWaterfallChart::Stage s;
-                        s.label = stgObj->getProperty("label").toString();
-                        s.inRmsDb = (float)(double)stgObj->getProperty("in_rms_db");
-                        s.outRmsDb = (float)(double)stgObj->getProperty("out_rms_db");
-                        waterfall.push_back(s);
+                        const double in = (double)stgObj->getProperty("in_rms_db");
+                        const double out = (double)stgObj->getProperty("out_rms_db");
+                        if (count++ == 0) firstIn = in;
+                        lastOut = out;
+                        if (std::abs(out - in) > std::abs(biggest)) {
+                            biggest = out - in;
+                            biggestLabel = stgObj->getProperty("label").toString();
+                        }
                     }
-                    self->gainStagingChart_.setStages(std::move(waterfall));
-                } else {
-                    self->gainStagingChart_.clear();
+                    if (count > 0) {
+                        stagingLine = TRANS("%n stages, %a -> %b dB RMS")
+                                          .replace("%n", juce::String(count))
+                                          .replace("%a", juce::String(firstIn, 1))
+                                          .replace("%b", juce::String(lastOut, 1));
+                        if (biggestLabel.isNotEmpty())
+                            stagingLine += TRANS("; most: %s %d dB")
+                                               .replace("%s", biggestLabel)
+                                               .replace("%d", (biggest >= 0.0 ? "+" : "") + juce::String(biggest, 1));
+                    }
                 }
+                self->gainStagingLink_.setReadout(stagingLine);
+                self->resized();
                 if (auto* reports = resultObj->getProperty(af::RenderJobResult::harmonic_reports).getArray()) {
                     self->harmonicChart_.clear();
                     for (const auto& rep : *reports) {
@@ -982,32 +1001,49 @@ void ChatConsolePanel::showDecisionTrace()
                                            TRANS("Close"));
 }
 
+void ChatConsolePanel::showGainStagingHome()
+{
+    controller_.shell().showMixMasterCard(8); // Mix / Master > Loudness, gain staging
+}
+
 void ChatConsolePanel::updateSidebarText()
 {
-    // UX-6: plain section headers, no ASCII "=====" rules.
-    juce::String text = TRANS("DECISIONS LOG") + "\n";
+    // UXR-3: the theme's text styles - section labels like every card's
+    // (sentence case, the section header font, secondary tone) over body
+    // text - instead of all-caps headings in the editor's default face.
+    auto& ed = decisionsSidebar_;
+    ed.clear();
+    auto heading = [&ed](const juce::String& text, bool first) {
+        ed.setFont(KhensuTheme::sectionHeaderFont().boldened());
+        ed.setColour(juce::TextEditor::textColourId, KhensuTheme::textSecondary);
+        ed.insertTextAtCaret((first ? juce::String() : juce::String("\n")) + text + "\n");
+    };
+    auto body = [&ed](const juce::String& text, juce::Colour colour) {
+        ed.setFont(KhensuTheme::bodyFont(KhensuTheme::kFontBody));
+        ed.setColour(juce::TextEditor::textColourId, colour);
+        ed.insertTextAtCaret(text + "\n");
+    };
+
+    heading(TRANS("Decisions log"), true);
     if (decisionsLog_.empty()) {
-        text += TRANS("No decisions logged yet.") + "\n";
+        body(TRANS("No decisions logged yet."), KhensuTheme::textTertiary);
     } else {
-        for (auto it = decisionsLog_.rbegin(); it != decisionsLog_.rend(); ++it) {
-            text += "- " + *it + "\n";
-        }
+        for (auto it = decisionsLog_.rbegin(); it != decisionsLog_.rend(); ++it)
+            body(*it, KhensuTheme::textPrimary);
     }
 
-    text += "\n\n" + TRANS("PINNED SUGGESTIONS") + "\n";
+    heading(TRANS("Pinned suggestions"), false);
     if (pinnedSuggestions_.empty()) {
-        text += TRANS("No pinned suggestions.") + "\n";
+        body(TRANS("No pinned suggestions."), KhensuTheme::textTertiary);
     } else {
         for (const auto& ps : pinnedSuggestions_) {
-            text += "* " + ps.name + "\n";
-            for (const auto& eff : ps.chain) {
-                text += "  - " + eff.effect + "\n";
-            }
-            text += "\n";
+            body(ps.name, KhensuTheme::textPrimary);
+            for (const auto& eff : ps.chain)
+                body("    " + juce::String(eff.effect), KhensuTheme::textSecondary);
         }
     }
-
-    decisionsSidebar_.setText(text, false);
+    ed.setColour(juce::TextEditor::textColourId, KhensuTheme::textPrimary);
+    ed.moveCaretToTop(false);
 }
 
 juce::String ChatConsolePanel::getVerbosityString() const

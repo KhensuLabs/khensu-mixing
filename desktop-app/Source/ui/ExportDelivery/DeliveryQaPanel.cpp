@@ -4,6 +4,7 @@
 #include "../shared/SessionEpoch.h"
 #include <khensu/session/Session.h>
 #include "../shared/KhensuTheme.h"
+#include "../shared/ButtonRole.h"
 #include "../shared/ServiceErrorHint.h"
 #include "../shared/RenderPaths.h"
 #include "../shared/SessionAudioPaths.h"
@@ -28,9 +29,9 @@ void DeliveryQaPanel::applyThemeColours()
     fitAmountLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     fitAmountSlider_.setColour(juce::Slider::trackColourId, KhensuTheme::accentTeal);
     fitAmountSlider_.setColour(juce::Slider::textBoxTextColourId, KhensuTheme::textPrimary);
-    results_.setColour(juce::TextEditor::backgroundColourId, KhensuTheme::bgBase);
-    results_.setColour(juce::TextEditor::textColourId, KhensuTheme::textPrimary);
-    results_.setColour(juce::TextEditor::outlineColourId, KhensuTheme::borderSubtle);
+    for (auto* l : {&checkHeading_, &previewHeading_, &fixHeading_})
+        l->setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
+    packageNote_.setColour(juce::Label::textColourId, KhensuTheme::textTertiary);
 }
 
 namespace {
@@ -101,23 +102,36 @@ DeliveryQaPanel::DeliveryQaPanel(PanelCardController& c, const juce::String& bas
                                   "preview, headphone-vs-speaker crossfeed A/B, a reference-matched "
                                   "corrective chain, and a measurement-grounded A/B critique of two takes."));
 
+    // UXR-1: one primary (the delivery check); every other tool is a
+    // secondary, grouped under its goal.
     for (auto* b : {&complianceBtn_, &codecBtn_, &ditherBtn_, &crossfeedBtn_, &referenceBtn_, &critiqueBtn_,
-                    &codecPickBtn_, &fitChainBtn_, &streamBtn_, &streamOptsBtn_, &immersiveBtn_}) {
-        b->setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.15f));
-        b->setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
+                    &codecPickBtn_, &fitChainBtn_, &streamBtn_, &streamOptsBtn_, &immersiveBtn_})
         addAndMakeVisible(b);
-    }
+    button_role::markPrimary(complianceBtn_);
+    complianceBtn_.setTooltip(TRANS("Check the current master for delivery: true peak, mono fold-down, DC, "
+                                    "clipping and metadata, with a PDF compliance sheet."));
+    codecBtn_.setTooltip(TRANS("Encode the master through the chosen platform codecs and measure what they "
+                               "change (high-frequency loss, width, true peak)."));
+    ditherBtn_.setTooltip(TRANS("Compare dither and noise shaping at 16 bits against plain truncation."));
+    crossfeedBtn_.setTooltip(TRANS("Render a headphone (in-head) and a speaker (crossfeed) version for an A/B."));
+    critiqueBtn_.setTooltip(TRANS("Compare this master with another take, measurement by measurement."));
+    referenceBtn_.setTooltip(TRANS("A corrective chain that moves this master toward a reference track."));
+    auto heading = [this](juce::Label& l, const juce::String& text) {
+        l.setText(text, juce::dontSendNotification);
+        l.setFont(KhensuTheme::sectionHeaderFont());
+        addAndMakeVisible(l);
+    };
+    heading(checkHeading_, TRANS("Check"));
+    heading(previewHeading_, TRANS("Preview"));
+    heading(fixHeading_, TRANS("Fix"));
+    packageNote_.setText(TRANS("Package: the Delivery Package card builds the release folder."),
+                         juce::dontSendNotification);
+    packageNote_.setFont(KhensuTheme::labelFont(KhensuTheme::kFontCaption));
+    addAndMakeVisible(packageNote_);
     setupDeliveryPreviewControls(); // CE-DEL-3 / CE-DEL-1
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(KhensuTheme::kFontCaption));
     addAndMakeVisible(statusLabel_);
 
-    results_.setMultiLine(true);
-    results_.setReadOnly(true);
-    results_.setCaretVisible(false);
-    results_.setScrollbarsShown(true);
-    results_.setFont(KhensuTheme::monoFont(11.0f));
-    results_.setTitle(TRANS("Delivery QA results"));
-    results_.setTooltip(TRANS("Per-check pass/fail results for the selected delivery targets."));
     addAndMakeVisible(results_);
 
     // The service's platform codec table (codec_artifacts.PLATFORM_CODECS),
@@ -140,65 +154,60 @@ DeliveryQaPanel::DeliveryQaPanel(PanelCardController& c, const juce::String& bas
             + juce::Time::getCurrentTime().formatted("%Y%m%d-%H%M%S") + ".pdf");
         const juce::String pdf = pdfFile.exists() ? pdfFile.getNonexistentSibling(false).getFullPathName()
                                                   : pdfFile.getFullPathName();
-        run(TRANS("Compliance sheet"), [src, pdf, url = bridgeUrl()]() -> juce::String {
+        runResult(TRANS("Delivery check"), [src, pdf, url = bridgeUrl()]() -> DeliveryResult {
             ipc::HttpServiceBridge bridge(url);
             auto res = bridge.complianceSheet(src, pdf);
-            if (res.is_err()) return serviceErrorLine(res.error());
-            auto v = res.value();
-            juce::String out = TRANS("Overall:") + " " + v[af::ComplianceSheetResponse::summary][af::ComplianceSummary::overall].toString().toUpperCase() + "\n";
-            if (auto* checks = v[af::ComplianceSheetResponse::checks].getDynamicObject())
-                for (auto& p : checks->getProperties())
-                    out << "  " << p.name.toString() << ": " << p.value[af::ComplianceCheck::status].toString() << " ("
-                        << p.value[af::ComplianceCheck::value].toString() << ")\n";
-            if (v[af::ComplianceSheetResponse::pdf_path].toString().isNotEmpty()) out << "PDF -> " << v[af::ComplianceSheetResponse::pdf_path].toString() << "\n";
-            return out;
+            if (res.is_err()) return DeliveryResult::message(serviceErrorLine(res.error()));
+            return complianceResult(res.value());
         });
     };
     codecBtn_.onClick = [this] {
         const juce::String src = sourcePath();
         // The user's codec pick (Codecs...), not always the service default.
-        run(TRANS("Codec audit"), [src, codecs = selectedCodecs_, url = bridgeUrl()]() -> juce::String {
+        runResult(TRANS("Codec audit"), [src, codecs = selectedCodecs_, url = bridgeUrl()]() -> DeliveryResult {
             ipc::HttpServiceBridge bridge(url, 300000); // up to 5 ffmpeg round trips
             auto res = bridge.auditCodecs(src, codecs);
-            if (res.is_err()) return serviceErrorLine(res.error());
-            auto v = res.value();
-            if (!(bool)v[af::CodecAuditResponse::encoder_available])
-                return TRANS("ffmpeg not found on PATH - install ffmpeg to run the codec audit.");
-            juce::String out;
-            if (auto* arr = v[af::CodecAuditResponse::results].getArray())
-                for (auto& r : *arr)
-                    out << r[af::CodecAuditResult::name].toString() << ":  HF loss " << num(r[af::CodecAuditResult::hf_loss_db], 1) << " dB,  width d "
-                        << num(r[af::CodecAuditResult::stereo_width_delta], 3) << ",  TP d " << num(r[af::CodecAuditResult::true_peak_delta_dbtp], 2)
-                        << " dB\n";
-            return out;
+            if (res.is_err()) return DeliveryResult::message(serviceErrorLine(res.error()));
+            return codecAuditResult(res.value());
         });
     };
     ditherBtn_.onClick = [this] {
         const juce::String src = sourcePath();
-        run(TRANS("Dither preview (16-bit)"), [src, url = bridgeUrl()]() -> juce::String {
+        runResult(TRANS("Dither preview (16-bit)"), [src, url = bridgeUrl()]() -> DeliveryResult {
             ipc::HttpServiceBridge bridge(url);
             auto res = bridge.ditherPreview(src, 16);
-            if (res.is_err()) return serviceErrorLine(res.error());
+            if (res.is_err()) return DeliveryResult::message(serviceErrorLine(res.error()));
             auto v = res.value();
-            juce::String out = "Noise-floor delta (dither vs truncate): " + num(v[af::DitherPreviewResponse::noise_floor_delta_db], 2) + " dB\n";
+            DeliveryResult r;
+            r.title = TRANS("Dither preview (16-bit)");
+            r.add(DeliveryResult::Status::Info, TRANS("Noise floor, dither vs truncation"),
+                  num(v[af::DitherPreviewResponse::noise_floor_delta_db], 2) + " dB");
             if (auto* arr = v[af::DitherPreviewResponse::modes].getArray())
                 for (auto& m : *arr)
-                    out << "  " << m[af::DitherMode::label].toString() << ":  floor " << num(m[af::DitherMode::noise_floor_dbfs], 1)
-                        << " dBFS,  distortion corr " << num(m[af::DitherMode::distortion_correlation], 3) << "\n";
-            out << "Audition -> " << v[af::DitherPreviewResponse::audition_path].toString() << "\n";
-            return out;
+                    r.add(DeliveryResult::Status::Info, m[af::DitherMode::label].toString(),
+                          num(m[af::DitherMode::noise_floor_dbfs], 1) + " dBFS",
+                          TRANS("distortion corr") + " " + num(m[af::DitherMode::distortion_correlation], 3));
+            r.notes.add(TRANS("Audition:") + " " + v[af::DitherPreviewResponse::audition_path].toString());
+            return r;
         });
     };
     crossfeedBtn_.onClick = [this] {
         const juce::String src = sourcePath();
-        run(TRANS("Crossfeed A/B"), [src, url = bridgeUrl()]() -> juce::String {
+        runResult(TRANS("Crossfeed A/B"), [src, url = bridgeUrl()]() -> DeliveryResult {
             ipc::HttpServiceBridge bridge(url);
             auto res = bridge.crossfeedAb(src);
-            if (res.is_err()) return serviceErrorLine(res.error());
+            if (res.is_err()) return DeliveryResult::message(serviceErrorLine(res.error()));
             auto v = res.value();
-            return "Speaker image width vs headphone: -" + num(v[af::CrossfeedAbResponse::width_reduction_pct], 1) + "%\n" +
-                   "A (in-head) -> " + v[af::CrossfeedAbResponse::headphone_path].toString() + "\n" + "B (speaker) -> " +
-                   v[af::CrossfeedAbResponse::speaker_path].toString() + "\n";
+            DeliveryResult r;
+            r.title = TRANS("Crossfeed A/B");
+            r.add(DeliveryResult::Status::Info, TRANS("Speaker image width vs headphone"),
+                  "-" + num(v[af::CrossfeedAbResponse::width_reduction_pct], 1) + "%");
+            r.add(DeliveryResult::Status::Info, TRANS("Width: headphone / speaker"),
+                  num(v[af::CrossfeedAbResponse::width_headphone], 2) + " / " +
+                      num(v[af::CrossfeedAbResponse::width_speaker], 2));
+            r.notes.add("A (" + TRANS("in-head") + "): " + v[af::CrossfeedAbResponse::headphone_path].toString());
+            r.notes.add("B (" + TRANS("speaker") + "): " + v[af::CrossfeedAbResponse::speaker_path].toString());
+            return r;
         });
     };
     referenceBtn_.onClick = [this] {
@@ -237,7 +246,7 @@ DeliveryQaPanel::DeliveryQaPanel(PanelCardController& c, const juce::String& bas
         });
     };
     fitAmountLabel_.setText(TRANS("Amount"), juce::dontSendNotification);
-    fitAmountLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    fitAmountLabel_.setFont(KhensuTheme::labelFont(KhensuTheme::kFontCaption));
     addAndMakeVisible(fitAmountLabel_);
     fitAmountSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
     fitAmountSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 48, 20);
@@ -289,16 +298,20 @@ DeliveryQaPanel::DeliveryQaPanel(PanelCardController& c, const juce::String& bas
 
     critiqueBtn_.onClick = [this] {
         const juce::String src = sourcePath(); // see referenceBtn_ above
-        chooseSecondFileThen("A/B critique", [src, url = bridgeUrl()](const juce::String& other) -> juce::String {
+        chooseSecondFileThenResult("A/B critique", [src, url = bridgeUrl()](const juce::String& other) -> DeliveryResult {
             ipc::HttpServiceBridge bridge(url);
             auto res = bridge.abCritique(src, other);
-            if (res.is_err()) return serviceErrorLine(res.error());
+            if (res.is_err()) return DeliveryResult::message(serviceErrorLine(res.error()));
             auto v = res.value();
-            juce::String out = "Overall: " + v[af::AbCritiqueResponse::overall].toString() + "\n" + v[af::AbCritiqueResponse::verdict].toString() + "\n\n";
+            DeliveryResult r;
+            r.title = TRANS("A/B critique") + ": " + v[af::AbCritiqueResponse::overall].toString();
             if (auto* arr = v[af::AbCritiqueResponse::comparisons].getArray())
-                for (auto& c : *arr)
-                    out << "  " << c[af::AbComparison::dimension].toString() << ": winner " << c[af::AbComparison::winner].toString() << "\n";
-            return out;
+                for (auto& cmp : *arr)
+                    r.add(DeliveryResult::Status::Info, cmp[af::AbComparison::dimension].toString(),
+                          num(cmp[af::AbComparison::a_value], 2) + " / " + num(cmp[af::AbComparison::b_value], 2),
+                          TRANS("winner") + " " + cmp[af::AbComparison::winner].toString());
+            r.notes.add(v[af::AbCritiqueResponse::verdict].toString());
+            return r;
         });
     };
 
@@ -402,7 +415,82 @@ void DeliveryQaPanel::setBusy(bool busy, const juce::String& what)
     statusLabel_.setText(busy ? (what + "...") : juce::String(), juce::dontSendNotification);
 }
 
-void DeliveryQaPanel::showResult(const juce::String& text) { results_.setText(text, juce::dontSendNotification); }
+void DeliveryQaPanel::showResult(const juce::String& text) { results_.setResult(DeliveryResult::message(text)); }
+
+void DeliveryQaPanel::showResult(DeliveryResult result) { results_.setResult(std::move(result)); }
+
+DeliveryResult DeliveryQaPanel::complianceResult(const juce::var& v)
+{
+    DeliveryResult r;
+    r.title = TRANS("Delivery check");
+    if (auto* checks = v[af::ComplianceSheetResponse::checks].getDynamicObject())
+        for (auto& p : checks->getProperties()) {
+            const auto status = DeliveryResult::statusFrom(p.value[af::ComplianceCheck::status].toString());
+            const juce::String name = p.name.toString().replace("_", " ");
+            r.add(status, name.substring(0, 1).toUpperCase() + name.substring(1),
+                  p.value[af::ComplianceCheck::value].toString());
+            const auto note = p.value[af::ComplianceCheck::note].toString();
+            if (status != DeliveryResult::Status::Pass && note.isNotEmpty())
+                r.notes.add(name.substring(0, 1).toUpperCase() + name.substring(1) + ": " + note);
+        }
+    if (r.rows.empty())
+        r.add(DeliveryResult::statusFrom(
+                  v[af::ComplianceSheetResponse::summary][af::ComplianceSummary::overall].toString()),
+              TRANS("Overall"));
+    if (v[af::ComplianceSheetResponse::pdf_path].toString().isNotEmpty())
+        r.notes.add(TRANS("PDF:") + " " + v[af::ComplianceSheetResponse::pdf_path].toString());
+    return r;
+}
+
+DeliveryResult DeliveryQaPanel::codecAuditResult(const juce::var& v)
+{
+    if (!(bool)v[af::CodecAuditResponse::encoder_available])
+        return DeliveryResult::message(TRANS("ffmpeg not found on PATH - install ffmpeg to run the codec audit."));
+    DeliveryResult r;
+    r.title = TRANS("Codec audit");
+    if (auto* arr = v[af::CodecAuditResponse::results].getArray())
+        for (auto& e : *arr) {
+            if (e[af::CodecAuditResult::error].isString() && e[af::CodecAuditResult::error].toString().isNotEmpty()) {
+                r.add(DeliveryResult::Status::Fail, e[af::CodecAuditResult::name].toString(),
+                      e[af::CodecAuditResult::error].toString());
+                continue;
+            }
+            r.add(DeliveryResult::statusFrom(e[af::CodecAuditResult::status].toString()),
+                  e[af::CodecAuditResult::name].toString(),
+                  TRANS("HF loss") + " " + num(e[af::CodecAuditResult::hf_loss_db], 1) + " dB",
+                  TRANS("TP change") + " " + num(e[af::CodecAuditResult::true_peak_delta_dbtp], 2) + " dB");
+        }
+    return r;
+}
+
+void DeliveryQaPanel::runResult(const juce::String& what, std::function<DeliveryResult()> call)
+{
+    if (busy_) return;
+    if (sourcePath().isEmpty()) {
+        showResult(TRANS("No active session."));
+        return;
+    }
+    setBusy(true, what);
+    juce::Component::SafePointer<DeliveryQaPanel> self(this);
+    controller_.runInBackground([self, &work = controller_, call = std::move(call)]() {
+        DeliveryResult result = call ? call() : DeliveryResult{};
+        postIfCurrent(self, work, [result](DeliveryQaPanel& panel) {
+            panel.showResult(result);
+        }, [](DeliveryQaPanel& panel) { panel.setBusy(false); });
+    });
+}
+
+void DeliveryQaPanel::chooseSecondFileThenResult(const juce::String& what,
+                                                 std::function<DeliveryResult(const juce::String&)> call)
+{
+    // The plain-text path chooses the file; the result is kept as rows.
+    auto holder = std::make_shared<DeliveryResult>();
+    pendingRows_ = holder;
+    chooseSecondFileThen(what, [call, holder](const juce::String& second) -> juce::String {
+        *holder = call(second);
+        return holder->toText();
+    });
+}
 
 void DeliveryQaPanel::run(const juce::String& what, std::function<juce::String()> call)
 {
@@ -416,7 +504,10 @@ void DeliveryQaPanel::run(const juce::String& what, std::function<juce::String()
     controller_.runInBackground([self, &work = controller_, call = std::move(call)]() {
         const juce::String text = call ? call() : juce::String();
         postIfCurrent(self, work, [text](DeliveryQaPanel& panel) {
-            panel.showResult(text);
+            if (auto rows = std::exchange(panel.pendingRows_, nullptr); rows != nullptr && rows->toText() == text)
+                panel.showResult(*rows); // UXR-1: a rows result routed through the file chooser
+            else
+                panel.showResult(text);
         }, [](DeliveryQaPanel& panel) { panel.setBusy(false); });
     });
 }
@@ -459,41 +550,39 @@ void DeliveryQaPanel::resized()
 {
     PanelCard::resized();
     auto b = bodyArea();
-    auto row1 = b.removeFromTop(26);
-    const int bw = (row1.getWidth() - 3 * 6) / 4;
-    complianceBtn_.setBounds(row1.removeFromLeft(bw));
-    row1.removeFromLeft(6);
-    codecBtn_.setBounds(row1.removeFromLeft(bw));
-    row1.removeFromLeft(6);
-    ditherBtn_.setBounds(row1.removeFromLeft(bw));
-    row1.removeFromLeft(6);
-    crossfeedBtn_.setBounds(row1);
-    b.removeFromTop(6);
-    auto row2 = b.removeFromTop(26);
-    const int bw2 = (row2.getWidth() - 2 * 6) / 3;
-    referenceBtn_.setBounds(row2.removeFromLeft(bw2));
-    row2.removeFromLeft(6);
-    critiqueBtn_.setBounds(row2.removeFromLeft(bw2));
-    row2.removeFromLeft(6);
-    codecPickBtn_.setBounds(row2);
-    b.removeFromTop(6);
-    auto row3 = b.removeFromTop(26);
-    fitChainBtn_.setBounds(row3.removeFromLeft(bw2));
-    row3.removeFromLeft(8);
-    fitGenreBtn_.setBounds(row3.removeFromLeft(juce::jmin(110, row3.getWidth() / 4)));
-    row3.removeFromLeft(8);
-    fitPreviewToggle_.setBounds(row3.removeFromRight(juce::jmin(110, row3.getWidth() / 4)));
-    fitAmountLabel_.setBounds(row3.removeFromLeft(48));
-    fitAmountSlider_.setBounds(row3);
-    b.removeFromTop(6);
-    auto row4 = b.removeFromTop(26); // CE-DEL-3 / CE-DEL-1
-    streamBtn_.setBounds(row4.removeFromLeft(bw2));
-    row4.removeFromLeft(6);
-    streamOptsBtn_.setBounds(row4.removeFromLeft(bw2));
-    row4.removeFromLeft(6);
-    immersiveBtn_.setBounds(row4);
-    b.removeFromTop(4);
-    statusLabel_.setBounds(b.removeFromTop(14));
+    const int gap = KhensuTheme::sp1 + 2;
+    const int rowH = KhensuTheme::buttonHSmall;
+    auto buttons = [gap](juce::Rectangle<int> row, std::initializer_list<juce::Component*> items) {
+        const int n = static_cast<int>(items.size());
+        const int w = (row.getWidth() - (n - 1) * gap) / juce::jmax(1, n);
+        for (auto* item : items) {
+            item->setBounds(row.removeFromLeft(w));
+            row.removeFromLeft(gap);
+        }
+    };
+    // Check: the primary first, then the other checks.
+    checkHeading_.setBounds(b.removeFromTop(18));
+    auto row = b.removeFromTop(KhensuTheme::buttonH);
+    complianceBtn_.setBounds(row.removeFromLeft(juce::jmin(190, row.getWidth() / 3)));
+    row.removeFromLeft(gap);
+    buttons(row.withSizeKeepingCentre(row.getWidth(), rowH), {&codecBtn_, &immersiveBtn_, &critiqueBtn_});
+    b.removeFromTop(KhensuTheme::sp2);
+    // Preview.
+    previewHeading_.setBounds(b.removeFromTop(18));
+    buttons(b.removeFromTop(rowH), {&ditherBtn_, &crossfeedBtn_, &streamBtn_, &streamOptsBtn_, &codecPickBtn_});
+    b.removeFromTop(KhensuTheme::sp2);
+    // Fix.
+    fixHeading_.setBounds(b.removeFromTop(18));
+    buttons(b.removeFromTop(rowH), {&referenceBtn_, &fitChainBtn_, &fitGenreBtn_});
+    b.removeFromTop(gap);
+    auto amount = b.removeFromTop(rowH);
+    fitPreviewToggle_.setBounds(amount.removeFromRight(juce::jmin(120, amount.getWidth() / 4)));
+    fitAmountLabel_.setBounds(amount.removeFromLeft(56));
+    fitAmountSlider_.setBounds(amount);
+    b.removeFromTop(KhensuTheme::sp1);
+    packageNote_.setBounds(b.removeFromTop(16));
+    b.removeFromTop(KhensuTheme::sp1);
+    statusLabel_.setBounds(b.removeFromTop(16));
     b.removeFromTop(2);
     results_.setBounds(b);
 }

@@ -68,11 +68,11 @@ AlbumAssemblyPanel::AlbumAssemblyPanel(IAppController& c) : PanelCard(c, "Album 
     addAndMakeVisible(upButton_);
     addAndMakeVisible(downButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setText(TRANS("Load your album's masters in track order."), juce::dontSendNotification);
     addAndMakeVisible(statusLabel_);
 
-    flagsLabel_.setFont(KhensuTheme::labelFont(9.5f));
+    flagsLabel_.setFont(KhensuTheme::labelFont(type::caption));
     flagsLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(flagsLabel_);
 }
@@ -324,7 +324,7 @@ void AlbumAssemblyPanel::paint(juce::Graphics& g)
     // Column header row.
     auto header = b.removeFromTop(14);
     header.removeFromLeft(nameW);
-    g.setFont(KhensuTheme::labelFont(8.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     const char* cols[3] = {"LUFS", "TILT", "CREST"};
     for (int c = 0; c < 3; ++c)
@@ -341,7 +341,7 @@ void AlbumAssemblyPanel::paint(juce::Graphics& g)
             g.setColour(KhensuTheme::accentTeal.withAlpha(0.12f));
             g.fillRoundedRectangle(row.toFloat(), 3.0f);
         }
-        g.setFont(KhensuTheme::labelFont(9.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textSecondary);
         g.drawText(juce::String(i + 1) + ". " + t.name, row.removeFromLeft(nameW), juce::Justification::centredLeft,
                    true);
@@ -359,7 +359,7 @@ void AlbumAssemblyPanel::paint(juce::Graphics& g)
             auto cb = row.removeFromLeft(cellW).reduced(2, 1);
             g.setColour(cellColour(cell.dev, cell.warn, cell.bad));
             g.fillRoundedRectangle(cb.toFloat(), 3.0f);
-            g.setFont(KhensuTheme::monoFont(9.0f));
+            g.setFont(KhensuTheme::monoFont(type::caption));
             g.setColour(KhensuTheme::textPrimary);
             g.drawText(cell.text, cb, juce::Justification::centred, false);
         }

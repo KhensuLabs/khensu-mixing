@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include <khensu/dsp/LinkwitzRileyCrossover3Band.h>
+#include <khensu/dsp/RealtimeStages.h>
 
 #include <array>
 
@@ -28,9 +29,19 @@ namespace khensu {
 /// input, bit for bit, while the de-esser is idle (g = 1), turns everything
 /// well above deess_freq down by the full reduction, and adds no latency. The
 /// high band is also the (linked, peak) detector.
+///
+/// STU-10 (state v5): six EQ bands (khensu::dsp::RealtimeEqBand), each a
+/// bell / shelf / notch / high- / low-pass on stereo, mid or side, with an
+/// optional self-keyed dynamic mode; then, after the compressor, a transient
+/// shaper, tape saturation, bass mono and stereo width - all zero latency,
+/// each faded in and out like the other stages. A band that is stereo,
+/// static and of its v4 shape runs the same filter as before, so a v4 state
+/// sounds the same.
 class CopilotCorrectiveDsp final {
   public:
     static constexpr int kControlBlockSamples = 32;
+    static_assert(kControlBlockSamples == dsp::RealtimeEqBand::kControlSamples);
+    static constexpr int kNumBands = 6;
     static constexpr double kParamSmoothingSeconds = 0.02;
     static constexpr double kStageFadeSeconds = 0.010;
 
@@ -74,6 +85,41 @@ class CopilotCorrectiveDsp final {
         std::atomic<float>* deessFreq = nullptr;
         std::atomic<float>* deessThreshDb = nullptr;
         std::atomic<float>* deessRangeDb = nullptr;
+
+        // STU-10 (state v5). Null = the plugin defaults: bands 4-6 off, a
+        // band's kind "Shape", stereo and static; the new stages off.
+        struct Band {
+            /// Bands 4-6 only: bands 1-3 read eqOn / eqFreq / ... above
+            /// (a non-null value here overrides them).
+            std::atomic<float>* on = nullptr;
+            std::atomic<float>* freq = nullptr;
+            std::atomic<float>* gainDb = nullptr;
+            std::atomic<float>* q = nullptr;
+            std::atomic<float>* type = nullptr;
+            // Every band.
+            std::atomic<float>* kind = nullptr; ///< mixerchain::EqBandKind
+            std::atomic<float>* mode = nullptr; ///< mixerchain::EqBandChannels
+            std::atomic<float>* dynOn = nullptr;
+            std::atomic<float>* dynThreshDb = nullptr;
+            std::atomic<float>* dynRangeDb = nullptr;
+            std::atomic<float>* dynAttackMs = nullptr;
+            std::atomic<float>* dynReleaseMs = nullptr;
+        };
+        std::array<Band, kNumBands> bands{};
+        std::atomic<float>* tsOn = nullptr;
+        std::atomic<float>* tsAttackDb = nullptr;
+        std::atomic<float>* tsSustainDb = nullptr;
+        std::atomic<float>* tsAttackMs = nullptr;
+        std::atomic<float>* tsReleaseMs = nullptr;
+        std::atomic<float>* satOn = nullptr;
+        std::atomic<float>* satDriveDb = nullptr;
+        std::atomic<float>* satWarmth = nullptr;
+        std::atomic<float>* satMix = nullptr;
+        std::atomic<float>* satTrimDb = nullptr;
+        std::atomic<float>* bassMonoOn = nullptr;
+        std::atomic<float>* bassMonoFreq = nullptr;
+        std::atomic<float>* widthOn = nullptr;
+        std::atomic<float>* widthAmount = nullptr;
     };
 
     /// De-esser ratio above the threshold (fixed 4:1) and envelope times.
@@ -81,7 +127,7 @@ class CopilotCorrectiveDsp final {
     static constexpr double kDeessAttackSeconds = 0.0008;
     static constexpr double kDeessReleaseSeconds = 0.060;
 
-    void bindParameters(const Parameters& parameters) { parameters_ = parameters; }
+    void bindParameters(const Parameters& parameters);
     void prepareToPlay(double sampleRate, int samplesPerBlock, int preparedChannels);
     void process(juce::AudioBuffer<float>& buffer, bool bypassed, int numSamples);
     /// Clears every filter/compressor/mixer state without touching
@@ -91,7 +137,12 @@ class CopilotCorrectiveDsp final {
 
     /// Test seam: the smoothed peak-1 gain (dB) the coefficients were last
     /// computed from. Audio thread only.
-    float currentEqGainDbForTest() const noexcept { return smEqGainDb_.getCurrentValue(); }
+    float currentEqGainDbForTest() const noexcept { return smBandGain_[0].getCurrentValue(); }
+    /// Test seam: band `index` (0-based)'s current dynamic reduction (dB).
+    float bandReductionDbForTest(int index) const noexcept
+    {
+        return bands_[static_cast<size_t>(juce::jlimit(0, kNumBands - 1, index))].currentReductionDb();
+    }
     /// The de-esser's largest gain reduction (dB, >= 0) in the last
     /// process() call. Any thread.
     float lastDeessReductionDb() const noexcept { return deessReductionDb_.load(std::memory_order_relaxed); }
@@ -131,13 +182,30 @@ class CopilotCorrectiveDsp final {
     void runStage(StageFade& fade, juce::dsp::AudioBlock<float>& block, ProcessFn&& processFn);
     void processCompressor(juce::dsp::AudioBlock<float>& block, bool multiband);
     void processDeEsser(juce::dsp::AudioBlock<float>& block) noexcept;
-    static int bandShape(const std::atomic<float>* type) noexcept;
+    /// The band's filter type: its kind, else its v3 shape.
+    int bandType(int index) const noexcept;
+    int bandMode(int index) const noexcept;
+    dsp::RealtimeEqBand::Dynamics bandDynamics(int index) const noexcept;
     static void applyCoefficientValues(StereoIIR& filter, const CoefficientValues& values) noexcept;
 
+    /// A band's parameters, resolved at bind time (bands 1-3 from the v1/v3
+    /// fields). Null = the default.
+    struct BoundBand {
+        const std::atomic<float>*on = nullptr, *freq = nullptr, *gainDb = nullptr, *q = nullptr, *type = nullptr;
+        Parameters::Band ext;
+    };
+
     Parameters parameters_;
-    StereoIIR hpf_, lpf_, peak_, peak2_, peak3_;
+    std::array<BoundBand, kNumBands> bound_{};
+    StereoIIR hpf_, lpf_;
+    std::array<dsp::RealtimeEqBand, kNumBands> bands_;
     StereoIIR deessSplit_;            ///< the de-esser's split low-pass (high = x - LP)
-    std::array<int, 3> eqShape_{};    ///< shape each band's coefficients were built for
+    std::array<int, kNumBands> bandType_{}; ///< type each band's coefficients were built for
+    std::array<int, kNumBands> bandMode_{}; ///< and its channels
+    dsp::RealtimeTransientShaper transient_;
+    dsp::RealtimeSaturation saturation_;
+    dsp::RealtimeBassMono bassMono_;
+    dsp::RealtimeStereoWidth width_;
     juce::dsp::Compressor<float> comp_;
     LinkwitzRileyCrossover3Band crossover_;
     juce::dsp::Compressor<float> compLow_, compMid_, compHigh_;
@@ -154,9 +222,10 @@ class CopilotCorrectiveDsp final {
     juce::AudioBuffer<float> stageDry_, compAlt_, deessHigh_;
     std::array<float, kControlBlockSamples> fadeGains_{};
 
-    juce::SmoothedValue<float> smHpfFreq_, smLpfFreq_, smEqFreq_, smEqGainDb_, smEqQ_;
-    juce::SmoothedValue<float> smEq2Freq_, smEq2GainDb_, smEq2Q_;
-    juce::SmoothedValue<float> smEq3Freq_, smEq3GainDb_, smEq3Q_;
+    juce::SmoothedValue<float> smHpfFreq_, smLpfFreq_;
+    std::array<juce::SmoothedValue<float>, kNumBands> smBandFreq_, smBandGain_, smBandQ_;
+    juce::SmoothedValue<float> smTsAttack_, smTsSustain_, smSatDrive_, smSatWarmth_, smSatMix_, smSatTrim_;
+    juce::SmoothedValue<float> smBassMonoFreq_, smWidth_;
     juce::SmoothedValue<float> smCompThresh_, smCompRatio_, smCompAttack_, smCompRelease_;
     juce::SmoothedValue<float> smCompLowThresh_, smCompMidThresh_, smCompHighThresh_;
     juce::SmoothedValue<float> smCrossoverLowFreq_, smCrossoverHighFreq_;
@@ -169,7 +238,9 @@ class CopilotCorrectiveDsp final {
     std::atomic<float> compReductionDb_{0.0f};
     std::atomic<float> compInputDb_{-120.0f};
 
-    StageFade hpfFade_, lpfFade_, eqFade_, eq2Fade_, eq3Fade_, compFade_, multibandFade_, deessFade_;
+    StageFade hpfFade_, lpfFade_, compFade_, multibandFade_, deessFade_;
+    std::array<StageFade, kNumBands> bandFades_{};
+    StageFade tsFade_, satFade_, bassMonoFade_, widthFade_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CopilotCorrectiveDsp)
 };

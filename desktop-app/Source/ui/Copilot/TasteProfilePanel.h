@@ -1,6 +1,7 @@
 // desktop-app/Source/ui/Copilot/TasteProfilePanel.h
 #pragma once
 #include <JuceHeader.h>
+#include "../shared/KhensuEmptyState.h"
 #include "../shared/KhensuTheme.h" // ThemeListener
 #include <khensu/feedback/LearnedPreferences.h>
 #include <memory>
@@ -46,7 +47,7 @@ class TasteProfilePanel final : public juce::Component {
     IAppController& controller_;
     juce::Label headerLabel_;
     juce::Label introLabel_;
-    juce::Label emptyLabel_;
+    KhensuEmptyState emptyState_; // UXR-6
     juce::TextButton resetAllButton_;
     juce::Viewport viewport_;
     juce::Component rowsHolder_;

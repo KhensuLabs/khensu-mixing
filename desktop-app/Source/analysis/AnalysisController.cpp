@@ -1,6 +1,7 @@
 // desktop-app/Source/analysis/AnalysisController.cpp
 #include "AnalysisController.h"
 #include "../ui/shared/BackgroundStop.h"
+#include "../ui/shared/GenreInUse.h"
 #include "DeepAnalysisJobRunner.h"
 #include "ServiceReadyWait.h"
 #include <khensu/analysis/AnalysisInputs.h>
@@ -519,13 +520,15 @@ void AnalysisController::analyzeSession(const Session& session, ResultCallback o
                 // deliberate creative override and must not be second-guessed
                 // by auto-detection.
                 GenreEntry genreForRecs = genre;
-                if (result.genre_blend.size() >= 2 &&
-                    (genreId.empty() || result.genre_blend.front().genre == genreId)) {
-                    std::vector<std::pair<GenreEntry, float>> blendEntries;
-                    for (const auto& e : result.genre_blend) {
-                        if (auto ge = genres.findById(e.genre)) blendEntries.emplace_back(*ge, e.rank_score);
-                    }
-                    if (blendEntries.size() >= 2) genreForRecs = blendGenreEntries(blendEntries);
+                // BUG-1: the rule lives in GenreInUse.h, which the strip and
+                // the sidebar read too; a detected (not stated) genre is
+                // worded as such in the findings ("floor for detected X").
+                if (const auto blendEntries = genre_in_use::blendEntries(genreId, result.genre_blend, genres);
+                    !blendEntries.empty()) {
+                    genreForRecs = blendGenreEntries(blendEntries);
+                    if (genreId.empty())
+                        genreForRecs.name = genre_in_use::detectedName(
+                            genreForRecs.name.empty() ? genreForRecs.id : genreForRecs.name);
                 }
 
                 // Adapt to learned preferences on THIS file's copy. Adapting the

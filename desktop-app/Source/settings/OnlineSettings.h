@@ -49,6 +49,13 @@ struct OnlineSettings {
     // UX-5: the session-health strip (break reminders) is opt-in. Desktop
     // only, like useGpuRendering; persisted as ui.session_health_strip.
     bool showSessionHealthStrip = false;
+    // VIS-7: reduced motion - "" follows Windows' "Show animations", "on" /
+    // "off" is the user's choice (ui/shared/ReducedMotion.h). Desktop only;
+    // persisted as ui.reduced_motion.
+    juce::String reducedMotion;
+    // LG-4: animated liquid smoke backdrop (paused automatically under
+    // reduced motion or when unfocused). Desktop only; persisted as ui.ambient_backdrop.
+    bool ambientBackdrop = true;
     // ML inference device preference (CE-PLT-1): "auto" | "cpu" | "gpu",
     // persisted as compute.accelerator and read by the service's
     // common/accel.py. Local; never online-gated.

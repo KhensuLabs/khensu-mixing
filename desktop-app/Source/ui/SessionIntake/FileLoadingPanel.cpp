@@ -15,13 +15,13 @@ FileLoadingPanel::FileLoadingPanel()
 {
     applyThemeColours();
     headerLabel.setText(TRANS("LOADED FILE"), juce::dontSendNotification);
-    headerLabel.setFont(khensu::KhensuTheme::uiFont(13.0f, juce::Font::bold));
+    headerLabel.setFont(khensu::KhensuTheme::uiFont(khensu::type::body, juce::Font::bold));
     addAndMakeVisible(headerLabel);
 
-    nameLabel.setFont(khensu::KhensuTheme::uiFont(15.0f, juce::Font::bold));
+    nameLabel.setFont(khensu::KhensuTheme::uiFont(khensu::type::subtitle, juce::Font::bold));
     addAndMakeVisible(nameLabel);
 
-    detailLabel.setFont(khensu::KhensuTheme::uiFont(13.0f, juce::Font::plain));
+    detailLabel.setFont(khensu::KhensuTheme::uiFont(khensu::type::body, juce::Font::plain));
     detailLabel.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(detailLabel);
 

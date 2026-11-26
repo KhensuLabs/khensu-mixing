@@ -8,7 +8,11 @@
 // itself (short-term loudness with the target band, held true peak,
 // correlation) beside the live scope; the full meters need ~80 px of height
 // and their captions collided in the transport's 44. Large: the Mix / Master
-// meter card with the full meters.
+// meter card with the full meters; it lays them out in one row when the card
+// is wide and in two (loudness + true peak over scope + correlation) when it
+// is narrow, so no caption or scale overlaps at any size (BUG-5).
+// Stopped (VIS-6): every meter and the scope keep showing the analysed song,
+// greyed, with one "Stopped - analysed values" caption (ui::viz, VizMaps.h).
 // THREAD_CONTEXT(UIThread)
 #pragma once
 #include <JuceHeader.h>
@@ -31,6 +35,7 @@ class MeterBridge final : public juce::Component, public juce::SettableTooltipCl
 
     void resized() override;
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void visibilityChanged() override;
     void mouseUp(const juce::MouseEvent& e) override;
 
@@ -40,10 +45,21 @@ class MeterBridge final : public juce::Component, public juce::SettableTooltipCl
 
     /// Tests: what the bridge last pushed into the meters.
     const LiveLoudness& live() const noexcept { return live_; }
+    /// True while the meters show the analysed song (nothing playing).
+    bool showsAnalysed() const noexcept { return showingAnalysed_; }
+    /// The meters' bounds (tests: nothing overlaps at any size).
+    juce::Rectangle<int> loudnessBounds() const { return loudness_.getBounds(); }
+    juce::Rectangle<int> truePeakBounds() const { return truePeak_.getBounds(); }
+    juce::Rectangle<int> correlationBounds() const { return correlation_.getBounds(); }
+    juce::Rectangle<int> scopeBounds() const { return scope_.getBounds(); }
+    juce::Rectangle<int> widthChartBounds() const { return widthChart_.getBounds(); }
 
   private:
     void timerCallback() override;
     void updateTarget();
+    /// VIS-6: live or analysed - greys the meters and shows the caption.
+    void setShowingAnalysed(bool analysed);
+    bool showingAnalysed_ = false;
 
     IAppController& controller_;
     Layout layout_;

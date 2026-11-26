@@ -60,7 +60,7 @@ PlatformMastersPanel::PlatformMastersPanel(PanelCardController& c, const juce::S
     cancelButton_.setVisible(false);
     addChildComponent(cancelButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(statusLabel_);
 
     overrideButton_.setTooltip(TRANS("The guardrail rejected an output and quarantined it. Override it with an "
@@ -69,7 +69,7 @@ PlatformMastersPanel::PlatformMastersPanel(PanelCardController& c, const juce::S
     overrideButton_.setVisible(false);
     addChildComponent(overrideButton_);
 
-    resultsLabel_.setFont(KhensuTheme::labelFont(9.5f));
+    resultsLabel_.setFont(KhensuTheme::labelFont(type::caption));
     resultsLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(resultsLabel_);
 

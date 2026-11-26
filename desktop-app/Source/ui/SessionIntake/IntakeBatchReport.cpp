@@ -30,7 +30,7 @@ IntakeBatchReport::IntakeBatchReport(const juce::String& sessionName, const std:
 {
     applyThemeColours();
     titleLabel_.setText(TRANS("Intake report: ") + sessionName, juce::dontSendNotification);
-    titleLabel_.setFont(KhensuTheme::labelFont(16.0f));
+    titleLabel_.setFont(KhensuTheme::labelFont(type::title));
     addAndMakeVisible(titleLabel_);
 
     int analyzed = 0, failed = 0, cancelled = 0, pending = 0;
@@ -48,7 +48,7 @@ IntakeBatchReport::IntakeBatchReport(const juce::String& sessionName, const std:
                            "  |  Failed: " + juce::String(failed) + "  |  Cancelled: " + juce::String(cancelled);
     if (pending > 0) summary += "  |  Pending: " + juce::String(pending);
     summaryLabel_.setText(summary, juce::dontSendNotification);
-    summaryLabel_.setFont(KhensuTheme::bodyFont(12.0f));
+    summaryLabel_.setFont(KhensuTheme::bodyFont(type::secondary));
     addAndMakeVisible(summaryLabel_);
 
     closeButton_.onClick = [this] {
@@ -67,7 +67,7 @@ IntakeBatchReport::IntakeBatchReport(const juce::String& sessionName, const std:
         juce::String name =
             item.file.title.empty() ? juce::File(item.file.path).getFileName() : juce::String(item.file.title);
         label->setText(name + "  -  " + item.status, juce::dontSendNotification);
-        label->setFont(KhensuTheme::bodyFont(12.0f));
+        label->setFont(KhensuTheme::bodyFont(type::secondary));
         label->setColour(juce::Label::textColourId, statusColour(item.status));
         content_.addAndMakeVisible(label);
         rowLabels_.push_back(label);

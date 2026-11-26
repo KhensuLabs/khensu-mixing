@@ -48,8 +48,8 @@ graph TD
 |-----------|------|----------|------|
 | **Shared Core** | `shared-core/` | C++17 (JUCE) | Static lib: fast in-process DSP analyzers + rule-based recommendation engine. Shared by the app and the plugin. Zero ML dependencies by design. |
 | **Desktop App** | `desktop-app/` | C++17 (JUCE GUI) | The main product — 11 screens, 90+ analysis panels. Owns sessions, playback, render orchestration, and the Python service lifecycle. |
-| **VST3 Copilot Plugin** | `plugin-copilot/` | C++17 (JUCE plugin) | Runs inside a DAW; surfaces live meters + current recommendations, a level-matched A/B, and a hosted third-party VST3 chain. Links `KhensuSharedCore`. |
-| **Python Analysis Service** | `local-services/` | Python 3.11+ (FastAPI) | Heavy feature extraction + audio rendering. ~79 analyzer modules, 38 routers. |
+| **VST3 Copilot Plugin** | `plugin-copilot/` | C++17 (JUCE plugin) | Runs inside a DAW; surfaces live meters + current recommendations, a level-matched A/B, its own correction chain (six EQ bands with mid/side and dynamic modes, dynamics, transient, saturation, bass mono, width; state v5) and a hosted third-party VST3 chain. Links `KhensuSharedCore`. |
+| **Python Analysis Service** | `local-services/` | Python 3.11+ (FastAPI) | Heavy feature extraction + audio rendering. ~80 analyzer modules, 39 routers. |
 
 ## Why a split C++/Python architecture
 
@@ -205,6 +205,11 @@ having started it (see "Service lifecycle" below).
      every render path, including the iterative Mastering Agent loop (see
      `mastering_agent.py` — every iteration is guardrail-checked, and the
      agent proposes a best-safe candidate rather than silently promoting one).
+   - **Keyed renders (ENH-6).** A masking fix is a DynamicEQ keyed on the
+     competing stem in both renderers: the native one gets the stem's file
+     (`OfflineRenderOptions::keyPath`), the service its name (`key_stem`,
+     resolved through the request's `stem_paths`); without a key file either
+     one keys on its own input and says so.
    - **Without the service (OVH-9)** — while the service is not Running, a
      chain made only of effects the native renderer covers (high/low-pass,
      shelves, peaks and notches, compressor, de-esser, gain, true-peak
@@ -259,11 +264,23 @@ shutdown. Each job is tagged with the **session epoch**; a result whose epoch
 is no longer current is dropped instead of being published into the next
 session (see [`frontend.md`](frontend.md)). Playback decodes through a
 `TimeSliceThread` read-ahead (64k samples) so disk I/O never runs on the audio
-callback.
+callback. The playback callback is decks -> A/B mixer -> live preview
+(`dsp::RealtimeChain`, the causal stages of a chain, loudness-matched;
+STU-9) -> meter tap -> monitoring (Mono / Side / Sub / Dim,
+`dsp::MonitorSolo`, shared with the plugin; STU-5) -> device. Chains reach
+the audio thread through an atomic slot and old ones are retired lock-free;
+nothing on that path allocates or locks. Hearing a chain live never writes a
+file: saving is always an offline render plus the fix check.
 
 **Plugin.** Editor-side background work runs on a processor-owned pool, so it
 can't outlive the plugin DLL; the audio thread only ever sees immutable
-snapshots of the hosted chain.
+snapshots of the hosted chain. Its realtime correction stages
+(`khensu/dsp/RealtimeStages.h`) allocate only in `prepare()`.
+
+**Shared UI palette.** `khensu::ui::Palette` (shared-core, used by the
+widgets both the app and the plugin draw) follows the active theme:
+`Palette::setTheme` on the message thread, a version counter and listeners;
+the audio thread never reads it (STU-6).
 
 ## The three-tier ML philosophy
 
@@ -300,7 +317,7 @@ local-services/
 cmake/                 # FetchJUCE / FetchSQLiteCpp / FetchCatch2 / CompilerFlags
 tests/                 # C++ Catch2 tests: shared-core/ (KhensuCoreTests), ui/ (KhensuTests),
                        #   plugin/ (KhensuPluginTests)
-storage/schema/        # Numbered SQLite migrations (001_… 016_…)
+storage/schema/        # Numbered SQLite migrations (001_… 017_…)
 resources/             # genre_norms/, system_brain/ JSON data, fonts/, models/ (gitignored)
 corpus_data/           # local-only training corpora (gitignored, see corpus_data/README.md)
 docs/                  # this file + frontend.md/backend.md/ml-models.md, plus

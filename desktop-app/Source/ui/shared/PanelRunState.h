@@ -36,7 +36,7 @@ class PanelRunState {
     /// `runButton` (may be null) is disabled while a run is in flight.
     PanelRunState(juce::Component* owner, juce::Button* runButton = nullptr) : runButton_(runButton)
     {
-        status_.setFont(KhensuTheme::labelFont(10.0f));
+        status_.setFont(KhensuTheme::labelFont(type::caption));
         status_.setMinimumHorizontalScale(0.8f);
         applyThemeColours();
         if (owner != nullptr) {

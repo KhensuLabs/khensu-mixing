@@ -26,7 +26,7 @@ DashboardLayoutPanel::DashboardLayoutPanel(const std::vector<std::pair<std::stri
     addAndMakeVisible(card_);
 
     titleLabel_.setText(TRANS("Customize Dashboard Layout"), juce::dontSendNotification);
-    titleLabel_.setFont(khensu::KhensuTheme::uiFont(15.0f, juce::Font::bold));
+    titleLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::subtitle, juce::Font::bold));
     card_.addAndMakeVisible(titleLabel_);
 
     closeButton_.onClick = [this]() {

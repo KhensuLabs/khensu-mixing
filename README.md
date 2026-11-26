@@ -17,7 +17,7 @@
 ![Analyzers](https://img.shields.io/badge/analyzer%20modules-79-00d4aa)
 ![Routers](https://img.shields.io/badge/API%20routers-38-00d4aa)
 ![Screens](https://img.shields.io/badge/screens-11%20%7C%2090%2B%20panels-00d4aa)
-![Service API](https://img.shields.io/badge/service%20API-0.2.105-00d4aa)
+![Service API](https://img.shields.io/badge/service%20API-0.2.107-00d4aa)
 ![Migrations](https://img.shields.io/badge/DB%20migrations-001%E2%80%93016-00d4aa)
 
 <!-- Verification (local runs of scripts/verify_all.ps1) -->
@@ -35,7 +35,7 @@
 <!-- Project -->
 ![Python deps](https://img.shields.io/badge/python%20deps-16%20base%20%2F%2039%20with%20extras-4299e1)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20in%20v1.1-555555)
-![Status](https://img.shields.io/badge/release-v1.0.4-2ea44f)
+![Status](https://img.shields.io/badge/release-v1.0.5-2ea44f)
 ![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
 
 **🎚️ An explainable mixing and mastering assistant that runs on your own machine.**
@@ -44,7 +44,7 @@ Khensu listens to a mix or a master and tells you what is wrong, why it matters 
 
 🔒 **Local-first.** All audio processing happens on your computer. The few online features (song identification, a cloud chat model, model downloads, update checks) can each be switched off in Settings, and one master switch turns them all off.
 
-> 🚀 **v1.0.4, Windows first.** Download it from the public [releases page](https://github.com/KhensuLabs/khensu-mixing/releases/latest). macOS has an installer build (`packaging/macos/`, `release-macos.yml`) that becomes a verified release in v1.1.
+> 🚀 **v1.0.5, Windows first.** Download it from the public [releases page](https://github.com/KhensuLabs/khensu-mixing/releases/latest). macOS has an installer build (`packaging/macos/`, `release-macos.yml`) that becomes a verified release in v1.1.
 >
 > **How this is verified.** Every number in the badges comes from local runs of `scripts/verify_all.ps1`. It builds everything and runs the three Catch2 suites, the full pytest suite with the analyzer golden gate, pluginval in fixed and random order, a Debug run with its debug output captured, an installer smoke test (silent install, version and secret checks, uninstall) and the doc-drift, lint and string-template gates. Last full pass: 2026-11-22, for v1.0.2. An 8-hour soak (786 analyse / fix / delete cycles) kept memory, handles and GUI objects flat.
 
@@ -90,10 +90,10 @@ Khensu listens to a mix or a master and tells you what is wrong, why it matters 
 
 ### 🔁 The core loop
 
-1. **Load a track** (Intake, `Ctrl+O`). Drop a file and Khensu shows what it detected - genre, key, tempo - with one **Confirm genre**, or change the target yourself (185 genres). Then **Create Session**. Pipeline options sit under Advanced.
+1. **Load a track** (Intake, `Ctrl+O`, or drop it on any screen). Drop a file and Khensu shows what it detected - genre, key, tempo - with one **Confirm genre**, or change the target yourself (185 genres). Then **Create Session**. Pipeline options sit under Advanced.
 2. **Read the analysis** (Analysis). The loudness, true peak and clipping readings show within seconds, marked provisional; findings and grades appear as soon as everything a grade is built from has finished, and the remaining scans fill in their panels after. Related views share one card with tabs - Stereo & mono, Tone, Loudness & delivery, Provenance & source, Stems - instead of a wall of separate cards. Each finding follows **Detected → Cause → Fix → Trade-off → Verify**, and one click opens the full "why this?" trace, written in plain words.
-3. **Work the issue queue** (**Issues**, or `F` for the top one). Every finding is in one list with **Fix**, **Mark done**, **Dismiss** (with a reason Khensu learns from) and **Why?**. A fix renders through the safety gates from the *current* version, so fixes stack, and becomes the B side.
-4. **See whether it worked.** After every fix Khensu re-analyses the new version and marks each finding resolved, improved, unchanged, worse or new, with the measured deltas. **Hear what changed** loops each region the fix altered, and a fix that only improved a finding offers **Stronger** or **Gentler**.
+3. **Work the issue queue** (**Issues**, or `F` for the top one). Every finding is in one list with **Fix**, **Mark done**, **Dismiss** (with a reason Khensu learns from, and an Undo notice) and **Why?**. A fix renders through the safety gates from the *current* version, so fixes stack, and becomes the B side. **Fix all safe** (`Shift+F`) renders every fix proven on released music (cleared on at least 70% of at least 10 tracks) as one version.
+4. **See whether it worked.** Bounce again from your DAW and Khensu notices the new file, checks it against the old findings and tells you what changed. After every fix Khensu re-analyses the new version and marks each finding resolved, improved, unchanged, worse or new, with the measured deltas. **Hear what changed** loops each region the fix altered, and a fix that only improved a finding offers **Stronger** or **Gentler**.
 5. **Compare honestly** (`B`, `Space`, or **Hear A/B** in the queue). A/B is loudness-matched by turning the louder side down, with Delta and Blind modes. "Start from: original" in the transport begins a fresh branch.
 6. **Deliver** (Export, `Ctrl+E`). Export exactly what you're hearing, make platform masters, run the compliance sheet, build a delivery package.
 
@@ -105,37 +105,41 @@ Khensu listens to a mix or a master and tells you what is wrong, why it matters 
 - **Perceptual loudness.** Partial loudness (Moore–Glasberg) turns "the vocal is buried" into a number.
 - **Fixes for what used to be advice.** Spectral tilt renders a 1 kHz shelf solved from the track's spectrum, a resonance renders a notch, a raised noise floor renders a spectral denoiser (it clears 95% of injected hiss) and DC offset renders a 20 Hz high-pass. Clipping stays advice, because the app has no way to check a declipper's result.
 - **Evidence you can export.** Every recommendation carries its measurement, threshold, source and confidence basis, as JSON or a client-readable HTML page. A **counterfactual** gives the smallest change that would clear a finding ("−2.1 dB at 250 Hz"), checked by re-measuring a render.
-- **References.** Keep a library of your own reference tracks - tag them and give each a genre, then filter by either - find the ones nearest your mix or search them by description ("warm, wide, slow"), and make one the session's reference - the comparison updates at once. Fit a readable EQ and compressor chain toward a reference or toward your genre, with an amount control and the predicted per-band result before anything renders.
+- **References.** Point Khensu at a folder (your Music folder, a sample library) and it finds the songs and samples, tags each with artist or author, construction pack, artwork and genre / subgenre, and sorts them into the References genre tabs. Keep a library of your own reference tracks - tag them and give each a genre, then filter by either - find the ones nearest your mix or search them by description ("warm, wide, slow"), and make one the session's reference - the comparison updates at once. Fit a readable EQ and compressor chain toward a reference or toward your genre, with an amount control and the predicted per-band result before anything renders.
 - **Where you sit in your genre.** The Genre Fit card shows, for loudness, crest, brightness, tilt, low end and width, where your mix falls among released tracks of the genre - measured, with the number of tracks behind it.
 - **Trust.** Every measurement carries a value, a confidence and a quality flag. A clipped signal marks its loudness reading unreliable, and recommendations built on shaky numbers are down-weighted and say so.
 
 ### 📈 Seeing it
 
-- **Against released tracks, not one target line.** The tonal-balance chart draws where released tracks of the genre sit - their middle 50 % and 80 %, measured with the app's own analyzer - and colours your curve where it leaves them (red: more energy, blue: less). Every measurement tile has a strip of dots, one per released track, with "Louder than 92 % of released Glitch Hop"; the readiness categories sit against the same spread.
+- **Against released tracks, not one target line.** The tonal-balance chart draws where released tracks of the genre sit - their middle 50 % and 80 %, measured with the app's own analyzer - and colours your curve where it leaves them (orange: more energy, blue: less), each problem band labelled on the chart. Every measurement tile has a strip of dots, one per released track, with "Louder than 92 % of released Glitch Hop"; the readiness categories sit against the same spread.
 - **A detailed spectrogram.** The whole song in 256 log bands from a 4096-point FFT, with a smooth low end (a 60 Hz tone peaks at 60 Hz, not on an FFT bin), a perceptual colour map shared by every spectrogram, the sections across the top and each finding's frequency range at the edge. Beside it, the spectrum at the cursor or playhead against the song's average. Hover for time, frequency, musical note and level; scroll to zoom, drag to pan, click to play from there; the playhead follows playback.
 - **Where in the song.** One time axis for the sections, waveform, short-term and momentary loudness (true-peak overs marked where they happen), the spectrogram and every finding that happens at a moment, with **Play this moment**. Click to seek, scroll to zoom.
 - **What a fix changed, measured.** The difference spectrum and the difference in loudness over time against the original, a small difference sparkline on every version in the render tree, and an A/B toggle that glides the spectrum between the two.
-- **Output meters that never sit blank.** Stopped, they show the analysed integrated loudness, true peak, correlation and a looped slice of the song in the vectorscope; playing, the live signal.
+- **Output meters that never sit blank.** Stopped, they show the analysed song greyed - integrated loudness, the loudest short-term reading, true peak, correlation and a looped slice in the vectorscope; playing, the live signal.
 - **Live.** A GPU-composited scrolling spectrogram of what is playing with the findings' frequency bands across it, stereo width per octave beside the vectorscope, and each module of the signal chain drawn - EQ curves, the compressor's transfer curve and gain reduction, the limiter's reduction history - in the app and in the plugin.
-- **Stems and albums.** Each stem's energy over time as a streamgraph, a frequency x time masking map for any pair, and an album chart of every track's loudness and tonal balance.
-- **One chart toolkit and palette**: every chart reads out the exact value under the pointer; colours are colour-blind checked and severity keeps its own. A shareable **visual report** puts the key charts in one HTML page, and a built-in demo song fills the screens on first run.
+- **Hear it before you render it.** **Preview live** in the EQ editor plays the curve while you drag, level-matched; saving still renders a version and checks it. The transport has **Mono**, **Side**, **Sub** and **Dim** monitoring with a badge while it's on, and the render tree can **pin any two versions** as A and B.
+- **Dynamics at a glance.** A PSR lane (peak to short-term loudness) on the timeline marks squashed passages, and sections and findings export as **DAW markers** (CSV, REAPER, MIDI).
+- **Stems and albums.** Each stem's energy over time as a streamgraph, a frequency x time masking map for any pair, and an album chart of every track's loudness and tonal balance. A masking fix is a dynamic EQ keyed on the competing stem, so the part is cut only while the other one plays - in the app's own renderer and in the analysis service alike.
+- **The issue heatmap** lays every lane on one time axis - spectrum, finding density, loudness and correlation, a findings row per domain - with the same hover readout, click to play and playhead as the other charts.
+- **One chart toolkit and palette**: every chart reads out the exact value under the pointer, timeline charts play from where you click, one frequency axis and one set of dB ranges everywhere, one spectrogram map and one blue - grey - orange difference map; colours are colour-blind checked, severity keeps its own, verdicts are written in words, and a screen reader hears a one-line summary of each chart. **Reduce motion** (Settings > Display) turns off fades and morphs. A shareable **visual report** puts the key charts in one HTML page, and a built-in demo song fills the screens on first run.
 
 ### 💿 Mastering and delivery
 
-- **Master Assistant** (Export > Finish): mastering on one card from the session's own target. The mastering agent works on the current version toward the session's genre and its master goes into the loudness-matched A/B; five macros (loudness, tone, width, punch, ceiling) re-render it; Accept makes it the current version and shows the check against the original's findings; then the platform masters.
+- **Master Assistant** (Export > Finish): mastering on one card from the session's own target, in a **style** - Warm, Balanced, Open or Loud - at a strength you set. The mastering agent works on the current version toward the session's genre and its master goes into the loudness-matched A/B; save the settings as a macro set and apply it to every track of a project; five macros (loudness, tone, width, punch, ceiling) re-render it; Accept makes it the current version and shows the check against the original's findings; then the platform masters.
 - **Platform masters** (Spotify, Apple Music, YouTube, club and more), true-peak-safe and checked by the post-render guardrail.
 - **Streaming preview.** A real codec round trip (Opus, AAC, MP3 through `ffmpeg`), then each platform's normalisation and limiter, then a playback-device profile, all A/B-able at matched loudness.
 - **Compliance sheet** for true peak, mono compatibility, DC offset, clipping, bit depth, metadata and broadcast specs (EBU R128, ATSC A/85, podcast).
 - **Delivery package**: master WAV, DDP, stems, instrumental, optional clean version, a hashed manifest and C2PA content credentials when you supply a certificate.
 - **Immersive check** for 5.1, 7.1 and 7.1.4 and ADM BWF: multichannel loudness, per-channel true peak, stereo fold-down and binaural previews.
 - **Projects and albums**: a project is one session per track in album order (a multi-file drop makes one). Export > Album shows it as a readiness board - every track's loudness, true peak, readiness and which master the album uses - beside a cross-track consistency matrix, normalisation simulation and an album master plan (DDP, cue, WAV) built from those masters.
-- **Atomic exports** of the current render, with unique file names so the render history never points at an overwritten file.
+- **Atomic exports** of the current render, with unique file names so the render history never points at an overwritten file. Save your own export presets and write several formats in one Export.
+- **Batch per file**: analyse, fix and master each file of a folder on its own terms, with before / after numbers per file; the project board analyses, fixes and masters, or exports, every track in one go.
 
 ### 🎤 Vocals, assistant and forensics
 
 - **Vocal workspace**: stem separation (Demucs, or RoFormer when installed; a multitrack session's own tracks fill the stems instead), one session Takes bin shared by comping, take alignment and preflight, edits that stack on one current vocal, vocal macros with live audition, gain riding, de-essing, comping and take alignment, pitch editing with snap-to-key (a learned pitch tracker, CREPE, refined by YIN), harmony MIDI and lyric intelligibility.
 - **Stem rebalance**: turn each stem up or down - or let Khensu suggest it from the genre's stem balance - and render the re-summed mix as a new version. It sums the edited vocal, so it is how vocal edits are committed to the mix.
-- **Copilot**: a chat assistant, a mixer-chain generator, a mastering agent, and an **agentic mixing loop** that renders a step, re-measures it at matched loudness, and keeps or reverts it, with every step in the render tree. It understands typed or spoken instructions ("make the chorus 1 dB louder than the verse"): 95% of spoken commands parse the same as typed ones (94% with room noise). Every part works offline; a language model is optional. A local 7B model (Ollama) returns valid structured output in about 0.8 s.
+- **Copilot**: a chat assistant, a mixer-chain generator, and an **agentic mixing loop** that renders a step, re-measures it at matched loudness, and keeps or reverts it, with every step in the render tree. It understands typed or spoken instructions ("make the chorus 1 dB louder than the verse"): 95% of spoken commands parse the same as typed ones (94% with room noise). Every part works offline; a language model is optional. A local 7B model (Ollama) returns valid structured output in about 0.8 s.
 - **Personal ranking**: learns from the renders you keep, revert and dismiss, and reorders recommendations with the reason shown.
 - **AI-generation detection**: metadata and byte signatures, spectral and codec-residual tells, per-stem tells, and optional learned and watermark detectors, fused with a per-window timeline. Provenance evidence is kept apart from production-style evidence.
 - **Analog Feel**: a creative render (tape drift, a slow fader ride, room tone) with an amount control. **Metadata clean** removes workflow and personal tags and keeps identity, rights and AI-disclosure tags.
@@ -150,8 +154,10 @@ Khensu listens to a mix or a master and tells you what is wrong, why it matters 
 
 The **Copilot plugin** builds as **VST3**, **CLAP** and an **ARA2** VST3 (AU on macOS):
 - live meters and the current recommendations for the desktop session you choose, graded against that session's genre from the measurements the desktop stored (no second analysis), with an RMS-matched A/B and a Blind mode;
+- its own correction chain: six EQ bands (bell, shelf, notch, high- or low-pass; stereo, mid or side; optionally dynamic), compressor, de-esser, limiter, transient shaper, saturation, bass mono and width - so **Apply all safe fixes** covers width, low-end and masking fixes too;
 - a **Hosted** tab that runs your own VST3 effects in the copilot's chain, latency-compensated;
-- a **Mix** hub across every Copilot instance in the session ("Kick vs Bass at 58 Hz");
+- a **Mix Hub** across every Copilot instance in the session ("Kick vs Bass at 58 Hz"), with **Unmask** to cut the masked band on the other track;
+- a **Reference** tab: a reference track played loudness-matched, with its tonal balance beside yours; mono / side / sub / band **solo** for listening; **Apply all safe fixes** in one step; a high-contrast view;
 - an issue timeline that seeks the host, and fixes written back as plugin automation (or exported as MIDI CC / REAPER envelopes);
 - with ARA, analysis reads the audio straight from the host; no bounce needed;
 - **Capture...**: record the next 4, 8 or 16 bars, or the loop region, and the desktop app opens it as a new session with the followed session's target - no bounce and drop;
@@ -159,12 +165,14 @@ The **Copilot plugin** builds as **VST3**, **CLAP** and an **ARA2** VST3 (AU on 
 
 ### 🧰 Around the edges
 
-- **MCP server** (`khensu-mcp`) so Claude or another MCP client can analyse, explain, fit chains and run the agent.
-- **Headless CLI** (`khensu analyze`) for folders and catalogues, with CI-friendly exit codes.
+- **MCP server** (`khensu-mcp`) so Claude or another MCP client can analyse, explain, fit chains, run the agent, fix, master, make platform masters and delivery packages, master an album and separate stems.
+- **Headless CLI** (`khensu analyze | fix | master | deliver | album | batch`) for folders and catalogues, with CI-friendly exit codes; the app itself fixes (`--fix`, no engine needed) and masters (`--master`) without a window.
+- **Recurring issues**: Intake shows the findings that keep coming back across your last ten mixes.
 - **GPU acceleration** through ONNX Runtime (DirectML / CUDA / CoreML) and torch when available.
 - **Long and hi-res files**: stereo songs up to about 25 minutes, and 192 kHz or 7.1 songs up to about 5.8 minutes, within a fixed memory budget.
 - **Analysis cache**: a content-addressed cache makes reopening a session instant, and after a render only the changed regions are re-measured.
 - **Local crash reports**: minidumps and Python fault logs stay on your machine; Settings exports a diagnostics bundle (including where the engine's memory is).
+- **Diagnostics in Settings**: the engine's memory, queues, cloud spend and security events, the cache size and model registry, and your genre examples per genre.
 - **Components**: Settings lists every optional component and installs the pip-installable ones from their reviewed, hash-pinned package lists.
 
 ---
@@ -227,7 +235,7 @@ Each of the 185 genres has its own target profile in `resources/genre_norms/genr
 
 Three tiers, and the UI always says which one produced a number:
 
-1. **Rule-based DSP (the default).** Most of the 79 analyzer modules and the whole C++ recommendation engine: real measurements with documented formulas and no training data.
+1. **Rule-based DSP (the default).** Most of the 80 analyzer modules and the whole C++ recommendation engine: real measurements with documented formulas and no training data.
 2. **Trained models (opt-in), only where DSP can't do the job.** Each ships with a model card (held-out accuracy, calibration, per-source breakdown) and an explicit `intervention_validated` flag, and stays off until enabled.
 3. **Language models (optional).** Local servers (llama.cpp, Ollama, LM Studio) are detected and preferred; Anthropic, Google, OpenAI-compatible, DeepSeek and Moonshot work with your own key. Every feature that can use one has a deterministic offline path.
 
@@ -275,7 +283,7 @@ graph TD
 | **Shared core** | `shared-core/` | C++17 library: native meters, analyzers, the rule-based recommendation engine, genre targets, and the service client. The client is generated from the service's OpenAPI schema, so renaming a field is a compile error, not a panel that silently shows 0. |
 | **Desktop app** | `desktop-app/` | 11 screens and 90+ panels. A thin `AppController` hub over eight services (playback, renders, stems, vocal edits, analysis, sessions, service lifecycle, cloud chat); panels depend on the narrowest interface. Background work runs on owned pools and is tagged with a session epoch, so a late result never lands in the wrong session. |
 | **Copilot plugin** | `plugin-copilot/` | Meters, recommendations, honest A/B, hosted VST3 chain and the multi-instance Mix hub inside the DAW. |
-| **Analysis service** | `local-services/` | 79 analyzer modules behind 38 routers (the plain file analyses are one table). Every route has a typed request and response model; long work runs as jobs on bounded executors; shared modules own loudness, stereo, note names and harmony so every screen reports the same number. |
+| **Analysis service** | `local-services/` | 80 analyzer modules behind 39 routers (the plain file analyses are one table). Every route has a typed request and response model; long work runs as jobs on bounded executors; shared modules own loudness, stereo, note names and harmony so every screen reports the same number. |
 
 **Service lifecycle.** The app starts the service (`local-services/launch_service.py`) and checks it every couple of seconds with an HMAC-proved `/health` that also carries the `SERVICE_VERSION` handshake, so a stale build on the port is replaced. While it starts or is down, one banner says so and offers a restart. You never start it by hand.
 
@@ -403,12 +411,13 @@ py -3.11 -m venv .venv311
 | `Ctrl+O` | Open an audio file |
 | `Ctrl+R` | Analyse again |
 | `F` | Fix the top issue |
+| `Shift+F` | Fix all safe |
 | `B` | Switch A/B (original / fix) |
 | `Space` or `Ctrl+Space` | Play / pause |
 | `N` | Next unresolved issue |
 | `Ctrl+E` / `Ctrl+,` | Export / Settings |
 | `Ctrl+1` … `Ctrl+0` | The Nth screen in the sidebar |
-| `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
+| `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Undo / redo |
 | `Ctrl+K` | Command palette: every screen and action |
 | `F1` / `F6` | Keyboard help / move between sidebar, screen and transport |
 
@@ -424,9 +433,14 @@ cd local-services
 .venv/Scripts/khensu analyze bounces/ --recursive --target spotify --report reports/ --json results.json
 .venv/Scripts/khensu analyze bounces/ --json - --fail-on severe     # exit 1 on a failing check
 .venv/Scripts/khensu targets                                       # ids for --target
+.venv/Scripts/khensu fix mix.wav --out mix_fixed.wav                # the safe fixes, then re-measured
+.venv/Scripts/khensu master mix.wav --style warm --strength 0.6     # the mastering agent in a style
+.venv/Scripts/khensu deliver mix.wav --platforms spotify,apple_music --package
+.venv/Scripts/khensu album a.wav b.wav c.wav --apply-gains --render
+.venv/Scripts/khensu batch bounces/                                 # analyse -> fix -> master each file
 ```
 
-It runs the same measurements, compliance sheet and report writer as the app, in-process, with no service and no network. The desktop executable forwards the same arguments (`"Khensu Mixing.exe" --analyze ...`).
+It runs the same measurements, compliance sheet and report writer as the app, in-process, with no service and no network. The desktop executable forwards the same arguments (`"Khensu Mixing.exe" --analyze ...`), and fixes and masters on its own: `"Khensu Mixing.exe" --fix=mix.wav --out=fixed.wav` (native, no engine) and `--master=mix.wav --style=open` (`--native` for a plain loudness master). Exit codes: 0 ok, 1 a `--fail-on` threshold reached, 2 usage, 3 error.
 
 ---
 
@@ -461,7 +475,7 @@ desktop-app/      JUCE desktop app (Source/ui: one folder per screen, shared wid
 plugin-copilot/   VST3 / CLAP / ARA2 copilot plugin
 local-services/   Python FastAPI analysis and render service, its tests and the CLI
 tests/            Catch2 suites: shared-core/, ui/, plugin/
-storage/schema/   SQLite migrations 001-016 (one khensu.db)
+storage/schema/   SQLite migrations 001-017 (one khensu.db)
 resources/        Genre norms, finding evidence (calibration/), system-brain data, the OpenAPI schema, the string template
 packaging/        Installer, optional-stack installs, macOS scripts, signing
 scripts/          verify_all, doc-drift, generators, benchmarks

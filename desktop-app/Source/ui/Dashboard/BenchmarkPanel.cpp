@@ -64,7 +64,7 @@ BenchmarkPanel::BenchmarkPanel(IAppController& c) : PanelCard(c, "Chart Benchmar
                  "in; empty only for a genre with no library entry. Also compares each detected "
                  "section against the same library and calls out the section that differs most."));
 
-    summaryLabel_.setFont(KhensuTheme::bodyFont(11.0f));
+    summaryLabel_.setFont(KhensuTheme::bodyFont(type::caption));
     summaryLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(summaryLabel_);
 }
@@ -136,7 +136,7 @@ void BenchmarkPanel::paint(juce::Graphics& g)
         return;
     }
 
-    g.setFont(KhensuTheme::labelFont(9.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     juce::String header =
         "vs. " + juce::String(benchmark_->genre_id) + " (" + juce::String(benchmark_->sample_size) + " refs)";
@@ -151,7 +151,7 @@ void BenchmarkPanel::paint(juce::Graphics& g)
     const int rowH = juce::jmin(28, barsArea.getHeight() / n);
     for (int i = 0; i < n; ++i) {
         auto row = barsArea.removeFromTop(rowH);
-        g.setFont(KhensuTheme::bodyFont(10.0f));
+        g.setFont(KhensuTheme::bodyFont(type::caption));
         g.setColour(KhensuTheme::textSecondary);
         g.drawText(kMetricLabels[i], row.removeFromLeft(100), juce::Justification::centredLeft, false);
 
@@ -169,7 +169,7 @@ void BenchmarkPanel::paint(juce::Graphics& g)
         g.setColour(fillColour);
         g.fillRoundedRectangle(fill.toFloat(), 3.0f);
 
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(juce::String((int)std::round(pct)) + "th pct", barTrack, juce::Justification::centredRight, false);
     }

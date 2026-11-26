@@ -121,6 +121,10 @@ def _call(client, route, path):
 # entry in a completed job, not a rejection of the whole batch (one bad file
 # in a folder must not block the rest).
 _BATCH_ROUTE = "/copilot/apply_chain/batch/start"
+# Batches that report each file in the job result (ENH-4 adds the per-file
+# smart batch, whose finished entries read "completed").
+_BATCH_ROUTES = frozenset({_BATCH_ROUTE, "/copilot/batch/smart/start"})
+_BATCH_OK = frozenset({"success", "completed", "unchanged"})  # unchanged: nothing to fix
 
 
 def _batch_file_statuses(result) -> list[str]:
@@ -161,7 +165,7 @@ _REJECTED = [(route, e.name) for e in CORPUS if e.kind in (UNDECODABLE, OVER_BUD
 def test_unusable_file_is_rejected_cleanly(route, entry, corpus, sweep_client):
     kind = corpus_mod.BY_NAME[entry].kind
     result = _call(sweep_client, route, corpus[entry])
-    if route == _BATCH_ROUTE and kind == UNDECODABLE:
+    if route in _BATCH_ROUTES and kind == UNDECODABLE:
         # The batch validates per file: an unreadable entry is "failed", one
         # that opens but the pre-render validator refuses (e.g. a header with
         # no frames) is "blocked" - both are a stated per-file refusal.
@@ -196,14 +200,14 @@ def test_edge_file_never_500s(route, entry, corpus, sweep_client):
     if entry not in corpus:
         pytest.skip(f"{entry} could not be created on this machine")
     result = _call(sweep_client, route, corpus[entry])
-    if route == _BATCH_ROUTE:
+    if route in _BATCH_ROUTES:
         statuses = _batch_file_statuses(result)
         if entry == "float_nan_inf":
             want = _BATCH_REFUSED
         elif entry in _JOB_MAY_FAIL:
-            want = {"success"} | _BATCH_REFUSED
+            want = _BATCH_OK | _BATCH_REFUSED
         else:
-            want = {"success"}
+            want = _BATCH_OK
         assert statuses and set(statuses) <= want, statuses
         return
     status = result["status"]

@@ -8,6 +8,7 @@
 // The genre's width window is the band behind the bars.
 // THREAD_CONTEXT(UIThread)
 #pragma once
+#include <khensu/ui/VizFrequencyAxis.h>
 #include <JuceHeader.h>
 #include <array>
 #include <optional>
@@ -82,11 +83,8 @@ class StereoWidthBandsChart final : public ThemedChart {
   public:
     StereoWidthBandsChart()
     {
-        x.lo = 22.0;
-        x.hi = 22000.0;
-        x.scale = ui::chart::Scale::Log;
-        x.format = ui::chart::Format::Hz;
-        setXRange(22.0, 22000.0);
+        x = ui::viz::frequencyAxis(); // VIS-3: the one frequency axis
+        setXRange(x.lo, x.hi);
         y.lo = 0.0;
         y.hi = 1.0;
         y.format = ui::chart::Format::Percent;
@@ -112,6 +110,13 @@ class StereoWidthBandsChart final : public ThemedChart {
         repaint();
     }
     const std::vector<float>& analysed() const noexcept { return analysed_; }
+    /// VIS-6: stopped - the analysed bars are drawn greyed.
+    void setStopped(bool stopped)
+    {
+        if (stopped == stopped_) return;
+        stopped_ = stopped;
+        repaint();
+    }
 
   protected:
     void paintData(juce::Graphics& g, juce::Rectangle<float> plot) override
@@ -129,10 +134,21 @@ class StereoWidthBandsChart final : public ThemedChart {
                 g.fillRect(juce::Rectangle<float>(x0, py(live_[b]), std::max(1.0f, x1 - x0), plot.getBottom() - py(live_[b])));
             }
             if (b < analysed_.size() && std::isfinite(analysed_[b])) {
-                g.setColour(KhensuTheme::vizTrack.withAlpha(0.85f));
+                g.setColour((stopped_ ? KhensuTheme::textTertiary : KhensuTheme::vizTrack).withAlpha(0.85f));
                 g.drawRect(juce::Rectangle<float>(x0, py(analysed_[b]), std::max(1.0f, x1 - x0), plot.getBottom() - py(analysed_[b])), 1.2f);
             }
         }
+    }
+
+    void paintOverlay(juce::Graphics& g, juce::Rectangle<float> plot) override
+    {
+        // A mono song has no width anywhere: say so instead of an empty plot.
+        if (analysed_.empty() || !live_.empty()) return;
+        for (const float w : analysed_)
+            if (std::isfinite(w) && w > 0.01f) return;
+        g.setColour(KhensuTheme::textTertiary);
+        g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
+        g.drawText(TRANS("Mono - no stereo width at any frequency"), plot, juce::Justification::centred, true);
     }
 
     ui::chart::Readout readoutAt(double xv, double) override
@@ -156,6 +172,7 @@ class StereoWidthBandsChart final : public ThemedChart {
   private:
     std::vector<float> analysed_, live_;
     std::optional<std::pair<float, float>> window_;
+    bool stopped_ = false;
 };
 
 } // namespace khensu

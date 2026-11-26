@@ -15,6 +15,7 @@
 #include "settings/OnlineSettings.h"
 #include "ui/shared/ServiceErrorHint.h"
 #include "ui/shared/ServiceStatusText.h"
+#include "ui/shared/DecisionNotices.h"
 #include <khensu/common/AppPaths.h>
 #include <khensu/common/Version.h>
 #include <khensu/session/PluginCapture.h>
@@ -84,7 +85,7 @@ void AppController::postCrashNoticeIfAny()
 
 void AppController::updateServiceBanner(PythonStatus status, int restartAttempt)
 {
-    static const juce::String kId = "analysis-engine-state";
+    static const juce::String kId = decision_notices::kEngineStateId;
     const int generation = ++serviceBannerGeneration_;
     const juce::String text = service_status::bannerText(status, restartAttempt);
     if (text.isEmpty()) {

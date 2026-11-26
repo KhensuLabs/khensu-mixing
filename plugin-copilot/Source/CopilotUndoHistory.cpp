@@ -292,7 +292,8 @@ ui::KhensuKnob::Unit ParamUndoHistory::unitFor(const juce::String& paramId)
     if (paramId.contains("freq")) return Unit::Hz;
     if (paramId.contains("ratio")) return Unit::Ratio;
     if (paramId.endsWith("_q")) return Unit::Q;
-    if (paramId == "chain_mix" || paramId == "fix_amount") return Unit::Percent;
+    if (paramId == "chain_mix" || paramId == "fix_amount" || paramId == "sat_mix" || paramId == "sat_warmth")
+        return Unit::Percent;
     return Unit::None;
 }
 

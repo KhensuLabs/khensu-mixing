@@ -2,6 +2,7 @@
 // Moved out of RenderService::applyRecommendationChain (P0-2) so the Dashboard
 // card can tell a renderable finding from an advice-only one.
 #include "RecommendationChain.h"
+#include <khensu/recommendations/MaskingChain.h>
 #include <cmath>
 #include <initializer_list>
 #include <utility>
@@ -45,7 +46,16 @@ std::vector<ipc::HttpServiceBridge::EffectSpec> buildRecommendationChain(const R
     // (dsp.py PARAM_RANGES) - unmapped keys were silently dropped.
     if (has("highpass_hz")) add("HighpassFilter", {{"cutoff_frequency_hz", get("highpass_hz")}});
 
-    if (has("eq_freq_hz") && has("eq_gain_db")) {
+    // ENH-6: a stem-masking finding renders as a dynamic EQ (keyed on the
+    // leading stem when the render is given it) instead of a static cut.
+    const auto dynamicEq = maskingDynamicEq(rec);
+    if (dynamicEq) {
+        ipc::HttpServiceBridge::EffectSpec dyn;
+        dyn.effect = dynamicEq->stage.effect;
+        for (const auto& [name, value] : dynamicEq->stage.parameters) dyn.parameters[name] = value;
+        chain.push_back(std::move(dyn));
+    }
+    if (!dynamicEq && has("eq_freq_hz") && has("eq_gain_db")) {
         ipc::HttpServiceBridge::EffectSpec eq;
         // eq_type (EqCurveComponent's codes): 1 = high shelf, 2 = low shelf,
         // else a bell. The tonal findings advise a shelf; rendering a bell at
@@ -84,6 +94,8 @@ std::vector<ipc::HttpServiceBridge::EffectSpec> buildRecommendationChain(const R
     if (has("transient_attack_db")) add("TransientShaper", {{"attack_gain_db", get("transient_attack_db")}});
     if (has("saturation_drive_db")) add("TapeSaturation", {{"drive_db", get("saturation_drive_db")}});
     if (has("stereo_width")) add("StereoWidener", {{"width", get("stereo_width")}});
+    // STU-18: a sub too wide - mono below the crossover.
+    if (has("bass_mono_hz")) add("BassMonoMaker", {{"crossover_hz", get("bass_mono_hz")}});
     // reverb_wet / reverb_size / reverb_predelay_ms describe a reverb SEND
     // setting ("less reverb" lowers it); adding a Reverb to the bounced file
     // would do the opposite, so those stay advice-only.

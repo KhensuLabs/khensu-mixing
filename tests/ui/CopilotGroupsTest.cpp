@@ -1,5 +1,5 @@
-// UX-13 / CUT-8: the Copilot screen's groups and the mastering view's
-// section-intensity option.
+// UX-13 / UXR-3: the Copilot screen's one switch; ENH-8 / CUT-8: the
+// mastering view's link to Export > Finish and its section intensity.
 #include <catch2/catch_test_macros.hpp>
 #include "ui/Copilot/CopilotScreen.h"
 
@@ -24,17 +24,35 @@ TEST_CASE("A Copilot group shows one view at a time (UX-13)", "[copilot][ux13]")
     CHECK(group.activeView() == 1);
 }
 
-TEST_CASE("Section intensity is an option inside the mastering view (CUT-8)", "[copilot][cut8]")
+TEST_CASE("The Copilot's views share one switch (UXR-3)", "[copilot][uxr3]")
 {
     juce::ScopedJuceInitialiser_GUI init;
-    juce::Component agent, sections;
-    khensu::MasteringView view(agent, sections);
+    juce::Component a, b;
+    khensu::CopilotGroup group;
+    group.addView("Chat", a);
+    CHECK_FALSE(group.switcher().isVisible()); // one view: no switch
+    group.addView("Mastering", b);
+    group.setSize(1200, 600);
+    CHECK(group.switcher().isVisible());
+    CHECK(group.switcher().getWidth() <= 220); // sized to its views, not the whole row
+    CHECK(a.getY() == b.getY());               // every view under the one switch
+}
+
+TEST_CASE("The mastering view links to Export > Finish and keeps section intensity (ENH-8)", "[copilot][enh8]")
+{
+    juce::ScopedJuceInitialiser_GUI init;
+    int went = 0;
+    khensu::FeatureHomeLink link("Mastering lives in Export > Finish", "body", "Go to Finish", [&went] { ++went; });
+    juce::Component sections;
+    khensu::MasteringView view(link, sections);
     view.setSize(800, 600);
 
-    CHECK_FALSE(sections.isVisible()); // off until asked for
-    const int agentAlone = agent.getHeight();
-    view.sectionsToggle().setToggleState(true, juce::sendNotificationSync);
+    CHECK(link.isVisible());
     CHECK(sections.isVisible());
-    CHECK(sections.getHeight() > 0);
-    CHECK(agent.getHeight() < agentAlone); // the agent makes room for it
+    CHECK(link.getHeight() < 120);       // a compact card
+    CHECK(sections.getY() > link.getBottom());
+    CHECK(sections.getHeight() > 400);   // the rest is the section panel
+    link.button().triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+    CHECK(went == 1);
 }

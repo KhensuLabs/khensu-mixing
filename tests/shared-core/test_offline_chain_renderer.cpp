@@ -244,7 +244,7 @@ TEST_CASE("OVH-9: native chain renders match the service's chain runner", "[dsp]
     const auto* cases = fixtures["cases"].getArray();
     REQUIRE(signals != nullptr);
     REQUIRE(cases != nullptr);
-    REQUIRE(cases->size() >= 45); // FN2-2a: + denoise, transient shaper, saturation, widener
+    REQUIRE(cases->size() >= 77); // FN2-2a: + denoise, transient shaper, saturation, widener; ENH-6: + 7 stages, shaped + keyed DynamicEQ
 
     const auto dir = tempDir();
     std::map<juce::String, juce::File> inputs;
@@ -254,6 +254,14 @@ TEST_CASE("OVH-9: native chain renders match the service's chain runner", "[dsp]
         writeFloatWav(f, synthesize(spec), spec["sample_rate"]);
         inputs[spec["name"].toString()] = f;
     }
+    // ENH-6: the key signals the keyed DynamicEQ cases read (OfflineRenderOptions::keyPath).
+    if (const auto* keySignals = fixtures["key_signals"].getArray()) {
+        for (const auto& spec : *keySignals) {
+            const auto f = dir.getChildFile(spec["name"].toString() + ".wav");
+            writeFloatWav(f, synthesize(spec), spec["sample_rate"]);
+            inputs[spec["name"].toString()] = f;
+        }
+    }
 
     for (const auto& c : *cases) {
         const auto name = c["signal"].toString() + " / " + c["chain_name"].toString();
@@ -262,6 +270,8 @@ TEST_CASE("OVH-9: native chain renders match the service's chain runner", "[dsp]
             const auto out = dir.getChildFile("parity_out.wav");
             kd::OfflineRenderOptions opts;
             opts.enforceGuardrail = false; // a refusal is the service's too; compare the audio
+            if (c.hasProperty("key_signal"))
+                opts.keyPath = inputs[c["key_signal"].toString()].getFullPathName().toStdString();
             const auto res =
                 kd::OfflineChainRenderer::renderFile(inputs[c["signal"].toString()], out, chainFrom(c["chain"]), opts);
             INFO(res.error);
@@ -495,9 +505,9 @@ TEST_CASE("OVH-9: a cancelled or engine-only render leaves no file", "[dsp][rend
     CHECK(dir.findChildFiles(juce::File::findFiles, false, "*.tmp.wav").isEmpty());
 
     const auto engine = kd::OfflineChainRenderer::renderFile(
-        src, out, {stage("LowShelfFilter", {{"gain_db", -3.0f}}), stage("MultibandCompressor")});
+        src, out, {stage("LowShelfFilter", {{"gain_db", -3.0f}}), stage("Reverb")});
     CHECK(engine.status == kd::OfflineRenderResult::Status::NeedsEngine);
-    REQUIRE(engine.needsEngine == std::vector<std::string>{"MultibandCompressor"});
+    REQUIRE(engine.needsEngine == std::vector<std::string>{"Reverb"});
     CHECK_FALSE(out.existsAsFile());
     CHECK_FALSE(kd::OfflineChainRenderer::canRender({stage("Reverb"), stage("Gain")}));
     CHECK(kd::OfflineChainRenderer::canRender({stage("HighpassFilter"), stage("Limiter")}));

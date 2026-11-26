@@ -1,10 +1,12 @@
 // desktop-app/Source/ui/Dashboard/MidSideSpectrogramPanel.cpp
 #include <functional>
 #include <limits>
+#include <cmath>
 #include "MidSideSpectrogramPanel.h"
 #include "../shared/SessionEpoch.h"
 #include "../shared/KhensuTheme.h"
 #include "../shared/HeatmapImage.h"
+#include "../shared/VizMaps.h"
 #include <khensu/ipc/HttpServiceBridge.h>
 #include "../shared/PanelRunState.h"
 #include <khensu/ipc/generated/ApiSchema.h>
@@ -12,30 +14,6 @@
 namespace khensu {
 
 namespace {
-/// VIZ-U3: the value under `pos` in a [frame][band] grid drawn over `area`
-/// (band 0 at the bottom), with its time and frequency.
-juce::String gridReadout(const std::vector<std::vector<float>>& grid, const std::vector<float>& edgesHz, float durationSec,
-                         juce::Rectangle<float> area, juce::Point<float> pos, const std::function<juce::String(float)>& value)
-{
-    if (grid.empty() || grid[0].empty() || !area.contains(pos)) return {};
-    const auto f = (size_t)juce::jlimit(0, (int)grid.size() - 1, (int)((pos.x - area.getX()) / area.getWidth() * (float)grid.size()));
-    const int bands = (int)grid[f].size();
-    if (bands == 0) return {};
-    const auto b = (size_t)juce::jlimit(0, bands - 1, (int)((area.getBottom() - pos.y) / area.getHeight() * (float)bands));
-    juce::String where;
-    if (durationSec > 0.0f) {
-        const int t = juce::roundToInt(durationSec * ((float)f + 0.5f) / (float)grid.size());
-        where << t / 60 << ":" << juce::String(t % 60).paddedLeft('0', 2);
-    }
-    if (b + 1 < edgesHz.size()) {
-        const float hz = std::sqrt(edgesHz[b] * edgesHz[b + 1]);
-        where << (where.isEmpty() ? "" : ", ")
-              << (hz >= 1000.0f ? juce::String(hz / 1000.0f, 1) + " kHz" : juce::String(juce::roundToInt(hz)) + " Hz");
-    }
-    const float v = grid[f][b];
-    return where + ": " + (std::isfinite(v) ? value(v) : TRANS("no data"));
-}
-
 std::vector<std::vector<float>> gridOf(const juce::var& rows)
 {
     std::vector<std::vector<float>> grid;
@@ -65,10 +43,8 @@ namespace af = api::fields; // generated service field names (ApiSchema.h)
 
 static juce::Colour magColour(float v)
 {
-    // Dark -> teal -> white ramp for magnitude 0..1.
-    v = juce::jlimit(0.0f, 1.0f, v);
-    return v < 0.7f ? KhensuTheme::bgVoid.interpolatedWith(KhensuTheme::accentTeal, v / 0.7f)
-                    : KhensuTheme::accentTeal.interpolatedWith(juce::Colours::white, (v - 0.7f) / 0.3f); // theme-exempt(perceptual heat ramp - peak magnitude is white in every theme)
+    // VIS-2: the one spectrogram map (magma) for magnitude 0..1.
+    return ui::viz::spectrogram(std::isfinite(v) ? v : 0.0f);
 }
 
 // Every cached palette colour on this component, in one place (UI-01).
@@ -120,11 +96,11 @@ void MidSideSpectrogramPanel::runAnalysis()
                     }
                 return g;
             };
-            self.midImg_ = buildGridImage(toGrid(v[af::MidSideSpectrogramResponse::mid_frames]), magColour);
-            self.sideImg_ = buildGridImage(toGrid(v[af::MidSideSpectrogramResponse::side_frames]), magColour);
+            self.edgesHz_ = floatsOf(v[af::MidSideSpectrogramResponse::band_edges_hz]);
+            self.midImg_ = buildGridImageOnAxis(toGrid(v[af::MidSideSpectrogramResponse::mid_frames]), self.edgesHz_, magColour);
+            self.sideImg_ = buildGridImageOnAxis(toGrid(v[af::MidSideSpectrogramResponse::side_frames]), self.edgesHz_, magColour);
             self.grid_ = gridOf(v[af::MidSideSpectrogramResponse::mid_frames]);
             self.grid2_ = gridOf(v[af::MidSideSpectrogramResponse::side_frames]);
-            self.edgesHz_ = floatsOf(v[af::MidSideSpectrogramResponse::band_edges_hz]);
             self.durationSec_ = (float)(double)v[af::MidSideSpectrogramResponse::duration_sec];
             return TRANS("Mid (center) vs Side (width).");
         },
@@ -141,6 +117,10 @@ void MidSideSpectrogramPanel::paint(juce::Graphics& g)
     }
     auto b = bodyArea();
     b.removeFromTop(28);
+    // VIS-2 / VIS-3: both views on the one frequency axis, with one colour bar.
+    const int labelW = 30;
+    auto legend = b.removeFromRight(static_cast<int>(ui::viz::kColourBarW)).toFloat();
+    b.removeFromLeft(labelW);
     const int gap = 14;
     const int half = (b.getHeight() - gap) / 2;
 
@@ -148,21 +128,24 @@ void MidSideSpectrogramPanel::paint(juce::Graphics& g)
         g.setColour(KhensuTheme::bgVoid.withAlpha(0.5f));
         g.fillRect(area);
         if (img.isValid()) g.drawImage(img, area.toFloat(), juce::RectanglePlacement::stretchToFit);
-        g.setColour(KhensuTheme::textSecondary);
-        g.setFont(KhensuTheme::labelFont(9.0f).boldened());
-        g.drawText(label, area.getX() + 3, area.getY() + 2, 60, 12, juce::Justification::centredLeft, false);
+        ui::viz::paintFrequencyTicks(g, area.toFloat(), static_cast<float>(labelW), false);
+        g.setColour(KhensuTheme::textPrimary);
+        g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel).boldened());
+        g.drawText(label, area.getX() + 4, area.getY() + 2, 60, 13, juce::Justification::centredLeft, false);
     };
     gridArea_ = b.withHeight(half).toFloat();
-    drawOne(b.removeFromTop(half), midImg_, "MID");
+    drawOne(b.removeFromTop(half), midImg_, TRANS("Mid"));
     b.removeFromTop(gap);
     grid2Area_ = b.toFloat();
-    drawOne(b, sideImg_, "SIDE");
+    drawOne(b, sideImg_, TRANS("Side"));
+    ui::viz::paintSpectrogramBar(g, legend.withTrimmedLeft(6.0f).withTrimmedTop(4.0f).withTrimmedBottom(4.0f),
+                                 TRANS("loud"), TRANS("quiet"));
 }
 
 void MidSideSpectrogramPanel::mouseMove(const juce::MouseEvent& e)
 {
     const bool side = grid2Area_.contains(e.position);
-    setTooltip(gridReadout(side ? grid2_ : grid_, edgesHz_, durationSec_, side ? grid2Area_ : gridArea_, e.position,
+    setTooltip(gridReadoutOnAxis(side ? grid2_ : grid_, edgesHz_, durationSec_, side ? grid2Area_ : gridArea_, e.position,
                            [side](float v) {
                                return (side ? TRANS("side") : TRANS("mid")) + " " + juce::String(juce::roundToInt(v * 100.0f))
                                       + " % " + TRANS("of the loudest");

@@ -23,7 +23,7 @@ namespace khensu::ui::module_viz {
 
 struct Style {
     juce::Colour background, grid, curve, accent, text, warn;
-    static Style fromPalette(); ///< the plugin's Dark-theme values
+    static Style fromPalette(); ///< the current ui::Palette theme (STU-6)
 };
 
 /// The summed magnitude response of `bands` from 20 Hz to 20 kHz, with a 0 dB

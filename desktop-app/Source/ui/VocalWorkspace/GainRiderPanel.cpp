@@ -43,7 +43,7 @@ GainRiderPanel::GainRiderPanel(IAppController& c) : PanelCard(c, "Smart Gain Rid
     renderButton_.onClick = [this] { renderRide(); };
     addAndMakeVisible(renderButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setText(TRANS("Level vocal phrases before compression."), juce::dontSendNotification);
     addAndMakeVisible(statusLabel_);
 }
@@ -179,7 +179,7 @@ void GainRiderPanel::paint(juce::Graphics& g)
             g.fillRect(x0, midY, juce::jmax(1.0f, x1 - x0 - 1.0f), h);
     }
 
-    g.setFont(KhensuTheme::labelFont(8.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText("+12 dB", (int)strip.getX(), (int)strip.getY(), 40, 10, juce::Justification::left);
     g.drawText("-12 dB", (int)strip.getX(), (int)strip.getBottom() - 10, 40, 10, juce::Justification::left);

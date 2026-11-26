@@ -1,15 +1,16 @@
 // desktop-app/Source/ui/Dashboard/MultiLaneHeatmap.h
 #pragma once
 #include <JuceHeader.h>
-#include "../shared/KhensuTheme.h"
 #include <khensu/recommendations/Recommendation.h>
 #include <functional>
+#include <memory>
 #include <vector>
+#include "../shared/ChartKitDesktop.h"
 #include "../shared/KhensuTheme.h"
 
 namespace khensu {
 
-class IAppController;
+class IPlayback;
 
 struct HeatmapLaneData {
     juce::String label;
@@ -24,22 +25,27 @@ struct TimelineDataLane {
     std::vector<juce::Point<float>> samples; ///< x = seconds, y = raw value
     float minV = 0.0f;                       ///< value-axis bottom
     float maxV = 1.0f;                       ///< value-axis top
-    juce::Colour colour = khensu::KhensuTheme::accentTeal;
+    juce::Colour colour = khensu::KhensuTheme::vizCategory(0);
     juce::String suffix; ///< e.g. " LUFS" for the hover readout
 };
 
-/// Replaces IssueHeatmapPanel's 3 stacked TimelineComponents (which each drew
-/// their own redundant time axis, "no audio loaded" waveform placeholder, and
-/// playhead needle) with one component: a single shared time-axis ruler and
-/// playhead above N stacked marker lanes. Deliberately does not touch
-/// TimelineComponent itself - that class is also used by StructuralFlowPanel
-/// and HookDashboard, and this widget only needs a fraction of its behavior
-/// (no waveform, no section stripes, no loop selection).
+/// The Issue heatmap card's timeline (VIS-1: on the chart toolkit). One
+/// ChartKit time axis in seconds along the bottom and one category axis
+/// down the left, one category per row, top to bottom:
+///   Spectrum   the spectro-temporal image (the one spectrogram map, VIS-2)
+///   Density    findings per time bucket (the sequential map - intensity)
+///   data rows  continuous curves (loudness, stereo correlation)
+///   lanes      one recommendation-marker lane per domain (severity colours)
+/// Hover reads the row, the time and the value with its unit; a click plays
+/// from that moment (chart_transport::playFrom) and the playhead follows the
+/// transport. The screen-reader summary is built from the data.
 ///
 /// THREAD_CONTEXT(UIThread)
-class MultiLaneHeatmap final : public juce::Component {
+class MultiLaneHeatmap final : public ThemedChart {
   public:
-    explicit MultiLaneHeatmap(IAppController* controller);
+    /// `playback` (optional, tests pass nullptr) drives click-to-play and
+    /// the playhead.
+    explicit MultiLaneHeatmap(IPlayback* playback);
     ~MultiLaneHeatmap() override;
 
     void setSpan(float totalSeconds);
@@ -50,66 +56,68 @@ class MultiLaneHeatmap final : public juce::Component {
     void setDataLanes(std::vector<TimelineDataLane> dataLanes);
 
     /// Companion to the per-lane markers: an issues-per-time-bucket density
-    /// histogram row (recomputed from lanes_ whenever setLanes()/setSpan()
-    /// run), so hotspots read at a glance instead of scanning individual
-    /// triangle markers across lanes.
+    /// row (recomputed from the lanes whenever setLanes()/setSpan() run), so
+    /// hotspots read at a glance instead of scanning individual markers.
     void setDensityEnabled(bool enabled);
 
-    /// Optional per-frame STFT magnitude grid ([frame][band] = 0..1),
-    /// rendered as a heatmap image row above the recommendation-marker
-    /// lanes, sharing this component's time axis. Pass an empty `frames` to
-    /// clear it (e.g. while a new file's spectrogram is still loading).
+    /// Optional per-frame STFT magnitude grid ([frame][band] = 0..1), drawn as
+    /// a heatmap row above the others. Empty clears it.
     void setSpectrogram(std::vector<std::vector<float>> frames);
 
-    void onSeekRequest(std::function<void(float)> cb) { seekCallback_ = std::move(cb); }
+    /// True when there is nothing to plot (the empty state shows).
+    bool isEmpty() const noexcept;
+
+    /// The rows top to bottom (the category axis' names).
+    int rowCount() const noexcept { return static_cast<int>(rows_.size()); }
+    juce::String rowName(int row) const;
+    /// The pixel band of `row` inside the plot.
+    juce::Rectangle<float> rowArea(int row) const;
+
+    static constexpr int kDensityBuckets = 60;
+    double densityBucketSeconds() const noexcept { return total_ > 0.0f ? total_ / kDensityBuckets : 0.0; }
 
     void paint(juce::Graphics& g) override;
-    void mouseDoubleClick(const juce::MouseEvent& e) override;
-    void mouseMove(const juce::MouseEvent& e) override;
-    void mouseExit(const juce::MouseEvent& e) override;
+
+  protected:
+    void paintData(juce::Graphics& g, juce::Rectangle<float> plot) override;
+    void paintOverlay(juce::Graphics& g, juce::Rectangle<float> plot) override;
+    void paintHoverMark(juce::Graphics& g, juce::Rectangle<float> plot, float px, float py) override;
+    ui::chart::Readout readoutAt(double xValue, double yValue) override;
+    juce::String autoSummary() const override;
 
   private:
-    /// CE-PLT-4: display-rate playhead (VBlankAttachment) with dirty-rect
-    /// repaint of the old and new playhead columns only - the spectrogram
-    /// image and lanes underneath are not redrawn.
-    void onVBlank();
-    std::unique_ptr<juce::VBlankAttachment> vblank_;
+    enum class RowKind { Spectrum, Density, Data, Marker };
+    struct Row {
+        RowKind kind;
+        int index; ///< into dataLanes_ / lanes_
+        juce::String name;
+    };
 
-    float xFor(float sec) const;
-    float timeForX(float x) const;
-    juce::Rectangle<float> axisArea() const;
-    juce::Rectangle<float> laneArea(int index) const;
-    juce::Rectangle<float> spectrogramArea() const;
-    juce::Rectangle<float> densityArea() const;
-    juce::Rectangle<float> dataLaneArea(int index) const;
-    float dataLanesTop() const;   ///< y where the data lanes begin
-    float markerLanesTop() const; ///< y where the marker lanes begin
-    int laneCount() const { return (int)lanes_.size(); }
-    void rebuildSpectrogramImage(int width, int height);
+    void rebuildRows();
     void rebuildDensity();
+    int rowAt(double yValue) const;
 
-    IAppController* controller_ = nullptr;
+    void paintSpectrogramRow(juce::Graphics& g, juce::Rectangle<float> area);
+    void paintDensityRow(juce::Graphics& g, juce::Rectangle<float> area);
+    void paintDataRow(juce::Graphics& g, juce::Rectangle<float> area, const TimelineDataLane& dl);
+    void paintMarkerRow(juce::Graphics& g, juce::Rectangle<float> area, const HeatmapLaneData& lane);
+
+    IPlayback* playback_ = nullptr;
     float total_ = 0.0f;
     std::vector<HeatmapLaneData> lanes_;
     std::vector<TimelineDataLane> dataLanes_;
-    float playheadSec_ = -1.0f;
-    float hoverTimeSec_ = -1.0f;
+    std::vector<Row> rows_;
 
     std::vector<std::vector<float>> spectrogramFrames_;
     juce::Image spectrogramImage_;
     bool spectrogramImageDirty_ = true;
 
-    static constexpr int kAxisH = 18;
-    static constexpr int kLabelW = 64;
-    static constexpr int kSpectrogramH = 46;
-    static constexpr int kDensityH = 22;
-    static constexpr int kDataLaneH = 44;
-    static constexpr int kDensityBuckets = 60;
-
     bool densityEnabled_ = false;
-    std::vector<float> densityCounts_; // kDensityBuckets, normalized 0..1
+    std::vector<int> densityCounts_; ///< findings per bucket (kDensityBuckets)
+    int densityMax_ = 0;
 
-    std::function<void(float)> seekCallback_;
+    /// The playhead follows the transport (declared last: it references the chart).
+    std::unique_ptr<chart_transport::PlayheadFollower> playheadFollower_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MultiLaneHeatmap)
 };

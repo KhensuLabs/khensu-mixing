@@ -82,12 +82,12 @@ void ReadinessBreakdownBar::paint(juce::Graphics& g)
     if (hoveredIndex_ >= 0 && hoveredIndex_ < static_cast<int>(terms_.size())) {
         const auto& t = terms_[static_cast<size_t>(hoveredIndex_)];
         g.setColour(KhensuTheme::textPrimary);
-        g.setFont(KhensuTheme::bodyFont(10.0f));
+        g.setFont(KhensuTheme::bodyFont(type::caption));
         g.drawText(juce::String(t.name) + ": -" + juce::String(t.points, 1) + " pts", labelArea,
                    juce::Justification::centredLeft, true);
     } else {
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::bodyFont(9.5f));
+        g.setFont(KhensuTheme::bodyFont(type::caption));
         g.drawText("Hover to see what's dragging the score down", labelArea, juce::Justification::centredLeft, true);
     }
 }

@@ -45,7 +45,7 @@ RecreateSoundPanel::RecreateSoundPanel(IAppController& c) : PanelCard(c, "Recrea
     addAndMakeVisible(timingVarSlider_);
 
     timingVarLabel_.setText(TRANS("Timing (ms):"), juce::dontSendNotification);
-    timingVarLabel_.setFont(KhensuTheme::labelFont(9.0f));
+    timingVarLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(timingVarLabel_);
 
     velocityVarSlider_.setRange(0.0, 40.0, 1.0);
@@ -54,7 +54,7 @@ RecreateSoundPanel::RecreateSoundPanel(IAppController& c) : PanelCard(c, "Recrea
     addAndMakeVisible(velocityVarSlider_);
 
     velocityVarLabel_.setText(TRANS("Velocity:"), juce::dontSendNotification);
-    velocityVarLabel_.setFont(KhensuTheme::labelFont(9.0f));
+    velocityVarLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(velocityVarLabel_);
 
     pitchVarSlider_.setRange(0.0, 100.0, 1.0);
@@ -63,7 +63,7 @@ RecreateSoundPanel::RecreateSoundPanel(IAppController& c) : PanelCard(c, "Recrea
     addAndMakeVisible(pitchVarSlider_);
 
     pitchVarLabel_.setText(TRANS("Pitch Var:"), juce::dontSendNotification);
-    pitchVarLabel_.setFont(KhensuTheme::labelFont(9.0f));
+    pitchVarLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(pitchVarLabel_);
 
     run_.onRetry([this] { runAnalysis(); });
@@ -208,7 +208,7 @@ void RecreateSoundPanel::paint(juce::Graphics& g)
     // Category badge + timbre/MIDI summary.
     auto head = b.removeFromTop(20);
     const juce::String cat = category_.toUpperCase();
-    g.setFont(KhensuTheme::labelFont(11.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     const int badgeW = juce::jmax(56, juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), cat) + 16);
     auto badge = head.removeFromLeft(badgeW).reduced(0, 1);
     g.setColour(KhensuTheme::accentTeal.withAlpha(0.18f));
@@ -217,7 +217,7 @@ void RecreateSoundPanel::paint(juce::Graphics& g)
     g.drawText(cat, badge, juce::Justification::centred, false);
     head.removeFromLeft(8);
     g.setColour(KhensuTheme::textSecondary);
-    g.setFont(KhensuTheme::monoFont(9.5f));
+    g.setFont(KhensuTheme::monoFont(type::caption));
     g.drawText(midiSummary_ + (timbreSummary_.isNotEmpty() ? "   -   " + timbreSummary_ : juce::String()), head,
                juce::Justification::centredLeft, false);
     b.removeFromTop(6);
@@ -226,7 +226,7 @@ void RecreateSoundPanel::paint(juce::Graphics& g)
     for (size_t i = 0; i < recipes_.size() && b.getHeight() > 40; ++i) {
         const auto& r = recipes_[i];
         // Estimate card height from wrapped chain text.
-        g.setFont(KhensuTheme::bodyFont(9.5f));
+        g.setFont(KhensuTheme::bodyFont(type::caption));
         const int chainLines = juce::jmax(1, (juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), r.chain) /
                                               juce::jmax(1, b.getWidth() - 12)) +
                                                  1);
@@ -237,15 +237,15 @@ void RecreateSoundPanel::paint(juce::Graphics& g)
         auto inner = card.reduced(6, 4);
 
         g.setColour(KhensuTheme::textPrimary);
-        g.setFont(KhensuTheme::labelFont(10.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText(r.plugin, inner.removeFromTop(14), juce::Justification::centredLeft, true);
 
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::monoFont(8.5f));
+        g.setFont(KhensuTheme::monoFont(type::caption));
         g.drawText(r.why, inner.removeFromTop(12), juce::Justification::centredLeft, true);
 
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(KhensuTheme::bodyFont(9.5f));
+        g.setFont(KhensuTheme::bodyFont(type::caption));
         g.drawFittedText("Chain: " + r.chain, inner, juce::Justification::topLeft, chainLines, 1.0f);
 
         b.removeFromTop(6);

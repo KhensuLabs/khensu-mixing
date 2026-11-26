@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/Dashboard/DynamicsPanel.h
 #pragma once
+#include "../shared/ChartKitDesktop.h"
 #include "../shared/PanelCard.h"
 #include "../shared/MeterBarComponent.h"
 #include "../shared/CompareDeltaChip.h"
@@ -12,15 +13,13 @@ namespace khensu {
 // Pseudo-3D heatmap strip showing per-section crest factor (a proxy for how
 // heavily each section has been compressed/limited - low crest = squashed,
 // high crest = dynamic) across the track timeline.
-class SectionDynamicsHeatStrip : public juce::Component {
+class SectionDynamicsHeatStrip : public ThemedBarChart {
   public:
-    SectionDynamicsHeatStrip() = default;
-    void setSections(const std::vector<float>& crestDbValues)
-    {
-        values_ = crestDbValues;
-        repaint();
-    }
-    void paint(juce::Graphics& g) override;
+    SectionDynamicsHeatStrip();
+    void setSections(const std::vector<float>& crestDbValues, const std::vector<juce::String>& labels = {});
+
+  protected:
+    void paintOverlay(juce::Graphics& g, juce::Rectangle<float> plot) override;
 
   private:
     std::vector<float> values_;
@@ -31,11 +30,13 @@ class SectionDynamicsHeatStrip : public juce::Component {
 // single-number crest/DR tiles by showing whether the whole track sits at
 // one crest value or swings between "consistently squashed" and "one hot
 // dynamic chorus" (a distribution single numbers can't distinguish).
-class CrestHistogramStrip : public juce::Component {
+class CrestHistogramStrip : public ThemedBarChart {
   public:
-    CrestHistogramStrip() = default;
+    CrestHistogramStrip();
     void setSections(const std::vector<float>& crestDbValues);
-    void paint(juce::Graphics& g) override;
+
+  protected:
+    void paintOverlay(juce::Graphics& g, juce::Rectangle<float> plot) override;
 
   private:
     static constexpr int kNumBins = 8;

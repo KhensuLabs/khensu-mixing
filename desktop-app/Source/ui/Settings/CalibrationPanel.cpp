@@ -43,18 +43,18 @@ CalibrationPanel::CalibrationPanel(IAppController& c) : PanelCard(c, "Monitor Ca
     addAndMakeVisible(targetBox_);
 
     splLabel_.setText(TRANS("Measured SPL:"), juce::dontSendNotification);
-    splLabel_.setFont(KhensuTheme::labelFont(10.5f));
+    splLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(splLabel_);
 
     splInput_.setInputRestrictions(5, "0123456789.");
     splInput_.setTextToShowWhenEmpty(TRANS("e.g. 74"), KhensuTheme::textTertiary);
-    splInput_.setFont(KhensuTheme::bodyFont(13.0f));
+    splInput_.setFont(KhensuTheme::bodyFont(type::body));
     addAndMakeVisible(splInput_);
 
     saveButton_.onClick = [this] { saveCalibration(); };
     addAndMakeVisible(saveButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(statusLabel_);
 

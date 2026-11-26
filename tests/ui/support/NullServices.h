@@ -112,6 +112,14 @@ class NullPlayback : public IPlayback {
     {
         return {};
     }
+    void setAbReferencePath(const juce::String& path) override
+    {
+        juce::ignoreUnused(path);
+    }
+    juce::String abReferencePath() const override
+    {
+        return {};
+    }
     std::optional<float> abProcessedLufs() const noexcept override
     {
         return {};
@@ -147,6 +155,39 @@ class NullPlayback : public IPlayback {
     PlaybackMeterTap* meterTap() noexcept override
     {
         return nullptr;
+    }
+    void setMonitorMode(MonitorMode mode) noexcept override
+    {
+        juce::ignoreUnused(mode);
+    }
+    MonitorMode monitorMode() const noexcept override
+    {
+        return {};
+    }
+    void setMonitorDim(bool dim) noexcept override
+    {
+        juce::ignoreUnused(dim);
+    }
+    bool monitorDim() const noexcept override
+    {
+        return false;
+    }
+    void setLivePreviewChain(void* owner, const std::vector<ipc::HttpServiceBridge::EffectSpec>& chain, const juce::String& label) override
+    {
+        juce::ignoreUnused(owner, chain, label);
+    }
+    void clearLivePreview(void* owner) override
+    {
+        juce::ignoreUnused(owner);
+    }
+    bool isLivePreviewOwner(void* owner) const override
+    {
+        juce::ignoreUnused(owner);
+        return false;
+    }
+    LivePreviewStatus livePreviewStatus() const override
+    {
+        return {};
     }
 };
 
@@ -793,6 +834,11 @@ class NullShell : public IShell {
     {
         juce::ignoreUnused(key);
     }
+    bool revealCardForFinding(const std::string& findingKeyOrCode) override
+    {
+        juce::ignoreUnused(findingKeyOrCode);
+        return false;
+    }
     ReportMode getReportMode() const noexcept override
     {
         return ReportMode::EngineerDetail;
@@ -820,6 +866,10 @@ class NullShell : public IShell {
     void showMixMasterCard(int tabIdx) override
     {
         juce::ignoreUnused(tabIdx);
+    }
+    void showExportStep(int step) override
+    {
+        juce::ignoreUnused(step);
     }
     void showMetricExplanation(int gauge) override
     {
@@ -909,6 +959,15 @@ class NullIssues : public IIssues {
         juce::ignoreUnused(recId, amount, onDone);
     }
     bool fixTopIssue(Done onDone) override
+    {
+        juce::ignoreUnused(onDone);
+        return false;
+    }
+    SafeFixPlan safeFixes() const override
+    {
+        return {};
+    }
+    bool fixAllSafe(Done onDone) override
     {
         juce::ignoreUnused(onDone);
         return false;

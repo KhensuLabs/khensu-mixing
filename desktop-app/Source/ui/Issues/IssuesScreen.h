@@ -4,6 +4,7 @@
 #include "../shared/ScreenHeader.h"
 #include "../shared/KhensuTheme.h" // ThemeListener
 #include "../shared/IssueQueuePanel.h"
+#include "../shared/ListenerHandle.h"
 
 namespace khensu {
 
@@ -27,19 +28,26 @@ class IssuesScreen final : public juce::Component {
     /// "Fix top issue" (header button, F key, palette): fixes the most
     /// severe open issue that has a one-click fix, here in the queue.
     void fixTopIssue();
+    /// ENH-2 "Fix all safe" (header button, Shift+F, palette): every open
+    /// issue whose fix is validated on real music, rendered as one version.
+    void fixAllSafe();
     /// UX2-1: selects (and scrolls to) the finding with this key.
     void selectIssue(const std::string& key) { queue_.select(key, true); }
 
   private:
     void updateEmptyState();
+    /// The Fix all safe button's count, tooltip and enabled state.
+    void updateFixAllButton();
 
     IAppController& controller_;
 
     ScreenHeader titleLabel_; // UX-3: title = the sidebar label
     juce::TextButton fixTopButton_{TRANS("Fix top issue")}; // the header's primary (UX-3)
+    juce::TextButton fixAllButton_{TRANS("Fix all safe")};  // ENH-2: a secondary beside it
     juce::Label emptySessionLabel_;
     juce::TextButton loadTrackButton_; // UX-5: the empty state's one action
     IssueQueuePanel queue_;
+    ListenerHandle issuesListener_; // ENG-2: after the members its callback touches
     /// Re-applies every cached palette colour. Called at construction and on
     /// each theme change.
     void applyThemeColours();

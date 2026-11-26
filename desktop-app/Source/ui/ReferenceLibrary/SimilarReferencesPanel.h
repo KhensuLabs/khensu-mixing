@@ -86,6 +86,7 @@ class SimilarReferencesPanel final : public juce::Component, private juce::ListB
     std::vector<Row> rows_;
     std::unique_ptr<juce::FileChooser> chooser_;
     bool busy_ = false;
+    int libraryRetries_ = 0; ///< UXR-4: re-asks after the engine did not answer
 
     void applyThemeColours();
 

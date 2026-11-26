@@ -6,6 +6,7 @@
 // so upstream fixes come before the work that depends on them).
 #pragma once
 #include <JuceHeader.h>
+#include "../shared/KhensuEmptyState.h"
 #include "../shared/KhensuTheme.h" // ThemeListener
 #include "../shared/PanelCard.h"
 #include "../shared/ListenerHandle.h"
@@ -151,7 +152,7 @@ class SuggestionListPanel final : public PanelCard {
     juce::Component listContent_;
     std::vector<std::unique_ptr<RecommendationRow>> rows_;
     std::vector<std::unique_ptr<GroupHeader>> headers_;
-    juce::Label emptyLabel_;
+    KhensuEmptyState emptyState_; // UXR-6
     juce::Label footerLabel_;
     juce::TextButton moreButton_{"..."}; // i18n-exempt(symbol; named by setTitle)
 

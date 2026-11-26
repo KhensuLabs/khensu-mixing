@@ -8,6 +8,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "../shared/KhensuTheme.h" // ThemeListener
+#include "../shared/ChartKitDesktop.h"
 #include "../shared/PanelCard.h"
 #include "../shared/PanelRunState.h"
 #include <vector>
@@ -34,6 +35,7 @@ class TaxonomyEnergyPanel final : public PanelCard {
         buckets_.clear();
         provisional_ = false;
         run_.reset();
+        rebuildChart();
         resized();
         repaint();
     }
@@ -47,6 +49,7 @@ class TaxonomyEnergyPanel final : public PanelCard {
 
   private:
     void runAnalysis();
+    void rebuildChart();
 
     struct Bucket {
         juce::String id, label;
@@ -63,6 +66,7 @@ class TaxonomyEnergyPanel final : public PanelCard {
 
     std::vector<Bucket> buckets_;
     bool provisional_ = false; ///< §3: buckets_ hold a full-mix estimate
+    ThemedBarChart chart_;     ///< VIS-1: the shares as a ChartKit bar chart
 
     /// Re-applies every cached palette colour. Called at construction and on
     /// each theme change.

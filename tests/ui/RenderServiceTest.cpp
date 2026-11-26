@@ -437,13 +437,15 @@ TEST_CASE("RenderService: the native fallback decision (OVH-9)", "[split][render
     CHECK(RenderService::shouldRenderNatively(false, native));
     CHECK_FALSE(RenderService::shouldRenderNatively(true, native)); // the service is the reference when up
     // FN2-2a: every effect a fix emits renders natively now.
-    for (const char* nowNative : {"SpectralDenoise", "TransientShaper", "TapeSaturation", "StereoWidener"}) {
+    for (const char* nowNative : {"SpectralDenoise", "TransientShaper", "TapeSaturation", "StereoWidener",
+                                   "DynamicEQ", "MultibandCompressor", "MidSideProcessor", "Exciter",
+                                   "BassMonoMaker", "NoiseGate"}) {
         auto chain = native;
         chain.push_back({nowNative, {}});
         INFO(nowNative);
         CHECK(RenderService::shouldRenderNatively(false, chain));
     }
-    for (const char* engineOnly : {"Reverb", "MultibandCompressor", "GlueCompressor"}) {
+    for (const char* engineOnly : {"Reverb", "GlueCompressor"}) {
         auto chain = native;
         chain.push_back({engineOnly, {}});
         INFO(engineOnly);
@@ -520,7 +522,7 @@ TEST_CASE("RenderService renders a fix natively while the engine is down (OVH-9)
     SECTION("an engine-only chain still goes to the service")
     {
         auto render = shelfChain();
-        render.chain.push_back({"MultibandCompressor", {}});
+        render.chain.push_back({"Reverb", {}});
         Reported r;
         f.renders->renderVersion(render, "_fix", recordInto(r));
         REQUIRE(f.renders->renderJobs().activeJobs().size() == 1);

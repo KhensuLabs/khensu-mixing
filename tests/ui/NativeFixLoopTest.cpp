@@ -13,11 +13,16 @@
 #include "support/CleanTestMix.h"
 #include <khensu/analysis/AnalysisInputs.h>
 #include <khensu/analysis/AudioAnalyzer.h>
+#include <khensu/dsp/ChainProcessor.h>
 #include <khensu/dsp/OfflineChainRenderer.h>
+#include <khensu/mixerchain/RecommendationDspMapper.h>
+#include <khensu/recommendations/MidSideImbalanceRecommender.h>
 #include <khensu/recommendations/RecommendationEngine.h>
 #include <khensu/targets/CreativeTarget.h>
 #include <khensu/targets/GenreDatabase.h>
 #include <JuceHeader.h>
+
+#include <cmath>
 
 using namespace khensu;
 namespace mix = khensu::test::clean_mix;
@@ -175,4 +180,82 @@ TEST_CASE("FN2-2a: a hiss defect is fixed natively and checked without the servi
     CHECK(after.artifacts.noise_floor_db < before.artifacts.noise_floor_db - 4.0f);
     defect.deleteFile();
     fixed.deleteFile();
+}
+
+// STU-18: the sub-too-wide finding carries bass_mono_hz, its chain is a
+// BassMonoMaker at that crossover, and the native render of that chain
+// brings the measured ratio (side / mid energy, 20-100 Hz, as
+// extended_analyzer.py measures it) far under the finding's 0.70 gate.
+TEST_CASE("A sub too wide renders a bass mono that clears it (STU-18)", "[stu18][fixloop]")
+{
+    AnalysisResult r;
+    r.file_id = "f_sub";
+    r.mid_side_imbalance = AnalysisResult::MidSideImbalanceData{};
+    r.mid_side_imbalance->side_heavy_ratio = 0.95f;
+    const auto recs = MidSideImbalanceRecommender{}.recommend(r, {}, {});
+    REQUIRE(recs.size() == 1);
+    REQUIRE(recs[0].suggested_parameters.count("bass_mono_hz") == 1);
+    CHECK(juce::exactlyEqual(recs[0].suggested_parameters.at("bass_mono_hz"), mixerchain::kSubBassMonoHz)); // the plugin's too
+    const auto chain = buildRecommendationChain(recs[0]);
+    REQUIRE(chain.size() == 1);
+    CHECK(chain[0].effect == "BassMonoMaker");
+    CHECK(juce::exactlyEqual(chain[0].parameters.at("crossover_hz"), MidSideImbalanceRecommender::kBassMonoHz));
+    CHECK(RenderService::shouldRenderNatively(false, chain));
+
+    // A sub at full width: side tones as loud as the mid's, 90 degrees apart
+    // (uncorrelated), plus a wide 1 kHz the fix must leave wide.
+    constexpr double sr = 48000.0, pi = 3.14159265358979323846;
+    const int n = static_cast<int>(sr * 2.0);
+    const double subs[] = {40.0, 60.0, 90.0};
+    dsp::PlanarBlock in;
+    in.ch.assign(2, std::vector<double>(static_cast<size_t>(n), 0.0));
+    for (int i = 0; i < n; ++i) {
+        const double t = static_cast<double>(i) / sr;
+        double mid = 0.0, side = 0.2 * std::cos(2.0 * pi * 1000.0 * t);
+        for (const double hz : subs) {
+            mid += 0.15 * std::sin(2.0 * pi * hz * t);
+            side += 0.15 * std::cos(2.0 * pi * hz * t);
+        }
+        in.ch[0][static_cast<size_t>(i)] = mid + side;
+        in.ch[1][static_cast<size_t>(i)] = mid - side;
+    }
+    dsp::ChainProcessor fix;
+    std::string error;
+    REQUIRE(fix.prepare(RenderService::nativeChain(chain), sr, 2, error));
+    dsp::PlanarBlock out;
+    out.ch.resize(2);
+    const auto sink = [&](const dsp::PlanarBlock& b) {
+        for (size_t c = 0; c < 2; ++c) out.ch[c].insert(out.ch[c].end(), b.ch[c].begin(), b.ch[c].end());
+    };
+    fix.process(in, sink);
+    fix.finish(sink);
+    REQUIRE(out.numSamples() == n);
+
+    // Energy of the given tones in mid and side over the last second.
+    const auto tonePower = [&](const dsp::PlanarBlock& y, bool sideOf, double hz) {
+        const int from = n - static_cast<int>(sr);
+        double re = 0.0, im = 0.0;
+        for (int i = from; i < n; ++i) {
+            const auto k = static_cast<size_t>(i);
+            const double v = 0.5 * (y.ch[0][k] + (sideOf ? -y.ch[1][k] : y.ch[1][k]));
+            const double ph = 2.0 * pi * hz * static_cast<double>(i - from) / sr;
+            re += v * std::cos(ph);
+            im -= v * std::sin(ph);
+        }
+        return re * re + im * im;
+    };
+    const auto ratio = [&](const dsp::PlanarBlock& y) {
+        double side = 0.0, mid = 0.0;
+        for (const double hz : subs) {
+            side += tonePower(y, true, hz);
+            mid += tonePower(y, false, hz);
+        }
+        return side / mid;
+    };
+    INFO("ratio before " << ratio(in) << ", after " << ratio(out));
+    CHECK(ratio(in) > MidSideImbalanceRecommender::kSideHeavyRatio);
+    CHECK(ratio(out) < 0.1);
+    // The mid's sub and the 1 kHz image are kept.
+    CHECK(std::abs(10.0 * std::log10(tonePower(out, false, 60.0) / tonePower(in, false, 60.0))) < 0.5);
+    CHECK(std::abs(10.0 * std::log10(tonePower(out, true, 1000.0) / tonePower(in, true, 1000.0))) < 0.5);
 }

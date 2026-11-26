@@ -104,27 +104,39 @@ int runWithConsole(const std::wstring& commandLine, const std::wstring& pythonPa
     return static_cast<int>(code);
 }
 
-void writeConsoleError(const std::string& utf8Line)
+namespace {
+void writeLine(HANDLE target, const std::string& utf8Line)
 {
-    const auto& h = consoleHandles();
-    if (!usableHandle(h.err)) return;
+    if (!usableHandle(target)) return;
     const std::string line = utf8Line + "\r\n";
     DWORD written = 0;
-    if (GetFileType(h.err) == FILE_TYPE_CHAR) {
+    if (GetFileType(target) == FILE_TYPE_CHAR) {
         // A real console: write UTF-16 so non-ASCII paths display correctly.
         const int wlen = MultiByteToWideChar(CP_UTF8, 0, line.data(), static_cast<int>(line.size()), nullptr, 0);
         std::wstring wide(static_cast<size_t>(wlen), L'\0');
         MultiByteToWideChar(CP_UTF8, 0, line.data(), static_cast<int>(line.size()), wide.data(), wlen);
-        WriteConsoleW(h.err, wide.data(), static_cast<DWORD>(wide.size()), &written, nullptr);
+        WriteConsoleW(target, wide.data(), static_cast<DWORD>(wide.size()), &written, nullptr);
     } else {
-        WriteFile(h.err, line.data(), static_cast<DWORD>(line.size()), &written, nullptr);
+        WriteFile(target, line.data(), static_cast<DWORD>(line.size()), &written, nullptr);
     }
+}
+} // namespace
+
+void writeConsoleError(const std::string& utf8Line)
+{
+    writeLine(consoleHandles().err, utf8Line);
+}
+
+void writeConsoleOutput(const std::string& utf8Text)
+{
+    writeLine(consoleHandles().out, utf8Text);
 }
 
 #else
 
 int runWithConsole(const std::wstring&, const std::wstring&) { return -1; }
 void writeConsoleError(const std::string&) {}
+void writeConsoleOutput(const std::string&) {}
 
 #endif
 

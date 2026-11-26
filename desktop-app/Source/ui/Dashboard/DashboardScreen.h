@@ -90,8 +90,21 @@ class IAppController;
 /// centralized here (rather than on each of the 13 panel subclasses) since
 /// the drop target/index only depends on which panel's bounds the pointer is
 /// over, not on anything panel-type-specific.
-class Zone3Grid final : public juce::Component, public juce::DragAndDropTarget {
+class Zone3Grid final : public juce::Component, public juce::DragAndDropTarget, private juce::Timer {
   public:
+    ~Zone3Grid() override { stopTimer(); }
+
+    /// ENH-7: a revealed card glows and fades (~1.4 s) so the eye finds it.
+    void flash(juce::Component* card)
+    {
+        flashTarget_ = card;
+        flashStartMs_ = juce::Time::getMillisecondCounterHiRes();
+        startTimerHz(30);
+        repaint();
+    }
+    bool isFlashing() const noexcept { return isTimerRunning(); }
+    juce::Component* flashTarget() const noexcept { return flashTarget_.getComponent(); }
+
     std::function<bool(const SourceDetails&)> isInterested;
     std::function<void(const SourceDetails&)> onDragMove;
     std::function<void(const SourceDetails&)> onDrop;
@@ -115,12 +128,38 @@ class Zone3Grid final : public juce::Component, public juce::DragAndDropTarget {
 
     void paintOverChildren(juce::Graphics& g) override
     {
+        if (auto* target = flashTarget_.getComponent(); target != nullptr && isTimerRunning() && target->isVisible()) {
+            const float t = flashProgress();
+            const float alpha = t < 0.15f ? t / 0.15f : 1.0f - (t - 0.15f) / 0.85f;
+            auto r = getLocalArea(target->getParentComponent(), target->getBounds()).toFloat().expanded(4.0f);
+            g.setColour(KhensuTheme::focusRing.withAlpha(0.18f * alpha));
+            g.fillRoundedRectangle(r, 8.0f);
+            g.setColour(KhensuTheme::focusRing.withAlpha(alpha));
+            g.drawRoundedRectangle(r, 8.0f, 3.0f);
+        }
         if (!hoverHighlightBounds) return;
         auto r = hoverHighlightBounds();
         if (r.isEmpty()) return;
         g.setColour(KhensuTheme::accentTeal);
         g.drawRoundedRectangle(r.toFloat().expanded(3.0f), 6.0f, 2.5f);
     }
+
+  private:
+    static constexpr double kFlashMs = 1400.0;
+    float flashProgress() const noexcept
+    {
+        return static_cast<float>(juce::jlimit(0.0, 1.0, (juce::Time::getMillisecondCounterHiRes() - flashStartMs_) / kFlashMs));
+    }
+    void timerCallback() override
+    {
+        if (flashProgress() >= 1.0f) {
+            stopTimer();
+            flashTarget_ = nullptr;
+        }
+        repaint();
+    }
+    juce::Component::SafePointer<juce::Component> flashTarget_;
+    double flashStartMs_ = 0.0;
 };
 
 // THREAD_CONTEXT(khensu::ThreadContext::UIThread)
@@ -181,10 +220,22 @@ class DashboardScreen final : public juce::Component, public juce::DragAndDropCo
     // instead of scrolling all 30+ cards. "All" keeps the full grid. The tab
     // strip sits above the grid cards and reuses the existing order/visibility/
     // drag-reorder machinery - it only narrows which panels are active.
-    SegmentedControl zone3Tabs_; ///< UX-17: the one themed segment control
+    /// ENH-7: the view row - Essentials | All cards | More views (the
+    /// category views, Loudness, Spectrum, ..., behind one menu); the button
+    /// of the view on screen is on.
+    juce::TextButton essentialsViewButton_, allViewButton_, moreViewsButton_;
+    juce::Label viewCaption_;
+    void showMoreViewsMenu();
+    void updateViewButtons();
     // UX-1: "Essentials" (the default) shows about eight cards picked from the
     // result's findings (EssentialsSelection.h); "All" shows every card.
+    // ENH-7: the user's choice is remembered (dashboard_view); a reveal that
+    // has to widen the view does not change it.
     juce::String activeZone3Category_{"Essentials"};
+    static constexpr const char* kViewPrefKey = "dashboard_view";
+    /// Shows a view (a dashboard_category::kTabs name); `persist` saves it as
+    /// the user's choice.
+    void setView(const juce::String& category, bool persist);
     std::vector<std::string> essentialIds_;
     juce::String categoryForPanel(const std::string& id) const;
 
@@ -226,6 +277,10 @@ class DashboardScreen final : public juce::Component, public juce::DragAndDropCo
     juce::Component* panelById(const std::string& id) const;
     juce::String panelLabel(const std::string& id) const;
     void applyWorkspaceLayout(const WorkspaceLayout& layout, bool persist = true);
+    /// UXR-9: the arrangement now (order, visibility, detail level), and an
+    /// undo toast that puts `before` back.
+    WorkspaceLayout currentLayout() const;
+    void offerCardUndo(const juce::String& message, const WorkspaceLayout& before);
     void openWeightEditor();
     void openLayoutEditor();
     void openLayoutEditorWith(const std::vector<juce::String>& savedNames);
@@ -356,19 +411,35 @@ class DashboardScreen final : public juce::Component, public juce::DragAndDropCo
     // Shown only when the current analysis is C++-only (Python deep pass didn't
     // run) - a one-click manual re-run for the service-up-but-deep-failed case.
     juce::TextButton btnRerunDeep_{TRANS("Re-run Deep Analysis")};
-    // UX-9: one Snapshots menu (save as A / B, compare) instead of three buttons.
-    juce::TextButton snapshotsButton_{TRANS("Snapshots")};
-    void showSnapshotsMenu();
-    void compareSnapshots();
-    std::optional<AnalysisResult> snapA_;
-    std::optional<AnalysisResult> snapB_;
-    std::unique_ptr<juce::Component> compareOverlay_;
-
-    // Guided Fix Wizard overlay (kimi audit P2): step-through top recommendations.
+    // ENH-8: snapshots live in Mix / Master > Versions; this is the link there.
+    juce::TextButton snapshotsButton_;
 
     // Reference-track ritual helper: forwards match-EQ to the compare panel.
   public:
     void applyReferenceMatchEq();
+
+    /// ENH-7: shows the card for a finding (its code or recommendation id):
+    /// widens the view when the card is not in it, selects its tab in a
+    /// group card, scrolls to it and flashes it. False when no card on this
+    /// screen shows that finding. IShell::revealCardForFinding calls it.
+    bool revealCardForFinding(const std::string& findingKeyOrCode);
+    /// STU-7: the same reveal by card id (a Zone 3 card, a group tab or a
+    /// core panel: "loudness" / "dynamics" / "spectral" / "stereo"). False
+    /// without a session or for an unknown id.
+    bool revealCard(const std::string& cardId);
+    /// STU-7: every card the command palette can find - id, title and extra
+    /// search words (its category, and its group card for a tab).
+    struct SearchableCard {
+        std::string id;
+        juce::String title, keywords;
+    };
+    std::vector<SearchableCard> searchableCards() const;
+    /// For tests: the current view (a dashboard_category::kTabs name).
+    const juce::String& currentView() const noexcept { return activeZone3Category_; }
+    /// For tests: the card a reveal last flashed (null when none).
+    juce::Component* lastRevealedCard() const noexcept { return grid.flashTarget(); }
+    /// UXR-9: the undo toast's host, for tests.
+    void undoLastCardChange();
 
   private:
     /// Re-applies every cached palette colour on the dashboard chrome. Called

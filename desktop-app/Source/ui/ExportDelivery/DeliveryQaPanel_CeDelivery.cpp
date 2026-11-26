@@ -185,14 +185,14 @@ void DeliveryQaPanel::runStreamPreview()
             }
             const auto v = res.value();
             const juce::String matched = v[af::StreamPreviewResponse::matched_preview_path].toString();
-            juce::String text = formatStreamPreview(v);
+            auto result = streamPreviewResult(v);
             if (matched.isNotEmpty() && juce::File(matched).existsAsFile()) {
                 // B = the codec preview at the reference's loudness; the app's
                 // own level-matched A/B then compares it with the master.
                 panel.controller_.setAbProcessedPath(matched);
-                text << "\n" << TRANS("Loaded into the A/B B slot - toggle A/B to compare with your master.");
+                result.notes.add(TRANS("Loaded into the A/B B slot - toggle A/B to compare with your master."));
             }
-            panel.showResult(text);
+            panel.showResult(std::move(result));
         }, [](DeliveryQaPanel& panel) { panel.setBusy(false); });
     });
 }
@@ -223,6 +223,32 @@ juce::String DeliveryQaPanel::formatStreamPreview(const juce::var& v)
         for (const auto& n : *notes)
             out << "- " << n.toString() << "\n";
     return out;
+}
+
+DeliveryResult DeliveryQaPanel::streamPreviewResult(const juce::var& v)
+{
+    namespace S = af::StreamPreviewResponse;
+    const bool real = v[S::codec_mode].toString() == "ffmpeg";
+    DeliveryResult r;
+    r.title = v[S::platform_name].toString() + "  -  " + v[S::codec].toString().toUpperCase() + " " +
+              v[S::bitrate_kbps].toString() + " kbps";
+    r.add(DeliveryResult::Status::Info, TRANS("Master"), levels(v[S::master]));
+    const auto tpDelta = v[S::true_peak_delta_db];
+    const bool tpRose = (tpDelta.isDouble() || tpDelta.isInt()) && static_cast<double>(tpDelta) > 0.5;
+    r.add(tpRose ? DeliveryResult::Status::Warn : DeliveryResult::Status::Info, TRANS("After decode"),
+          levels(v[S::decoded]), TRANS("true peak change") + " " + n1(tpDelta, 2) + " dB");
+    const auto art = v[S::artifacts];
+    r.add(DeliveryResult::Status::Info, TRANS("Codec distortion"), n1(v[S::codec_distortion_db]) + " dB",
+          TRANS("HF loss") + " " + n1(art[af::StreamCodecArtifacts::hf_loss_db]) + " dB");
+    r.add((bool)v[S::limiter_engaged] ? DeliveryResult::Status::Warn : DeliveryResult::Status::Info,
+          TRANS("Platform gain"), n1(v[S::platform_gain_db]) + " dB",
+          (bool)v[S::limiter_engaged] ? TRANS("limiter engaged") : juce::String());
+    r.add(DeliveryResult::Status::Info, TRANS("As heard"), levels(v[S::final]));
+    r.notes.add(real ? TRANS("Real encode (ffmpeg).") : TRANS("SIMULATED codec:") + " " + v[S::simulated_reason].toString());
+    if (auto* notes = v[S::notes].getArray())
+        for (const auto& n : *notes)
+            r.notes.add(n.toString());
+    return r;
 }
 
 juce::String DeliveryQaPanel::formatImmersiveCheck(const juce::var& v)

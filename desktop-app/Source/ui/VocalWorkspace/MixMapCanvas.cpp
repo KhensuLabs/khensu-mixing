@@ -5,6 +5,7 @@
 #include "../../IAppController.h"
 #include <khensu/ipc/HttpServiceBridge.h>
 #include <khensu/ipc/generated/ApiSchema.h>
+#include <khensu/ui/VizFrequencyAxis.h>
 
 namespace khensu {
 
@@ -14,7 +15,8 @@ namespace {
 constexpr int kToolbarH = 26;
 constexpr int kStatusH = 16;
 constexpr float kStripH = 54.0f;
-constexpr double kMinHz = 30.0, kMaxHz = 16000.0;
+// VIS-3: the standard frequency axis (20 Hz - 20 kHz).
+constexpr double kMinHz = ui::viz::kFreqMinHz, kMaxHz = ui::viz::kFreqMaxHz;
 
 juce::String hzLabel(double hz)
 {
@@ -71,7 +73,7 @@ MixMapCanvas::MixMapCanvas(IAppController& c) : PanelCard(c, "Mix Map")
     };
     addAndMakeVisible(averageButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setText(TRANS("Separate stems to build the mix map."), juce::dontSendNotification);
     addAndMakeVisible(statusLabel_);
     startTimerHz(15);
@@ -225,13 +227,14 @@ void MixMapCanvas::paint(juce::Graphics& g)
     g.fillRoundedRectangle(area, 6.0f);
 
     // Frequency grid.
-    g.setFont(KhensuTheme::labelFont(9.0f));
-    for (double hz : {50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0, 5000.0, 10000.0}) {
+    g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
+    for (const float tick : ui::viz::kFreqTicksHz) {
+        const double hz = tick;
         const float x = xForHz(hz, area);
         g.setColour(KhensuTheme::borderSubtle.withAlpha(0.5f));
         g.drawVerticalLine(juce::roundToInt(x), area.getY() + 14.0f, area.getBottom());
         g.setColour(KhensuTheme::textTertiary);
-        g.drawText(hzLabel(hz), juce::Rectangle<float>(x - 20.0f, area.getY() + 1.0f, 40.0f, 12.0f),
+        g.drawText(ui::viz::freqTickLabel(tick), juce::Rectangle<float>(x - 20.0f, area.getY() + 1.0f, 40.0f, 12.0f),
                    juce::Justification::centred);
     }
 
@@ -276,10 +279,10 @@ void MixMapCanvas::paint(juce::Graphics& g)
         g.setColour(col);
         g.drawEllipse(c.x - r, c.y - r, 2 * r, 2 * r, 2.0f);
         g.setColour(KhensuTheme::textPrimary);
-        g.setFont(KhensuTheme::labelFont(11.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText(n.stem.toUpperCase(), juce::Rectangle<float>(c.x - 50.0f, c.y - 8.0f, 100.0f, 14.0f),
                    juce::Justification::centred);
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textSecondary);
         g.drawText(juce::String(juce::roundToInt(n.energy * 100.0)) + "%",
                    juce::Rectangle<float>(c.x - 30.0f, c.y + 5.0f, 60.0f, 12.0f), juce::Justification::centred);

@@ -189,6 +189,24 @@ juce::String formatHz(float hz)
     return juce::String((int)std::lround(std::round(hz / magnitude) * magnitude)) + " Hz";
 }
 
+UnmaskCut unmaskCutFor(const MaskingConflict& conflict, const MaskingOptions& options)
+{
+    UnmaskCut cut;
+    const float gap = std::abs(conflict.levelADb - conflict.levelBDb);
+    const float window = juce::jmax(0.5f, options.maxLevelGapDb);
+    const float closeness = juce::jlimit(0.0f, 1.0f, 1.0f - gap / window);
+    cut.gainDb = -(1.0f + (kMaxUnmaskCutDb - 1.0f) * closeness);
+    const int lo = juce::jlimit(0, kNumBands - 1, juce::jmin(conflict.bandLo, conflict.bandHi));
+    const int hi = juce::jlimit(0, kNumBands - 1, juce::jmax(conflict.bandLo, conflict.bandHi));
+    const double loHz = bandLowEdgeHz(lo), hiHz = bandHighEdgeHz(hi);
+    // A bell as wide as the overlapping range: Q from its bandwidth in octaves.
+    const double octaves = juce::jmax(0.1, std::log2(hiHz / loHz));
+    const double ratio = std::pow(2.0, octaves);
+    cut.q = static_cast<float>(juce::jlimit(0.7, 4.0, std::sqrt(ratio) / (ratio - 1.0)));
+    cut.freqHz = conflict.freqHz > 0.0f ? conflict.freqHz : static_cast<float>(std::sqrt(loHz * hiHz));
+    return cut;
+}
+
 juce::String MaskingConflict::describe() const
 {
     juce::String text = nameA + " vs " + nameB + " at " + formatHz(freqHz);

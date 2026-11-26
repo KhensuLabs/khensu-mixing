@@ -344,7 +344,7 @@ void StereoFieldVizComponent::paint(juce::Graphics& g)
     g.fillPath(wall);
 
     // Coordinate axes labels projected in 3D
-    g.setFont(KhensuTheme::labelFont(8.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary.withAlpha(0.6f));
     auto pLeft = camera_.project({-1.2f, 0.0f, zFloor}, w, h);
     auto pRight = camera_.project({1.2f, 0.0f, zFloor}, w, h);
@@ -437,7 +437,7 @@ void StereoFieldVizComponent::paint(juce::Graphics& g)
         g.fillEllipse(obj.screenPos.x - rad * 0.5f, obj.screenPos.y - rad * 0.5f, rad * 0.5f, rad * 0.5f);
 
         // Label
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(obj.label, (int)(obj.screenPos.x - 50.0f), (int)(obj.screenPos.y + rad + 2.0f), 100, 12,
                    juce::Justification::centred);
@@ -446,7 +446,7 @@ void StereoFieldVizComponent::paint(juce::Graphics& g)
     // Legend at bottom
     auto legendArea = getLocalBounds().removeFromBottom(16).toFloat();
     float lx = legendArea.getCentreX() - 90.0f;
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
 
     if (stemsAvailable) {
         g.setColour(KhensuTheme::textTertiary);

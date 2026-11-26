@@ -36,6 +36,17 @@ class MlApi : public virtual BridgeTransport {
     /// model registry, as (file name, JSON text). A call that failed gives an
     /// empty text, so a bundle still builds while the service is down.
     std::vector<std::pair<juce::String, juce::String>> diagnosticsSnapshots();
+    /// AUTO-4: the same diagnostics one by one, for Settings > Data.
+    /// GET /diagnostics/memory (api::fields::MemoryResponse).
+    khensu::Result<juce::var, BridgeError> diagnosticsMemory();
+    /// GET /diagnostics/queues (QueueDiagnosticsResponse).
+    khensu::Result<juce::var, BridgeError> diagnosticsQueues();
+    /// GET /diagnostics/security_events (SecurityEventsResponse).
+    khensu::Result<juce::var, BridgeError> diagnosticsSecurityEvents();
+    /// GET /analysis/cache: the on-disk analysis cache (AnalysisCacheStatsResponse).
+    khensu::Result<juce::var, BridgeError> analysisCacheStats();
+    /// GET /analyze/models/registry (ModelRegistryResponse).
+    khensu::Result<juce::var, BridgeError> modelRegistry();
     /// GET /taste/model/status and POST /taste/model/train.
     khensu::Result<juce::var, BridgeError> tasteModelStatus();
     khensu::Result<juce::var, BridgeError> tasteModelTrain();

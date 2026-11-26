@@ -69,7 +69,7 @@ void SessionHealthStrip::paint(juce::Graphics& g)
     g.drawHorizontalLine(getHeight() - 1, 0.0f, (float)getWidth());
 
     auto b = getLocalBounds().reduced(10, 2);
-    g.setFont(KhensuTheme::labelFont(11.0f)); // UX-5: readable, sentence case
+    g.setFont(KhensuTheme::labelFont(type::caption)); // UX-5: readable, sentence case
 
     // Segment 1: session clock
     g.setColour(KhensuTheme::textTertiary);

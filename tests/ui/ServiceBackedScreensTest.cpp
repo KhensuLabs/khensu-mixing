@@ -8,7 +8,7 @@
 #include "support/FakeApplyChainServer.h"
 #include "support/FakeAppController.h"
 #include "settings/OnlineSettings.h"
-#include "ui/AiDetection/AiDetectionScreen.h"
+#include "ui/ProvenanceSource/AiDetectionScreen.h"
 #include "ui/ReferenceLibrary/ReferenceLibraryScreen.h"
 #include "ui/ReferenceLibrary/SimilarReferencesPanel.h"
 #include "ui/Settings/SettingsScreen.h"
@@ -126,7 +126,9 @@ TEST_CASE("AI Detection: a scan result reaches the screen and asks for the deep 
         CHECK(sent["file_path"].toString() == "C:/ver6/song.wav");
         CHECK(static_cast<bool>(sent["include_learned"])); // AID-08: the explicit scan is the deep one
         CHECK(server.requestCount("POST /analyze/mix_quality") == 1);
-        CHECK(findButton(screen, "Scan for AI / Artifacts")->isEnabled());
+        // AUTO-1: with a result on screen the button runs the scan again.
+        REQUIRE(findButton(screen, "Re-scan") != nullptr);
+        CHECK(findButton(screen, "Re-scan")->isEnabled());
     }
 }
 
@@ -163,17 +165,19 @@ TEST_CASE("Reference Library: the cloud shows the selected genre's points and dr
     {
         khensu::ReferenceLibraryScreen screen(controller, server.baseUrl().toStdString());
         screen.setSize(1400, 900);
-        screen.setVisible(true); // first show selects a genre and asks for its points
+        screen.setVisible(true); // no session: the picker starts on "All genres", nothing to fetch
+        CHECK(controller.pendingReferencePoints.empty());
+        CHECK(screen.selectedGenreId().isEmpty());
+        // UXR-4: All, Unsorted, then per family "All <family>" and its genres
+        // (here each genre is its own family, so "All Pop" / "All Rock").
+        REQUIRE(screen.pickerChoices().size() == 4);
+        screen.selectGenre("pop");
         REQUIRE(controller.pendingReferencePoints.size() == 1);
         const juce::String first = controller.pendingReferencePoints[0].genreId;
+        CHECK(first == "pop");
 
         // Switch genre before the first reply lands (UIX-20).
-        juce::ListBox* genres = nullptr;
-        for (auto* child : screen.getChildren())
-            if (auto* lb = dynamic_cast<juce::ListBox*>(child)) genres = lb;
-        REQUIRE(genres != nullptr);
-        REQUIRE(genres->getListBoxModel()->getNumRows() == 2);
-        genres->selectRow(genres->getSelectedRow() == 0 ? 1 : 0);
+        screen.selectGenre("rock");
         REQUIRE(controller.pendingReferencePoints.size() == 2);
         const juce::String second = controller.pendingReferencePoints[1].genreId;
         REQUIRE(second != first);
@@ -210,6 +214,7 @@ TEST_CASE("Reference Library: a genre with no reference data says so", "[ver6][s
         khensu::ReferenceLibraryScreen screen(controller, server.baseUrl().toStdString());
         screen.setSize(1400, 900);
         screen.setVisible(true);
+        screen.selectGenre("pop");
         REQUIRE(controller.answerReferencePoints("pop", {}));
         CHECK(anyLabelContains(screen, "No reference data available for this genre yet."));
         pumpFor(50);
@@ -383,4 +388,62 @@ TEST_CASE("Settings: a failed cache clear offers a retry", "[ver6][screens][serv
         CHECK(clear->isEnabled());
     }
     dir.deleteRecursively();
+}
+
+// ---- Reference folder scan (REFS-1, UXR-4) -------------------------------------
+
+TEST_CASE("Reference Library: the folder scan fills the counts, the picker and the list", "[screens][service][refs1]")
+{
+    juce::ScopedJuceInitialiser_GUI init;
+    FakeApplyChainServer server(19971);
+    server.setResponse("GET /references/scan/roots", {200, R"({"roots": [{"path": "C:/Music", "added_at": "x",
+        "last_scan_at": "y", "rescan_on_launch": true, "exists": true, "items": 3}]})"});
+    server.setResponse("GET /references/scan/summary", {200, R"({"songs": 2, "samples": 1, "packs": 1,
+        "unsorted": 0, "genres": {"pop": 2, "rock": 1}, "families": {"pop": 2, "rock": 1}})"});
+    server.setResponse("GET /references/scan/current", {200, "{}"});
+    server.setResponse("GET /references/scan/items?limit=500", {200, R"({"total": 0, "items": []})"});
+    server.setResponse("GET /references/scan/items?kind=song&limit=500", {200, R"({"total": 2, "items": [
+        {"id": "a", "root": "C:/Music", "path": "C:/Music/A/one.wav", "kind": "song", "sample_type": "",
+         "title": "One", "author": "Artist A", "album": "LP", "pack": "", "pack_path": "", "artwork_path": "",
+         "has_artwork": false, "genre": "pop", "family": "pop", "genre_source": "tag", "genre_confidence": 0.95,
+         "tag_genre": "Pop", "bpm": 0, "key": "", "duration_s": 200, "indexed": true, "exists": true, "error": ""},
+        {"id": "b", "root": "C:/Music", "path": "C:/Music/B/two.wav", "kind": "song", "sample_type": "",
+         "title": "Two", "author": "", "album": "", "pack": "", "pack_path": "", "artwork_path": "",
+         "has_artwork": false, "genre": "pop", "family": "pop", "genre_source": "ranker", "genre_confidence": 0.3,
+         "tag_genre": "", "bpm": 0, "key": "", "duration_s": 180, "indexed": true, "exists": true, "error": ""}]})"});
+    FakeAppController controller(server.baseUrl());
+    REQUIRE(controller.genreDb
+                .loadFromString(R"({"genres": [
+        {"id": "pop", "name": "Pop", "lufs_target": -9.0},
+        {"id": "rock", "name": "Rock", "lufs_target": -10.0}]})")
+                .is_ok());
+    {
+        khensu::ReferenceLibraryScreen screen(controller, server.baseUrl().toStdString());
+        screen.setSize(1400, 900);
+        screen.setVisible(true);
+        REQUIRE(pumpUntil([&] { return anyLabelContains(screen, "2 songs, 1 samples, 1 packs found"); }));
+        CHECK(anyLabelContains(screen, "C:/Music"));
+        // The picker shows each genre's count once the summary is in.
+        auto combos = findAll<juce::ComboBox>(screen);
+        juce::ComboBox* picker = nullptr;
+        for (auto* c : combos)
+            if (c->getTitle() == "Genre") picker = c;
+        REQUIRE(picker != nullptr);
+        bool sawCount = false;
+        for (int i = 0; i < picker->getNumItems(); ++i)
+            sawCount = sawCount || picker->getItemText(i) == "All Pop (2)";
+        CHECK(sawCount);
+        // The Songs list asks for songs in every genre.
+        REQUIRE(pumpUntil([&] { return server.requestCount("GET /references/scan/items?kind=song&limit=500") > 0; }));
+        pumpFor(100);
+        // The rescan-on-launch setting came back from the folder.
+        bool rescanOn = false;
+        for (auto* t : findAll<juce::ToggleButton>(screen))
+            if (t->getButtonText() == "Rescan on launch") rescanOn = t->getToggleState();
+        CHECK(rescanOn);
+        // No analysis: the fit chart explains itself instead of a ranking.
+        CHECK(khensu::GenreFitChart::matchOf(0.0f) == 1.0f);
+        CHECK(khensu::GenreFitChart::matchOf(2.0f) < 0.4f);
+        pumpFor(50);
+    }
 }

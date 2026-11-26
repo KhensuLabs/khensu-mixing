@@ -75,7 +75,13 @@ OnlineSettings OnlineSettings::load(const juce::File& configDir)
         const auto midi = parsed["midi"];
         if (midi.isObject()) s.midiInputIdentifier = midi["input_identifier"].toString();
         const auto ui = parsed["ui"];
-        if (ui.isObject()) s.showSessionHealthStrip = static_cast<bool>(ui["session_health_strip"]);
+        if (ui.isObject()) {
+            s.showSessionHealthStrip = static_cast<bool>(ui["session_health_strip"]);
+            const auto motion = ui["reduced_motion"].toString().trim().toLowerCase(); // VIS-7
+            if (motion == "on" || motion == "off") s.reducedMotion = motion;
+            const auto ambient = ui["ambient_backdrop"]; // LG-4
+            s.ambientBackdrop = ambient.isVoid() ? true : static_cast<bool>(ambient);
+        }
         const auto rendering = parsed["rendering"];
         if (rendering.isObject()) {
             const auto v = rendering["use_direct2d"];
@@ -199,6 +205,8 @@ juce::var OnlineSettings::toJson(bool redactSecrets, const juce::File& configDir
     root->setProperty("midi", juce::var(midi));
     auto* uiPrefs = new juce::DynamicObject();
     uiPrefs->setProperty("session_health_strip", showSessionHealthStrip);
+    uiPrefs->setProperty("reduced_motion", reducedMotion); // VIS-7
+    uiPrefs->setProperty("ambient_backdrop", ambientBackdrop); // LG-4
     root->setProperty("ui", juce::var(uiPrefs));
     auto* rendering = new juce::DynamicObject();
     rendering->setProperty("use_direct2d", useGpuRendering);

@@ -8,6 +8,8 @@
 #include <khensu/ipc/HttpServiceBridge.h>
 #include "../../IAppController.h"
 #include "../shared/FloatVector.h"
+#include "../shared/ContourLines.h"
+#include <khensu/ui/VizPalette.h>
 #include <cmath>
 #include <algorithm>
 
@@ -278,7 +280,7 @@ void SpectrogramPanel::paint(juce::Graphics& g)
 
     if (frames_.empty() && !hires_.isVisible()) {
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(KhensuTheme::bodyFont(12.0f));
+        g.setFont(KhensuTheme::bodyFont(type::secondary));
         const juce::String text = fetchState_ == FetchState::Measuring ? TRANS("Measuring the spectrogram...")
                                   : fetchState_ == FetchState::Failed  ? TRANS("The spectrogram could not be measured for this file.")
                                   : controller_.hasAnalysis()          ? TRANS("Measuring the spectrogram...")
@@ -308,7 +310,7 @@ void SpectrogramPanel::paint(juce::Graphics& g)
     g.drawImageAt(image_, (int)plot.getX(), (int)plot.getY());
 
     // --- Frequency axis (log scale, left edge) ---
-    g.setFont(KhensuTheme::labelFont(8.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     for (float hz : {20.0f, 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f, 20000.0f}) {
         const float y = yForFreq(hz);
@@ -375,7 +377,7 @@ void SpectrogramPanel::drawRecommendationAnnotations(juce::Graphics& g, const ju
         g.setColour(hovered ? c.brighter(0.4f) : c);
         g.drawEllipse(ch, hovered ? 2.0f : 1.5f);
         g.setColour(hovered ? c.brighter(0.4f) : c);
-        g.setFont(KhensuTheme::labelFont(11.0f).boldened());
+        g.setFont(KhensuTheme::labelFont(type::caption).boldened());
         g.drawText("!", ch.toNearestInt(), juce::Justification::centred, false);
     }
 
@@ -384,7 +386,7 @@ void SpectrogramPanel::drawRecommendationAnnotations(juce::Graphics& g, const ju
         const auto& a = annotations_[hoveredAnnotation_];
         const auto ch = annotationChipBounds(a);
         const juce::Colour c = spectroSeverityColour(a.severity);
-        g.setFont(KhensuTheme::labelFont(9.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         const int textW =
             juce::jmin((int)plot.getWidth() - 12,
                        juce::jmax(140, juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), a.label) + 16));
@@ -416,7 +418,7 @@ void SpectrogramPanel::drawHoverReadout(juce::Graphics& g, const juce::Rectangle
     juce::String freqLabel = hz >= 1000.0f ? juce::String(hz / 1000.0f, 2) + " kHz" : juce::String((int)hz) + " Hz";
     juce::String readout = juce::String(sec, 2) + "s  " + freqLabel;
 
-    g.setFont(KhensuTheme::labelFont(9.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     const float textW = juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), readout) + 12.0f;
     float tx = hoverX_ + 8.0f;
     float ty = hoverY_ - 20.0f;
@@ -438,41 +440,54 @@ void SpectrogramPanel::draw3DWaterfall(juce::Graphics& g, const juce::Rectangle<
     float w = plot.getWidth();
     float h = plot.getHeight();
 
-    int totalFrames = (int)frames_.size();
-    int totalBands = (int)frames_[0].size();
+    const int totalFrames = (int)frames_.size();
+    const int totalBands = (int)frames_[0].size();
 
-    // Downsample frames for smooth rendering
-    int frameStep = juce::jmax(1, totalFrames / 40);
-    int bandStep = juce::jmax(1, totalBands / 24);
+    // Downsample frames for smooth rendering: a grid of ~40 frames x ~24 bands.
+    const int frameStep = juce::jmax(1, totalFrames / 40);
+    const int bandStep = juce::jmax(1, totalBands / 24);
+    std::vector<std::vector<float>> grid; // [row][col], 0..1 over 60 dB
+    for (int fi = 0; fi < totalFrames; fi += frameStep) {
+        std::vector<float> row;
+        for (int bi = 0; bi < totalBands; bi += bandStep)
+            row.push_back(frames_[(size_t)fi][(size_t)bi]);
+        grid.push_back(std::move(row));
+    }
+    const int rows = (int)grid.size();
+    const int cols = grid.empty() ? 0 : (int)grid.front().size();
+    // Grid coordinates (fractional row / column) to screen.
+    auto toScreen = [&](float row, float col, float amp) {
+        const float yVal = -1.0f + 2.0f * (row * (float)frameStep / (float)totalFrames);
+        const float xVal = -1.0f + 2.0f * (col * (float)bandStep / (float)totalBands);
+        auto pt = camera3D_.project({xVal, yVal, -0.5f + amp * 1.2f}, w, h); // amplitude to height
+        return juce::Point<float>(pt.x + plot.getX(), pt.y + plot.getY());
+    };
 
-    // Render back-to-front (Y goes from -1.0 to 1.0)
-    for (int fi = totalFrames - 1; fi >= 0; fi -= frameStep) {
-        float yVal = -1.0f + 2.0f * ((float)fi / (float)totalFrames);
-        juce::Path p;
-        bool first = true;
-
-        for (int bi = 0; bi < totalBands; bi += bandStep) {
-            float xVal = -1.0f + 2.0f * ((float)bi / (float)totalBands);
-            float amp = frames_[(size_t)fi][(size_t)bi];
-            float zVal = -0.5f + amp * 1.2f; // scale amplitude to height
-
-            auto pt = camera3D_.project({xVal, yVal, zVal}, w, h);
-            pt.x += plot.getX();
-            pt.y += plot.getY();
-
-            if (first) {
-                p.startNewSubPath(pt.x, pt.y);
-                first = false;
-            } else {
-                p.lineTo(pt.x, pt.y);
-            }
+    // STU-12: each frame's line in the spectrogram map (magma, VIS-2) by its
+    // level, back to front. The bottom of the map is near-black, so the
+    // floor starts a quarter of the way up to stay visible on the surface.
+    for (int r = rows - 1; r >= 0; --r) {
+        const auto& row = grid[(size_t)r];
+        auto prev = toScreen((float)r, 0.0f, row[0]);
+        for (int c = 1; c < cols; ++c) {
+            const auto pt = toScreen((float)r, (float)c, row[(size_t)c]);
+            const float level = 0.5f * (row[(size_t)c - 1] + row[(size_t)c]);
+            g.setColour(ui::viz::spectrogram(0.25f + 0.75f * level).withAlpha(0.55f + 0.4f * level));
+            g.drawLine(prev.x, prev.y, pt.x, pt.y, 1.2f);
+            prev = pt;
         }
+    }
 
-        // Draw wireframe line
-        float t = (float)fi / (float)totalFrames;
-        juce::Colour c = KhensuTheme::accentTeal.interpolatedWith(KhensuTheme::accentRed, t);
-        g.setColour(c.withAlpha(0.4f + t * 0.5f));
-        g.strokePath(p, juce::PathStrokeType(1.2f));
+    // STU-12: contour lines every 6 dB (the 60 dB range in tenths), drawn on
+    // the surface at their own height.
+    g.setColour(KhensuTheme::textPrimary.withAlpha(0.28f));
+    for (int step = 1; step < 10; ++step) {
+        const float level = (float)step / 10.0f;
+        for (const auto& seg : contour::segments(grid, level)) {
+            const auto a = toScreen(seg.a.row, seg.a.col, level);
+            const auto b = toScreen(seg.b.row, seg.b.col, level);
+            g.drawLine(a.x, a.y, b.x, b.y, 0.8f);
+        }
     }
 
     // Draw Resonance Beacons as glowing vertical lasers
@@ -500,7 +515,7 @@ void SpectrogramPanel::draw3DWaterfall(juce::Graphics& g, const juce::Rectangle<
             g.fillEllipse(ptTop.x - 3.0f, ptTop.y - 3.0f, 6.0f, 6.0f);
 
             // Label
-            g.setFont(KhensuTheme::labelFont(8.0f));
+            g.setFont(KhensuTheme::labelFont(type::caption));
             g.setColour(KhensuTheme::textPrimary);
             juce::String lbl = juce::String((int)peak.hz) + " Hz";
             g.drawText(lbl, (int)ptTop.x - 40, (int)ptTop.y - 14, 80, 10, juce::Justification::centred);

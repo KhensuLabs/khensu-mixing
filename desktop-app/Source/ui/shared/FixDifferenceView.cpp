@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/shared/FixDifferenceView.cpp
 #include "FixDifferenceView.h"
+#include <khensu/ui/ChartScales.h>
 #include <khensu/analysis/BandPower.h>
 #include <khensu/ui/VizPalette.h>
 #include <cmath>
@@ -57,11 +58,8 @@ Result compute(const TrackTimeline& original, const TrackTimeline& current)
 FixDifferenceView::FixDifferenceView()
 {
     setTitle(TRANS("What the current version changed"));
-    spectrum_.x.lo = 30.0;
-    spectrum_.x.hi = 16000.0;
-    spectrum_.x.scale = ui::chart::Scale::Log;
-    spectrum_.x.format = ui::chart::Format::Hz;
-    spectrum_.setXRange(30.0, 16000.0);
+    spectrum_.x = ui::chart::scales::frequency(); // VIS-3: the one frequency axis
+    spectrum_.setXRange(spectrum_.x.lo, spectrum_.x.hi);
     spectrum_.y.unit = "dB";
     spectrum_.setTitle(TRANS("Difference spectrum"));
     spectrum_.setTooltip(TRANS("The current version's spectrum minus the original's, measured. Red: energy added; blue: taken away."));

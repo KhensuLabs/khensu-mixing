@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/shared/HeatSpectrumComponent.cpp
 #include "HeatSpectrumComponent.h"
+#include "KhensuEmptyState.h"
 #include "KhensuTheme.h"
 #include <numeric>
 #include <algorithm>
@@ -109,8 +110,7 @@ void HeatSpectrumComponent::paint(juce::Graphics& g)
     auto chartArea = fullBounds.toFloat().reduced(2.0f, 4.0f);
 
     if (bands_.empty()) {
-        g.setColour(KhensuTheme::textTertiary);
-        g.drawText("No spectral data", fullBounds, juce::Justification::centred, false);
+        KhensuEmptyState::paintInto(g, fullBounds, TRANS("No spectral data"), {}); // UXR-6
         return;
     }
 
@@ -121,7 +121,7 @@ void HeatSpectrumComponent::paint(juce::Graphics& g)
     const float cBot = chartArea.getBottom();
 
     // ── dB grid lines (0, -20, -40, -60 dBFS) ─────────────────────────────
-    g.setFont(KhensuTheme::labelFont(8.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     const float kDbMin = -60.0f, kDbMax = 0.0f;
     static const float kDbGrid[] = {0.0f, -20.0f, -40.0f, -60.0f};
     for (float db : kDbGrid) {
@@ -234,11 +234,11 @@ void HeatSpectrumComponent::paint(juce::Graphics& g)
                 juce::Path dashed;
                 const float dashes[] = {5.0f, 4.0f};
                 juce::PathStrokeType(1.2f).createDashedStroke(dashed, tiltLine, dashes, 2);
-                g.setColour(KhensuTheme::accentAmber.withAlpha(0.75f));
+                g.setColour(KhensuTheme::vizMedian); // VIS-4: the genre's target, not a severity
                 g.fillPath(dashed);
 
-                g.setFont(KhensuTheme::labelFont(8.0f));
-                g.setColour(KhensuTheme::accentAmber.withAlpha(0.9f));
+                g.setFont(KhensuTheme::labelFont(type::caption));
+                g.setColour(KhensuTheme::textSecondary);
                 g.drawText("genre tilt " + juce::String(targetTiltDbPerOct_, 1) + " dB/oct", (int)(cLeft + cW) - 120,
                            (int)cTop, 118, 12, juce::Justification::topRight, false);
             }
@@ -279,24 +279,24 @@ void HeatSpectrumComponent::paint(juce::Graphics& g)
             };
 
             if (midBands_.size() == bands_.size()) {
-                drawCurve(midBands_, KhensuTheme::accentAmber, 0.85f);
+                drawCurve(midBands_, KhensuTheme::vizCategory(1), 0.85f); // VIS-4: series colours
             }
             if (sideBands_.size() == bands_.size()) {
-                drawCurve(sideBands_, KhensuTheme::accentTeal, 0.85f);
+                drawCurve(sideBands_, KhensuTheme::vizCategory(2), 0.85f);
             }
 
             // Draw small legend overlay for Mid/Side curves
-            g.setFont(KhensuTheme::labelFont(8.0f));
+            g.setFont(KhensuTheme::labelFont(type::caption));
             const int legY = (int)cTop + 14;
             const int legW = 65;
 
-            g.setColour(KhensuTheme::accentAmber);
+            g.setColour(KhensuTheme::vizCategory(1));
             g.drawHorizontalLine(legY + 5, cLeft + cW - 145, cLeft + cW - 135);
             g.setColour(KhensuTheme::textSecondary);
             g.drawText("Mid (Mono)", (int)cLeft + (int)cW - 130, legY, legW, 10, juce::Justification::centredLeft,
                        false);
 
-            g.setColour(KhensuTheme::accentTeal);
+            g.setColour(KhensuTheme::vizCategory(2));
             g.drawHorizontalLine(legY + 5, cLeft + cW - 75, cLeft + cW - 65);
             g.setColour(KhensuTheme::textSecondary);
             g.drawText("Side (Stereo)", (int)cLeft + (int)cW - 60, legY, legW, 10, juce::Justification::centredLeft,
@@ -341,33 +341,33 @@ void HeatSpectrumComponent::paint(juce::Graphics& g)
         if (midBands_.size() == bands_.size()) {
             juce::Path midPath = buildFftPath(midBands_);
             if (!midPath.isEmpty()) {
-                g.setColour(KhensuTheme::accentAmber.withAlpha(0.25f));
+                g.setColour(KhensuTheme::vizCategory(1).withAlpha(0.25f));
                 g.strokePath(midPath, juce::PathStrokeType(3.0f));
-                g.setColour(KhensuTheme::accentAmber.withAlpha(0.85f));
+                g.setColour(KhensuTheme::vizCategory(1).withAlpha(0.85f));
                 g.strokePath(midPath, juce::PathStrokeType(1.2f));
             }
         }
         if (sideBands_.size() == bands_.size()) {
             juce::Path sidePath = buildFftPath(sideBands_);
             if (!sidePath.isEmpty()) {
-                g.setColour(KhensuTheme::accentTeal.withAlpha(0.25f));
+                g.setColour(KhensuTheme::vizCategory(2).withAlpha(0.25f));
                 g.strokePath(sidePath, juce::PathStrokeType(3.0f));
-                g.setColour(KhensuTheme::accentTeal.withAlpha(0.85f));
+                g.setColour(KhensuTheme::vizCategory(2).withAlpha(0.85f));
                 g.strokePath(sidePath, juce::PathStrokeType(1.2f));
             }
         }
 
         // Draw small legend overlay for Mid/Side curves
-        g.setFont(KhensuTheme::labelFont(8.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         const int legY = (int)cTop + 14;
         const int legW = 65;
 
-        g.setColour(KhensuTheme::accentAmber);
+        g.setColour(KhensuTheme::vizCategory(1));
         g.drawHorizontalLine(legY + 5, cLeft + cW - 145, cLeft + cW - 135);
         g.setColour(KhensuTheme::textSecondary);
         g.drawText("Mid (Mono)", (int)cLeft + (int)cW - 130, legY, legW, 10, juce::Justification::centredLeft, false);
 
-        g.setColour(KhensuTheme::accentTeal);
+        g.setColour(KhensuTheme::vizCategory(2));
         g.drawHorizontalLine(legY + 5, cLeft + cW - 75, cLeft + cW - 65);
         g.setColour(KhensuTheme::textSecondary);
         g.drawText("Side (Stereo)", (int)cLeft + (int)cW - 60, legY, legW, 10, juce::Justification::centredLeft, false);
@@ -393,7 +393,7 @@ void HeatSpectrumComponent::paint(juce::Graphics& g)
         // Pin label tooltip on hover
         if (hovered) {
             juce::String lbl = juce::String((int)pins_[i].hz) + " Hz";
-            g.setFont(KhensuTheme::labelFont(9.0f));
+            g.setFont(KhensuTheme::labelFont(type::caption));
             g.setColour(KhensuTheme::textPrimary);
             g.drawText(lbl, (int)px - 20, (int)cTop + 12, 40, 12, juce::Justification::centred, false);
         }
@@ -418,7 +418,7 @@ void HeatSpectrumComponent::paint(juce::Graphics& g)
         g.fillRoundedRectangle((float)tipX, (float)tipY, (float)tipW, (float)tipH, 3.0f);
         g.setColour(KhensuTheme::accentTeal.withAlpha(0.8f));
         g.drawRoundedRectangle((float)tipX, (float)tipY, (float)tipW, (float)tipH, 3.0f, 0.8f);
-        g.setFont(KhensuTheme::labelFont(9.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(tip, tipX + 5, tipY + 2, tipW - 8, tipH - 4, juce::Justification::centredLeft, false);
     }
@@ -432,7 +432,7 @@ void HeatSpectrumComponent::paint(juce::Graphics& g)
         {20.0f, "20"},   {50.0f, "50"},   {100.0f, "100"}, {200.0f, "200"},   {500.0f, "500"},
         {1000.0f, "1k"}, {2000.0f, "2k"}, {5000.0f, "5k"}, {10000.0f, "10k"}, {20000.0f, "20k"},
     };
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     for (const auto& lbl : kHzLabels) {
         const float lx = logX(lbl.hz, cLeft, cW);
@@ -445,7 +445,7 @@ void HeatSpectrumComponent::paint(juce::Graphics& g)
     }
 
     // "Hz" unit label at right edge
-    g.setFont(KhensuTheme::labelFont(8.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary.withAlpha(0.6f));
     g.drawText("kHz", hzLabelRow.getRight() - 22, hzLabelRow.getY(), 22, kHzLabelH, juce::Justification::centredRight,
                false);
@@ -494,6 +494,37 @@ void HeatSpectrumComponent::setEqSuggestions(std::vector<EqPoint> pts)
 {
     eqPoints_ = std::move(pts);
     repaint();
+}
+
+} // namespace khensu
+
+namespace khensu {
+
+juce::String HeatSpectrumComponent::summary() const
+{
+    // VIS-8: the octave bands' levels, the loudest and quietest named.
+    if (bands_.empty()) return TRANS("Spectrum: not measured yet.");
+    juce::String s = TRANS("Spectrum") + ", " + juce::String(static_cast<int>(bands_.size())) + " " + TRANS("bands");
+    if (bands_.size() <= 10) { // octave bands (raw FFT bins have no centre table)
+        size_t hi = 0, lo = 0;
+        for (size_t i = 1; i < bands_.size(); ++i) {
+            if (bands_[i] > bands_[hi]) hi = i;
+            if (bands_[i] < bands_[lo]) lo = i;
+        }
+        ui::chart::Axis hz;
+        hz.format = ui::chart::Format::Hz;
+        s << ": " << TRANS("loudest around") << " " << hz.label(octaveCentreHz(static_cast<int>(hi)), true) << " ("
+          << juce::String(bands_[hi], 1) << " dB), " << TRANS("quietest around") << " "
+          << hz.label(octaveCentreHz(static_cast<int>(lo)), true) << " (" << juce::String(bands_[lo], 1) << " dB)";
+    }
+    if (showTargetTilt_) s << "; " << TRANS("genre tilt") << " " << juce::String(targetTiltDbPerOct_, 1) << " dB/oct";
+    if (!pins_.empty()) s << "; " << static_cast<int>(pins_.size()) << " " << TRANS("resonances marked");
+    return s + ".";
+}
+
+std::unique_ptr<juce::AccessibilityHandler> HeatSpectrumComponent::createAccessibilityHandler()
+{
+    return ui::chart::makeChartAccessibilityHandler(*this, [this] { return summary(); });
 }
 
 } // namespace khensu

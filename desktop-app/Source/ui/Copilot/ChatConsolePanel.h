@@ -3,7 +3,7 @@
 #include <JuceHeader.h>
 #include <khensu/ipc/HttpServiceBridge.h>
 #include "HarmonicContentBarChart.h"
-#include "GainStagingWaterfallChart.h"
+#include "../shared/FeatureHomeLink.h"
 #include "ChatTargetResolver.h"
 #include "../shared/KhensuTheme.h" // ThemeListener
 #include "../shared/ListenerHandle.h"
@@ -100,7 +100,12 @@ class ChatConsolePanel final : public juce::Component, private juce::Timer {
     juce::TextEditor decisionsSidebar_;
     juce::Label statusLabel_;
     HarmonicContentBarChart harmonicChart_;
-    GainStagingWaterfallChart gainStagingChart_;
+    /// ENH-8: gain staging's home is Mix / Master; the sidebar keeps a
+    /// one-line summary of the last render's stage levels and links there.
+    FeatureHomeLink gainStagingLink_{TRANS("Gain staging: Mix / Master"),
+                                     TRANS("Level through each stage of the last applied chain."),
+                                     TRANS("Open gain staging"), [this] { showGainStagingHome(); }};
+    void showGainStagingHome();
 
     // Prior conversation turns, sent back to /copilot/chat as context.
     struct Turn {

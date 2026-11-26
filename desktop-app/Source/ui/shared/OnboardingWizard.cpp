@@ -29,7 +29,7 @@ OnboardingWizard::OnboardingWizard(const GenreDatabase& genres) : genres_(genres
     addAndMakeVisible(card_);
     card_.setFocusContainerType(juce::Component::FocusContainerType::keyboardFocusContainer);
 
-    stepLabel_.setFont(KhensuTheme::labelFont(11.0f));
+    stepLabel_.setFont(KhensuTheme::labelFont(type::caption));
     headingLabel_.setFont(KhensuTheme::uiFont(KhensuTheme::kFontH1, juce::Font::bold));
     bodyLabel_.setFont(KhensuTheme::bodyFont());
     for (auto* l : {&stepLabel_, &headingLabel_, &bodyLabel_})

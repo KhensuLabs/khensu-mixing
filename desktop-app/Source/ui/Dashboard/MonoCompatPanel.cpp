@@ -15,6 +15,14 @@ void MonoCompatPanel::applyThemeColours()
 {
 }
 
+namespace {
+/// VIS-4: the score's verdict in words - the bar is one data colour.
+juce::String scoreWord(int score)
+{
+    return score >= 80 ? TRANS("good") : score >= 55 ? TRANS("fair") : TRANS("poor");
+}
+} // namespace
+
 MonoCompatPanel::MonoCompatPanel(IAppController& c) : PanelCard(c, "Mono Compatibility")
 {
     applyThemeColours();
@@ -28,6 +36,20 @@ MonoCompatPanel::MonoCompatPanel(IAppController& c) : PanelCard(c, "Mono Compati
 
     analyzeButton_.onClick = [this] { runAnalysis(); };
     addAndMakeVisible(analyzeButton_);
+    chart_.setTitle(TRANS("Mono fold-down score"));
+    chart_.setHorizontal(true);
+    chart_.x.lo = 0.0;
+    chart_.x.hi = 100.0;
+    chart_.setXRange(0.0, 100.0);
+    chart_.setBaseline(0.0);
+    chart_.valueText = [this](size_t i, size_t, double v) {
+        const int score = juce::roundToInt(v);
+        auto text = juce::String(score) + " - " + scoreWord(score);
+        if (i < systems_.size() && score < 70 && systems_[i].worst.isNotEmpty())
+            text << ", " << TRANS("worst") << " " << systems_[i].worst;
+        return text;
+    };
+    addChildComponent(chart_);
     run_.onRetry([this] { runAnalysis(); });
     run_.setIdle(TRANS("Runs at intake; re-run any time."));
 }
@@ -64,9 +86,28 @@ void MonoCompatPanel::runAnalysis()
                                 juce::String((int)(double)(*wb)[0]) + "-" + juce::String((int)(double)(*wb)[1]) + " Hz";
                     self.systems_.push_back(std::move(s2));
                 }
+            self.rebuildChart();
             return self.stereo_ ? TRANS("Per-system fold-down score.") : TRANS("Mono file - fully compatible.");
         },
         std::move(options));
+}
+
+void MonoCompatPanel::rebuildChart()
+{
+    // Visibility follows the run state in resized() (called after every outcome).
+    chart_.setVisible(run_.showsResult() && !systems_.empty());
+    std::vector<ui::chart::Bar> bars;
+    juce::StringArray parts;
+    for (const auto& s : systems_) {
+        ui::chart::Bar b;
+        b.label = s.name;
+        b.values = {static_cast<double>(s.score)};
+        bars.push_back(b);
+        parts.add(s.name + " " + juce::String(s.score) + " (" + scoreWord(s.score) +
+                  (s.score < 70 && s.worst.isNotEmpty() ? ", " + TRANS("worst") + " " + s.worst : juce::String()) + ")");
+    }
+    chart_.setBars(std::move(bars), {{TRANS("Mono score"), KhensuTheme::vizCategory(0)}});
+    chart_.setSummary(TRANS("Mono fold-down score per playback system, out of 100") + ": " + parts.joinIntoString(", ") + ".");
 }
 
 void MonoCompatPanel::paint(juce::Graphics& g)
@@ -77,29 +118,10 @@ void MonoCompatPanel::paint(juce::Graphics& g)
             drawEmptyState(g, TRANS("No mono check yet"), TRANS("Runs at intake; re-run any time."), 28);
         return;
     }
-    auto b = bodyArea();
-    b.removeFromTop(28);
-    const int rowH = juce::jmax(24, b.getHeight() / (int)juce::jmax((size_t)1, systems_.size()));
-    for (const auto& s : systems_) {
-        auto row = b.removeFromTop(rowH);
-        auto labelRow = row.removeFromTop(14);
-        g.setFont(KhensuTheme::labelFont(10.0f));
-        g.setColour(KhensuTheme::textPrimary);
-        g.drawText(s.name, labelRow.removeFromLeft(150), juce::Justification::centredLeft, false);
+    if (systems_.empty()) { // a mono file: nothing folds down
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(KhensuTheme::monoFont(9.5f));
-        g.drawText(juce::String(s.score) +
-                       (s.score < 70 && s.worst.isNotEmpty() ? "  worst " + s.worst : juce::String()),
-                   labelRow, juce::Justification::centredRight, false);
-        // Score bar.
-        auto bar = row.removeFromTop(8).reduced(0, 1);
-        g.setColour(KhensuTheme::bgVoid.withAlpha(0.5f));
-        g.fillRoundedRectangle(bar.toFloat(), 2.0f);
-        const juce::Colour c = s.score >= 80   ? KhensuTheme::accentGreen
-                               : s.score >= 55 ? KhensuTheme::accentAmber
-                                               : KhensuTheme::accentRed;
-        g.setColour(c);
-        g.fillRoundedRectangle(bar.withWidth(bar.getWidth() * s.score / 100).toFloat(), 2.0f);
+        g.setFont(KhensuTheme::bodyFont());
+        g.drawText(TRANS("Mono file - fully compatible."), bodyArea().withTrimmedTop(28), juce::Justification::centred, true);
     }
 }
 
@@ -114,6 +136,8 @@ void MonoCompatPanel::resized()
     auto errArea = bodyArea();
     errArea.removeFromTop(28);
     run_.errorState().setBounds(errArea);
+    chart_.setBounds(errArea);
+    chart_.setVisible(run_.showsResult() && !systems_.empty());
 }
 
 } // namespace khensu

@@ -152,7 +152,8 @@ def test_mcp_server_registers_every_tool_and_calls_through():
     tools = asyncio.run(server.list_tools())
     assert {t.name for t in tools} == set(ms.TOOLS) == {
         "analyze", "list_sessions", "get_findings", "explain_moment", "fit_chain", "render_chain",
-        "ab_compare", "agent_mix", "agent_status"}
+        "ab_compare", "agent_mix", "agent_status", "fix", "master", "platform_masters",
+        "delivery_package", "album_master", "separate_stems"}
     for t in tools:
         assert t.description
     result = asyncio.run(server.call_tool("list_sessions", {"limit": 3}))
@@ -167,3 +168,92 @@ def test_main_without_the_sdk_exits_with_a_hint(monkeypatch, capsys):
         ms.main()
     assert info.value.code == 2
     assert ".[mcp]" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# ENH-3: fix, master, platform masters, delivery package, album master, stems
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def _no_sleep(monkeypatch):
+    monkeypatch.setattr(ms.time, "sleep", lambda s: None)
+
+
+def test_fix_builds_one_chain_renders_and_rechecks(_no_sleep):
+    before = {"metrics": {"mud_rel_db": 14.0}, "findings": [
+        {"id": "agent:mud_rel_db", "metric": "mud_rel_db", "title": "Mud", "severity": 0.5,
+         "suggested_parameters": {"eq_freq_hz": 300.0, "eq_gain_db": -3.0, "eq_q": 1.0}},
+        {"id": "advice", "metric": "", "title": "Advice", "severity": 0.9, "suggested_parameters": {}}]}
+    after = {"metrics": {"mud_rel_db": 9.0}, "findings": []}
+    answers = iter([(200, before), (200, after)])
+    client, fake = _client({
+        ("POST", "/agent/findings"): lambda body: next(answers),
+        ("POST", "/copilot/apply_chain/start"): (200, {"job_id": "r1"}),
+        ("GET", "/copilot/apply_chain/status/r1"): (200, {"status": "completed", "result": {
+            "status": "success", "output_path": "C:/m/a_fix.wav", "guardrail": {"ok": True}}}),
+    })
+    out = ms.tool_fix(client, "C:/m/a.wav")
+    assert out["ok"] is True and out["output_path"] == "C:/m/a_fix.wav"
+    assert [f["id"] for f in out["fixed"]] == ["agent:mud_rel_db"]
+    assert out["skipped"][0]["id"] == "advice"
+    assert "agent:mud_rel_db" in [f["id"] for f in out["comparison"]["resolved"]]
+    render_body = next(c[3] for c in fake.calls if c[1] == "/copilot/apply_chain/start")
+    assert render_body["effects"] == [{"effect": "PeakFilter", "parameters": {
+        "cutoff_frequency_hz": 300.0, "gain_db": -3.0, "q": 1.0}}]
+    finding_bodies = [c[3] for c in fake.calls if c[1] == "/agent/findings"]
+    assert finding_bodies[1]["file_path"] == "C:/m/a_fix.wav"
+
+
+def test_fix_with_nothing_to_fix_does_not_render():
+    client, fake = _client({("POST", "/agent/findings"): (200, {"findings": []})})
+    out = ms.tool_fix(client, "a.wav")
+    assert out["ok"] is True and out["output_path"] == "" and "Nothing to fix" in out["note"]
+    assert all(c[1] != "/copilot/apply_chain/start" for c in fake.calls)
+
+
+def test_master_platforms_package_album_and_stems_post_and_poll(_no_sleep):
+    client, fake = _client({
+        ("POST", "/mastering_agent/start"): (200, {"job_id": "m1"}),
+        ("GET", "/mastering_agent/status/m1"): (200, {"status": "completed",
+                                                      "result": {"best_safe_output_path": "m.wav"}}),
+        ("POST", "/platform_masters/start"): (200, {"job_id": "p1", "total": 1, "output_dir": "d"}),
+        ("GET", "/platform_masters/status/p1"): (200, {"status": "completed", "results": [{"platform_id": "spotify"}]}),
+        ("POST", "/delivery/package"): (200, {"job_id": "d1", "total": 2, "output_dir": "d"}),
+        ("GET", "/delivery/package/status/d1"): (200, {"status": "completed", "result": {"overall": "pass"}}),
+        ("POST", "/analyze/album/consistency"): (200, {"tracks": [{"gain_db": -1.5}, {"gain_db": 0.5}]}),
+        ("POST", "/album/master/plan"): (200, {"tracks": [{}, {}], "warnings": []}),
+        ("POST", "/album/master/start"): (200, {"job_id": "a1", "total": 2, "output_dir": "o"}),
+        ("GET", "/album/master/status/a1"): (200, {"status": "completed", "result": {"wav_path": "o/album.wav"}}),
+        ("POST", "/separate/start"): (200, {"job_id": "s1", "status": "pending", "output_dir": "o"}),
+        ("GET", "/separate/status/s1"): (200, {"status": "completed", "result": {"method_used": "hpss"}}),
+    })
+    m = ms.tool_master(client, "a.wav", genre_id="pop", style="warm", strength=0.7, max_iterations=2)
+    assert m["result"]["best_safe_output_path"] == "m.wav" and m["job_id"] == "m1"
+    p = ms.tool_platform_masters(client, "a.wav", ["spotify"], match_loudness=True)
+    assert p["results"][0]["platform_id"] == "spotify"
+    d = ms.tool_delivery_package(client, "a.wav", ddp=False, title="T")
+    assert d["result"]["overall"] == "pass"
+    a = ms.tool_album_master(client, ["C:/x/one.wav", "C:/x/two.wav"], apply_consistency=True, name="rec")
+    assert a["master"]["result"]["wav_path"] == "o/album.wav" and a["plan"]["warnings"] == []
+    s = ms.tool_separate(client, "a.wav")
+    assert s["result"]["method_used"] == "hpss"
+    assert ms.tool_separate(client, "a.wav", method="magic")["ok"] is False
+
+    bodies = {c[1]: c[3] for c in fake.calls if c[0] == "POST"}
+    assert bodies["/mastering_agent/start"] == {
+        "file_path": "a.wav", "genre_id": "pop", "genre_action_allowed": True, "max_iterations": 2,
+        "style": "warm", "strength": 0.7}
+    assert bodies["/platform_masters/start"]["platforms"] == ["spotify"]
+    assert bodies["/platform_masters/start"]["match_loudness"] is True
+    assert bodies["/delivery/package"]["ddp"] is False and bodies["/delivery/package"]["title"] == "T"
+    tracks = bodies["/album/master/start"]["tracks"]
+    assert [t["title"] for t in tracks] == ["one", "two"] and [t["gain_db"] for t in tracks] == [-1.5, 0.5]
+    assert bodies["/album/master/start"]["name"] == "rec"
+    assert bodies["/separate/start"] == {"file_path": "a.wav", "method": "hpss"}
+
+
+def test_new_tools_degrade_on_an_old_service():
+    client, _ = _client({})
+    for out in (ms.tool_master(client, "a.wav"), ms.tool_platform_masters(client, "a.wav"),
+                ms.tool_delivery_package(client, "a.wav"), ms.tool_album_master(client, ["a.wav"]),
+                ms.tool_separate(client, "a.wav"), ms.tool_fix(client, "a.wav")):
+        assert out["ok"] is False and out["route_missing"] is True

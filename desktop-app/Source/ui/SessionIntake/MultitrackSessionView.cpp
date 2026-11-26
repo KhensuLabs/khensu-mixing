@@ -56,7 +56,7 @@ MultitrackSessionView::MultitrackSessionView(IBackgroundWork& controller, const 
     applyThemeColours();
 
     titleLabel_.setText(TRANS("Multitrack session") + ": " + folder.getFileName(), juce::dontSendNotification);
-    titleLabel_.setFont(KhensuTheme::labelFont(16.0f));
+    titleLabel_.setFont(KhensuTheme::labelFont(type::title));
     addAndMakeVisible(titleLabel_);
 
     statusLabel_.setFont(KhensuTheme::bodyFont());

@@ -66,7 +66,7 @@ void GenreDistributionPanel::drawBox(juce::Graphics& g, juce::Rectangle<int> are
                                      std::vector<float> values, float trackValue)
 {
     g.setColour(KhensuTheme::textSecondary);
-    g.setFont(KhensuTheme::labelFont(10.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     auto labelArea = area.removeFromLeft(46);
     g.drawText(label, labelArea, juce::Justification::centredLeft, false);
 
@@ -113,7 +113,7 @@ void GenreDistributionPanel::drawBox(juce::Graphics& g, juce::Rectangle<int> are
     const float tx = xFor(trackValue);
     g.setColour(KhensuTheme::accentTeal);
     g.fillEllipse(tx - 3.5f, cy - 3.5f, 7.0f, 7.0f);
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.drawText(juce::String(trackValue, 1) + "  (" + juce::String(pct) + "%)", area.removeFromRight(90),
                juce::Justification::centredRight, false);
 }
@@ -139,7 +139,7 @@ void GenreDistributionPanel::paint(juce::Graphics& g)
 
     if (bootstrap_) {
         g.setColour(KhensuTheme::accentAmber.withAlpha(0.9f));
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText("Reference data is bootstrap/synthetic - percentiles are directional.", b.removeFromTop(14),
                    juce::Justification::centredLeft, false);
         b.removeFromTop(2);

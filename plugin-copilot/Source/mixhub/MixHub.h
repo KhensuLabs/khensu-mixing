@@ -23,6 +23,8 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <optional>
+#include <utility>
 #include <vector>
 
 namespace khensu::mixhub {
@@ -89,6 +91,23 @@ class MixHubTap {
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixHubTap)
 };
 
+/// ENH-10 (4): "Unmask" between two instances. The instance that shows the
+/// masking pair posts a request; the other instance (the target) picks it up
+/// on its own message thread, writes the cut into its built-in EQ, and posts
+/// back what it did.
+struct UnmaskRequest {
+    juce::uint64 source = 0, target = 0;
+    bool remove = false; ///< take the source's cut out again
+    UnmaskCut cut;
+    juce::String sourceName; ///< for the target's undo step
+};
+struct UnmaskStatus {
+    bool applied = false;
+    int band = 0; ///< EQ band 1..3 on the target that holds the cut
+    UnmaskCut cut;
+    juce::String note; ///< what happened, or why not
+};
+
 /// The process-wide registry. Normally reached through SharedResourcePointer
 /// (one per process); tests may also construct their own to feed frames.
 class MixHub final : private juce::Thread {
@@ -127,6 +146,16 @@ class MixHub final : private juce::Thread {
 
     static double nowMs() noexcept { return juce::Time::getMillisecondCounterHiRes(); }
 
+    // ---- Unmask requests between instances (message threads) -------------
+    void postUnmask(const UnmaskRequest& request);
+    /// The requests waiting for `target`, oldest first; they are removed.
+    std::vector<UnmaskRequest> takeUnmaskRequests(juce::uint64 target);
+    void setUnmaskStatus(juce::uint64 source, juce::uint64 target, const UnmaskStatus& status);
+    void clearUnmaskStatus(juce::uint64 source, juce::uint64 target);
+    std::optional<UnmaskStatus> unmaskStatus(juce::uint64 source, juce::uint64 target) const;
+    /// True while a request from `source` to `target` waits for the target.
+    bool hasPendingUnmask(juce::uint64 source, juce::uint64 target) const;
+
   private:
     void run() override;
     friend class MixHubTap; // prepare() takes tapsLock_ while it resizes buffers analyse() reads
@@ -143,6 +172,9 @@ class MixHub final : private juce::Thread {
     std::atomic<juce::uint64> nextId_{1};
     std::atomic<double> expiryMs_{kDefaultExpiryMs};
     std::atomic<bool> autoPublish_{true};
+    mutable juce::CriticalSection unmaskLock_;
+    std::vector<UnmaskRequest> unmaskRequests_;
+    std::map<std::pair<juce::uint64, juce::uint64>, UnmaskStatus> unmaskStatus_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixHub)
 };

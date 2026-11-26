@@ -59,10 +59,32 @@ class ICommandPaletteHost {
 
     /// UX-11: the core verbs, shared by the palette and the keyboard
     /// shortcuts (default no-op for test hosts).
-    enum class CoreVerb { OpenFile, Analyse, FixTopIssue, ToggleAb, Export, Settings };
+    enum class CoreVerb { OpenFile, Analyse, FixTopIssue, FixAllSafe, ToggleAb, Export, Settings };
     virtual void runCoreVerb(CoreVerb) {}
+    /// ENH-1: turns watching for new bounces on / off - the session's file
+    /// itself, or (`folder`) newer versions beside it (default no-op).
+    virtual void toggleBounceWatch(bool /*folder*/) {}
     /// UX-5: the opt-in session-health strip (default no-op for test hosts).
     virtual void toggleSessionHealthStrip() {}
+
+    /// STU-7: things the palette finds besides its commands, and where
+    /// selecting one goes. Defaults (test hosts): none.
+    struct SearchTarget {
+        juce::String title;    ///< the row's text
+        juce::String keywords; ///< extra search words
+        std::string id;        ///< card id / finding key / genre id
+    };
+    /// Dashboard cards; selecting one opens Analysis on it (its group tab
+    /// selected, scrolled to and flashed).
+    virtual std::vector<SearchTarget> searchableCards() { return {}; }
+    virtual void revealCard(const std::string& /*cardId*/) {}
+    /// The session's open findings; selecting one opens it in Issues.
+    virtual std::vector<SearchTarget> searchableFindings() { return {}; }
+    virtual void openFinding(const std::string& /*key*/) {}
+    /// Every genre; selecting one shows its profile in the Reference
+    /// Library - never changes the session's target.
+    virtual std::vector<SearchTarget> searchableGenres() { return {}; }
+    virtual void showGenre(const std::string& /*genreId*/) {}
 
     /// CE-AG-4: the controller seam free-text mix instructions run against
     /// (/command/parse -> preview -> confirm -> /command/execute). nullptr

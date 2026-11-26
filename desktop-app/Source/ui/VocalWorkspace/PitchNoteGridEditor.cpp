@@ -119,7 +119,7 @@ PitchNoteGridEditor::PitchNoteGridEditor(IAppController& c) : PanelCard(c, "Pitc
     renderButton_.setEnabled(false);
     addAndMakeVisible(renderButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setText(TRANS("Detect notes to start tuning."), juce::dontSendNotification);
     addAndMakeVisible(statusLabel_);
     refreshKey();

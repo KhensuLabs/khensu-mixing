@@ -41,7 +41,7 @@ PanBalancePanel::PanBalancePanel(IAppController& c) : PanelCard(c, "Pan Energy B
     run_.onRetry([this] { runAnalysis(); });
     run_.setIdle(TRANS("Scan the stereo field per band."));
 
-    warningsLabel_.setFont(KhensuTheme::labelFont(9.5f));
+    warningsLabel_.setFont(KhensuTheme::labelFont(type::caption));
     warningsLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(warningsLabel_);
 }
@@ -131,12 +131,12 @@ void PanBalancePanel::paint(juce::Graphics& g)
         juce::Rectangle<float> lane(lanes.getX(), lanes.getY() + bi * laneH, lanes.getWidth(), laneH);
         auto label = lane.removeFromLeft(64.0f);
 
-        g.setFont(KhensuTheme::labelFont(8.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         const bool warn = std::abs(band.bias) > 0.15f || (band.name == "sub" && band.width > 0.5f);
         g.setColour(warn ? KhensuTheme::accentAmber : KhensuTheme::textSecondary);
         auto nameArea = label.removeFromTop(label.getHeight() * 0.55f);
         g.drawText(band.name.toUpperCase(), nameArea.toNearestInt(), juce::Justification::bottomLeft, false);
-        g.setFont(KhensuTheme::labelFont(7.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(TRANS("side") + " " + juce::String(juce::roundToInt(band.sideShare * 100.0f)) + "%",
                    label.toNearestInt(), juce::Justification::topLeft, false);
@@ -175,7 +175,7 @@ void PanBalancePanel::paint(juce::Graphics& g)
         }
     }
     // L/R legend.
-    g.setFont(KhensuTheme::labelFont(7.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText("R", (int)lanes.getRight() - 12, (int)lanes.getY(), 10, 10, juce::Justification::right);
     g.drawText("L", (int)lanes.getRight() - 12, (int)lanes.getBottom() - 10, 10, 10, juce::Justification::right);

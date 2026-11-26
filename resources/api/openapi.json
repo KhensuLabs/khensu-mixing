@@ -3058,6 +3058,12 @@
             "title": "Input Dir",
             "type": "string"
           },
+          "key_stem": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Key Stem",
+            "type": "string"
+          },
           "normalize": {
             "default": false,
             "title": "Normalize",
@@ -3149,6 +3155,12 @@
                 "type": "null"
               }
             ]
+          },
+          "key_stem": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Key Stem",
+            "type": "string"
           },
           "normalize": {
             "default": false,
@@ -3248,6 +3260,20 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "warnings": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warnings"
           }
         },
         "required": [
@@ -4414,6 +4440,20 @@
               }
             ],
             "title": "Stem Provenance"
+          },
+          "warnings": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warnings"
           }
         },
         "required": [
@@ -16236,6 +16276,24 @@
             "title": "Stem Paths",
             "type": "object"
           },
+          "strength": {
+            "default": 0.5,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Strength",
+            "type": "number"
+          },
+          "style": {
+            "default": "balanced",
+            "enum": [
+              "warm",
+              "balanced",
+              "open",
+              "loud"
+            ],
+            "title": "Style",
+            "type": "string"
+          },
           "target_stem": {
             "default": "mix",
             "title": "Target Stem",
@@ -16330,6 +16388,52 @@
               }
             ],
             "title": "Stop Reason"
+          },
+          "strength": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strength"
+          },
+          "style": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Style"
+          },
+          "style_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Style Summary"
+          },
+          "targets": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MasteringAgentTargets"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -16372,6 +16476,63 @@
           "status"
         ],
         "title": "MasteringAgentStatusResponse",
+        "type": "object"
+      },
+      "MasteringAgentTargets": {
+        "additionalProperties": true,
+        "properties": {
+          "ceiling_dbtp": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Ceiling Dbtp"
+          },
+          "centroid_hz": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Centroid Hz"
+          },
+          "crest_db": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Crest Db"
+          },
+          "lufs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Lufs"
+          }
+        },
+        "required": [
+          "lufs",
+          "crest_db",
+          "centroid_hz",
+          "ceiling_dbtp"
+        ],
+        "title": "MasteringAgentTargets",
         "type": "object"
       },
       "MasteringChainStage": {
@@ -23335,6 +23496,727 @@
         "title": "ReferenceProfileMetrics",
         "type": "object"
       },
+      "ReferenceScanCounts": {
+        "additionalProperties": true,
+        "description": "Items per catalog genre id / family id.",
+        "properties": {},
+        "title": "ReferenceScanCounts",
+        "type": "object"
+      },
+      "ReferenceScanCurrentResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "ReferenceScanCurrentResponse",
+        "type": "object"
+      },
+      "ReferenceScanGenreRequest": {
+        "properties": {
+          "apply_to_pack": {
+            "default": false,
+            "title": "Apply To Pack",
+            "type": "boolean"
+          },
+          "genre": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Genre",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "learn": {
+            "default": true,
+            "title": "Learn",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ReferenceScanGenreRequest",
+        "type": "object"
+      },
+      "ReferenceScanGenreResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/ReferenceScanItem"
+          },
+          "learned": {
+            "title": "Learned",
+            "type": "boolean"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "item",
+          "updated",
+          "learned"
+        ],
+        "title": "ReferenceScanGenreResponse",
+        "type": "object"
+      },
+      "ReferenceScanItem": {
+        "additionalProperties": true,
+        "properties": {
+          "album": {
+            "title": "Album",
+            "type": "string"
+          },
+          "artwork_path": {
+            "title": "Artwork Path",
+            "type": "string"
+          },
+          "author": {
+            "title": "Author",
+            "type": "string"
+          },
+          "bpm": {
+            "title": "Bpm",
+            "type": "number"
+          },
+          "duration_s": {
+            "title": "Duration S",
+            "type": "number"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "family": {
+            "title": "Family",
+            "type": "string"
+          },
+          "genre": {
+            "title": "Genre",
+            "type": "string"
+          },
+          "genre_confidence": {
+            "title": "Genre Confidence",
+            "type": "number"
+          },
+          "genre_source": {
+            "title": "Genre Source",
+            "type": "string"
+          },
+          "has_artwork": {
+            "title": "Has Artwork",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "indexed": {
+            "title": "Indexed",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "pack": {
+            "title": "Pack",
+            "type": "string"
+          },
+          "pack_path": {
+            "title": "Pack Path",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "sample_type": {
+            "title": "Sample Type",
+            "type": "string"
+          },
+          "tag_genre": {
+            "title": "Tag Genre",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "root",
+          "path",
+          "kind",
+          "sample_type",
+          "title",
+          "author",
+          "album",
+          "pack",
+          "pack_path",
+          "artwork_path",
+          "has_artwork",
+          "genre",
+          "family",
+          "genre_source",
+          "genre_confidence",
+          "tag_genre",
+          "bpm",
+          "key",
+          "duration_s",
+          "indexed",
+          "exists",
+          "error"
+        ],
+        "title": "ReferenceScanItem",
+        "type": "object"
+      },
+      "ReferenceScanItemsResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceScanItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "ReferenceScanItemsResponse",
+        "type": "object"
+      },
+      "ReferenceScanPack": {
+        "additionalProperties": true,
+        "properties": {
+          "artwork_path": {
+            "title": "Artwork Path",
+            "type": "string"
+          },
+          "author": {
+            "title": "Author",
+            "type": "string"
+          },
+          "family": {
+            "title": "Family",
+            "type": "string"
+          },
+          "genre": {
+            "title": "Genre",
+            "type": "string"
+          },
+          "has_artwork": {
+            "title": "Has Artwork",
+            "type": "boolean"
+          },
+          "loops": {
+            "title": "Loops",
+            "type": "integer"
+          },
+          "pack": {
+            "title": "Pack",
+            "type": "string"
+          },
+          "pack_path": {
+            "title": "Pack Path",
+            "type": "string"
+          },
+          "samples": {
+            "title": "Samples",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pack",
+          "pack_path",
+          "author",
+          "samples",
+          "loops",
+          "artwork_path",
+          "has_artwork",
+          "genre",
+          "family"
+        ],
+        "title": "ReferenceScanPack",
+        "type": "object"
+      },
+      "ReferenceScanPacksResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "packs": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceScanPack"
+            },
+            "title": "Packs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "packs"
+        ],
+        "title": "ReferenceScanPacksResponse",
+        "type": "object"
+      },
+      "ReferenceScanProgress": {
+        "additionalProperties": true,
+        "properties": {
+          "current": {
+            "default": "",
+            "title": "Current",
+            "type": "string"
+          },
+          "done": {
+            "default": 0,
+            "title": "Done",
+            "type": "integer"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "indexed": {
+            "default": 0,
+            "title": "Indexed",
+            "type": "integer"
+          },
+          "phase": {
+            "default": "pending",
+            "title": "Phase",
+            "type": "string"
+          },
+          "samples": {
+            "default": 0,
+            "title": "Samples",
+            "type": "integer"
+          },
+          "songs": {
+            "default": 0,
+            "title": "Songs",
+            "type": "integer"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "unchanged": {
+            "default": 0,
+            "title": "Unchanged",
+            "type": "integer"
+          }
+        },
+        "title": "ReferenceScanProgress",
+        "type": "object"
+      },
+      "ReferenceScanResult": {
+        "additionalProperties": true,
+        "properties": {
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "boolean"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "files_found": {
+            "title": "Files Found",
+            "type": "integer"
+          },
+          "indexed": {
+            "title": "Indexed",
+            "type": "integer"
+          },
+          "processed": {
+            "title": "Processed",
+            "type": "integer"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "integer"
+          },
+          "samples": {
+            "title": "Samples",
+            "type": "integer"
+          },
+          "songs": {
+            "title": "Songs",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "files_found",
+          "processed",
+          "unchanged",
+          "songs",
+          "samples",
+          "failed",
+          "removed",
+          "indexed",
+          "cancelled",
+          "truncated"
+        ],
+        "title": "ReferenceScanResult",
+        "type": "object"
+      },
+      "ReferenceScanRoot": {
+        "additionalProperties": true,
+        "properties": {
+          "added_at": {
+            "title": "Added At",
+            "type": "string"
+          },
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "items": {
+            "title": "Items",
+            "type": "integer"
+          },
+          "last_scan_at": {
+            "title": "Last Scan At",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "rescan_on_launch": {
+            "title": "Rescan On Launch",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "added_at",
+          "last_scan_at",
+          "rescan_on_launch",
+          "exists",
+          "items"
+        ],
+        "title": "ReferenceScanRoot",
+        "type": "object"
+      },
+      "ReferenceScanRootRemoveRequest": {
+        "properties": {
+          "forget_items": {
+            "default": true,
+            "title": "Forget Items",
+            "type": "boolean"
+          },
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "ReferenceScanRootRemoveRequest",
+        "type": "object"
+      },
+      "ReferenceScanRootRemoveResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "forgotten_items": {
+            "title": "Forgotten Items",
+            "type": "integer"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "removed",
+          "forgotten_items"
+        ],
+        "title": "ReferenceScanRootRemoveResponse",
+        "type": "object"
+      },
+      "ReferenceScanRootRequest": {
+        "properties": {
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "replace": {
+            "default": false,
+            "title": "Replace",
+            "type": "boolean"
+          },
+          "rescan_on_launch": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rescan On Launch"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "ReferenceScanRootRequest",
+        "type": "object"
+      },
+      "ReferenceScanRootsResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "roots": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceScanRoot"
+            },
+            "title": "Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "roots"
+        ],
+        "title": "ReferenceScanRootsResponse",
+        "type": "object"
+      },
+      "ReferenceScanStartRequest": {
+        "properties": {
+          "index_songs": {
+            "default": true,
+            "title": "Index Songs",
+            "type": "boolean"
+          },
+          "max_files": {
+            "default": 50000,
+            "maximum": 500000.0,
+            "minimum": 1.0,
+            "title": "Max Files",
+            "type": "integer"
+          },
+          "roots": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Roots",
+            "type": "array"
+          }
+        },
+        "title": "ReferenceScanStartRequest",
+        "type": "object"
+      },
+      "ReferenceScanStartResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "job_id",
+          "created",
+          "roots"
+        ],
+        "title": "ReferenceScanStartResponse",
+        "type": "object"
+      },
+      "ReferenceScanStatusResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReferenceScanProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReferenceScanResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "roots": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Roots",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ReferenceScanStatusResponse",
+        "type": "object"
+      },
+      "ReferenceScanSummaryResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "families": {
+            "$ref": "#/components/schemas/ReferenceScanCounts"
+          },
+          "genres": {
+            "$ref": "#/components/schemas/ReferenceScanCounts"
+          },
+          "packs": {
+            "title": "Packs",
+            "type": "integer"
+          },
+          "samples": {
+            "title": "Samples",
+            "type": "integer"
+          },
+          "songs": {
+            "title": "Songs",
+            "type": "integer"
+          },
+          "unsorted": {
+            "title": "Unsorted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "songs",
+          "samples",
+          "packs",
+          "unsorted",
+          "genres",
+          "families"
+        ],
+        "title": "ReferenceScanSummaryResponse",
+        "type": "object"
+      },
+      "ReferenceScanThumbnailResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "jpeg_base64": {
+            "title": "Jpeg Base64",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "width",
+          "height",
+          "jpeg_base64"
+        ],
+        "title": "ReferenceScanThumbnailResponse",
+        "type": "object"
+      },
       "ReferenceSpectralDeltaRequest": {
         "properties": {
           "n_bands": {
@@ -23868,6 +24750,20 @@
               }
             ],
             "title": "Status"
+          },
+          "warnings": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warnings"
           }
         },
         "title": "RenderJobResult",
@@ -25143,6 +26039,12 @@
             "title": "Genre Relative",
             "type": "boolean"
           },
+          "key_stem": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Key Stem",
+            "type": "string"
+          },
           "output_path": {
             "title": "Output Path",
             "type": "string"
@@ -26310,6 +27212,411 @@
           "sii"
         ],
         "title": "SiiSample",
+        "type": "object"
+      },
+      "SmartBatchFileResult": {
+        "additionalProperties": true,
+        "properties": {
+          "after_lufs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Lufs"
+          },
+          "after_true_peak_dbtp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After True Peak Dbtp"
+          },
+          "before_lufs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Lufs"
+          },
+          "before_true_peak_dbtp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before True Peak Dbtp"
+          },
+          "cleared": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Cleared",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "findings_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Findings After"
+          },
+          "findings_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Findings Before"
+          },
+          "findings_cleared": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Findings Cleared"
+          },
+          "fix_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix Summary"
+          },
+          "kept_steps": {
+            "default": 0,
+            "title": "Kept Steps",
+            "type": "integer"
+          },
+          "master_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Master Summary"
+          },
+          "mastered": {
+            "default": false,
+            "title": "Mastered",
+            "type": "boolean"
+          },
+          "output_path": {
+            "default": "",
+            "title": "Output Path",
+            "type": "string"
+          },
+          "remaining": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Remaining",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_path",
+          "status"
+        ],
+        "title": "SmartBatchFileResult",
+        "type": "object"
+      },
+      "SmartBatchProgress": {
+        "additionalProperties": true,
+        "properties": {
+          "current": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "done",
+          "failed"
+        ],
+        "title": "SmartBatchProgress",
+        "type": "object"
+      },
+      "SmartBatchRequest": {
+        "properties": {
+          "abstained_reason": {
+            "default": "",
+            "title": "Abstained Reason",
+            "type": "string"
+          },
+          "ceiling_dbtp": {
+            "anyOf": [
+              {
+                "maximum": -0.1,
+                "minimum": -3.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ceiling Dbtp"
+          },
+          "file_paths": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "File Paths",
+            "type": "array"
+          },
+          "fix": {
+            "default": true,
+            "title": "Fix",
+            "type": "boolean"
+          },
+          "genre_action_allowed": {
+            "default": false,
+            "title": "Genre Action Allowed",
+            "type": "boolean"
+          },
+          "genre_id": {
+            "default": "",
+            "title": "Genre Id",
+            "type": "string"
+          },
+          "include_loudness": {
+            "default": true,
+            "title": "Include Loudness",
+            "type": "boolean"
+          },
+          "input_dir": {
+            "default": "",
+            "title": "Input Dir",
+            "type": "string"
+          },
+          "loudness_offset_db": {
+            "default": 0.0,
+            "maximum": 6.0,
+            "minimum": -6.0,
+            "title": "Loudness Offset Db",
+            "type": "number"
+          },
+          "master": {
+            "default": false,
+            "title": "Master",
+            "type": "boolean"
+          },
+          "max_iterations": {
+            "default": 5,
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Max Iterations",
+            "type": "integer"
+          },
+          "max_steps": {
+            "default": 6,
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Max Steps",
+            "type": "integer"
+          },
+          "output_dir": {
+            "default": "",
+            "title": "Output Dir",
+            "type": "string"
+          },
+          "strength": {
+            "default": 0.5,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Strength",
+            "type": "number"
+          },
+          "style": {
+            "default": "balanced",
+            "enum": [
+              "warm",
+              "balanced",
+              "open",
+              "loud"
+            ],
+            "title": "Style",
+            "type": "string"
+          },
+          "suffix": {
+            "default": "_smart",
+            "title": "Suffix",
+            "type": "string"
+          },
+          "target_lufs": {
+            "default": -14.0,
+            "maximum": -3.0,
+            "minimum": -40.0,
+            "title": "Target Lufs",
+            "type": "number"
+          },
+          "targets": {
+            "additionalProperties": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "title": "Targets",
+            "type": "object"
+          }
+        },
+        "title": "SmartBatchRequest",
+        "type": "object"
+      },
+      "SmartBatchStartResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "output_dir": {
+            "title": "Output Dir",
+            "type": "string"
+          },
+          "total_files": {
+            "title": "Total Files",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id",
+          "total_files",
+          "output_dir"
+        ],
+        "title": "SmartBatchStartResponse",
+        "type": "object"
+      },
+      "SmartBatchStatusResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "output_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Dir"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/SmartBatchProgress"
+          },
+          "results": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SmartBatchFileResult"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          }
+        },
+        "required": [
+          "status",
+          "progress"
+        ],
+        "title": "SmartBatchStatusResponse",
         "type": "object"
       },
       "SoundRecreationFeatures": {
@@ -35210,6 +36517,137 @@
         "summary": "Apply Section Chain Cancel"
       }
     },
+    "/copilot/batch/smart/start": {
+      "post": {
+        "operationId": "batch_smart_start_copilot_batch_smart_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmartBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartBatchStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Batch Smart Start"
+      }
+    },
+    "/copilot/batch/smart/status/{job_id}": {
+      "get": {
+        "operationId": "batch_smart_status_copilot_batch_smart_status__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartBatchStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Batch Smart Status"
+      }
+    },
+    "/copilot/batch/smart/{job_id}/cancel": {
+      "post": {
+        "operationId": "batch_smart_cancel_copilot_batch_smart__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotJobCancelResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Batch Smart Cancel"
+      }
+    },
     "/copilot/chat": {
       "post": {
         "description": "Blocking chat round-trip, run on the dedicated LLM pool.",
@@ -38385,6 +39823,679 @@
         "tags": [
           "collab"
         ]
+      }
+    },
+    "/references/scan/current": {
+      "get": {
+        "description": "The running scan, else the last one still remembered (a screen opened\nmid-scan, or after a launch rescan, follows it).",
+        "operationId": "reference_scan_current_references_scan_current_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceScanCurrentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reference Scan Current"
+      }
+    },
+    "/references/scan/items": {
+      "get": {
+        "operationId": "reference_scan_items_references_scan_items_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "genre",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 80,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Genre"
+            }
+          },
+          {
+            "in": "query",
+            "name": "family",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 80,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Family"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "song",
+                    "sample"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pack",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pack"
+            }
+          },
+          {
+            "in": "query",
+            "name": "author",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Author"
+            }
+          },
+          {
+            "in": "query",
+            "name": "text",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Text"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unsorted",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unsorted",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceScanItemsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reference Scan Items"
+      }
+    },
+    "/references/scan/items/genre": {
+      "post": {
+        "description": "Correct an item's genre (a song's correction is also a genre example).",
+        "operationId": "reference_scan_set_genre_references_scan_items_genre_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceScanGenreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceScanGenreResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reference Scan Set Genre"
+      }
+    },
+    "/references/scan/packs": {
+      "get": {
+        "operationId": "reference_scan_packs_references_scan_packs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "genre",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 80,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Genre"
+            }
+          },
+          {
+            "in": "query",
+            "name": "family",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 80,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Family"
+            }
+          },
+          {
+            "in": "query",
+            "name": "author",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Author"
+            }
+          },
+          {
+            "in": "query",
+            "name": "text",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Text"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unsorted",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unsorted",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceScanPacksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reference Scan Packs"
+      }
+    },
+    "/references/scan/roots": {
+      "get": {
+        "operationId": "reference_scan_roots_references_scan_roots_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceScanRootsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reference Scan Roots"
+      },
+      "post": {
+        "description": "Add a scan folder (``replace``: make it the only one).",
+        "operationId": "reference_scan_set_root_references_scan_roots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceScanRootRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceScanRoot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reference Scan Set Root"
+      }
+    },
+    "/references/scan/roots/remove": {
+      "post": {
+        "operationId": "reference_scan_remove_root_references_scan_roots_remove_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceScanRootRemoveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceScanRootRemoveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reference Scan Remove Root"
+      }
+    },
+    "/references/scan/start": {
+      "post": {
+        "description": "Walk the scan folders: sort songs and samples, read tags and artwork,\ngive each a genre. Files unchanged since the last scan are skipped.",
+        "operationId": "reference_scan_start_references_scan_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceScanStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceScanStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reference Scan Start"
+      }
+    },
+    "/references/scan/status/{job_id}": {
+      "get": {
+        "operationId": "reference_scan_status_references_scan_status__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceScanStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reference Scan Status"
+      }
+    },
+    "/references/scan/summary": {
+      "get": {
+        "operationId": "reference_scan_summary_references_scan_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceScanSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reference Scan Summary"
+      }
+    },
+    "/references/scan/thumbnail/{item_id}": {
+      "get": {
+        "operationId": "reference_scan_thumbnail_references_scan_thumbnail__item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceScanThumbnailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reference Scan Thumbnail"
+      }
+    },
+    "/references/scan/{job_id}/cancel": {
+      "post": {
+        "operationId": "reference_scan_cancel_references_scan__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCancelResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reference Scan Cancel"
       }
     },
     "/render/fit_chain": {

@@ -2,6 +2,7 @@
 #include "LoudnessArcPanel.h"
 #include <khensu/session/Session.h>
 #include <khensu/targets/GenreDatabase.h>
+#include "../../IAppController.h"
 #include "../shared/KhensuLookAndFeel.h"
 #include <algorithm>
 #include <cmath>
@@ -9,73 +10,121 @@
 
 namespace khensu {
 
+namespace chart = ui::chart;
+
 LoudnessArcPanel::LoudnessArcPanel(IAppController& c) : PanelCard(c, "Loudness Arc")
 {
     setExplainer(TRANS("Loudness Arc"),
                  TRANS("Per-section integrated LUFS displayed as a horizontal bar chart. Shows the loudness "
                  "journey across your arrangement - chorus lift, verse headroom, and bridge dynamics. "
                  "The shaded band is the genre's acceptable LUFS range; the dashed line is its target. "
-                 "Green = loud, amber = moderate, red = quiet relative to the range.\n\n"
+                 "Click a section to play from its start.\n\n"
                  "The footer scores your macrodynamics: the measured verse->chorus lift against what "
                  "this genre typically delivers. A flat arc usually means bus over-compression has "
                  "squashed the contrast your arrangement wrote - the chorus stops feeling like a lift "
                  "even though the parts changed."),
                  "integrated_loudness");
+    chart_.setTitle(TRANS("Loudness per section"));
+    chart_.setHorizontal(true);
+    chart_.x = chart::scales::lufs();
+    chart_.onBarClicked = [this](int i) {
+        if (i >= 0 && i < static_cast<int>(bars_.size()))
+            chart_transport::playFrom(controller_.playback(), bars_[static_cast<size_t>(i)].startSec);
+    };
+    chart_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    chart_.setTooltip(TRANS("Click a section to play from its start"));
+    addChildComponent(chart_);
+}
+
+void LoudnessArcPanel::Chart::paintData(juce::Graphics& g, juce::Rectangle<float> plot)
+{
+    if (range) { // the genre's acceptable range, behind the bars
+        const float x0 = px(range->first), x1 = px(range->second);
+        g.setColour(KhensuTheme::vizSpreadInner);
+        g.fillRect(juce::Rectangle<float>(std::min(x0, x1), plot.getY(), std::abs(x1 - x0), plot.getHeight()));
+    }
+    ThemedBarChart::paintData(g, plot);
+    if (target) {
+        juce::Path line;
+        line.startNewSubPath(px(*target), plot.getY());
+        line.lineTo(px(*target), plot.getBottom());
+        juce::Path dashed;
+        const float dashes[] = {3.0f, 3.0f};
+        juce::PathStrokeType(1.2f).createDashedStroke(dashed, line, dashes, 2);
+        g.setColour(KhensuTheme::vizMedian);
+        g.fillPath(dashed); // createDashedStroke returns a filled outline
+    }
 }
 
 void LoudnessArcPanel::setData(const AnalysisResult& r)
 {
     bars_.clear();
-    bool hasSecAnalysis = r.section_analysis.has_value() && !r.section_analysis->sections.empty();
-
-    SectionAnalysis sa;
-    if (hasSecAnalysis) {
-        sa = *r.section_analysis;
-    } else {
-        sa.sections = {{"Intro", "intro", "A", 0.0f, 30.0f, 30.0f, -22.4f, 12.0f, 0.0f, -90.0f, -1.0f, -1.0f, -1.0f, 0.8f},
-                       {"Verse 1", "verse", "B", 30.0f, 90.0f, 60.0f, -18.2f, 12.0f, 0.0f, -90.0f, -1.0f, -1.0f, -1.0f, 0.8f},
-                       {"Chorus 1", "chorus", "C", 90.0f, 150.0f, 60.0f, -14.1f, 12.0f, 0.0f, -90.0f, -1.0f, -1.0f, -1.0f, 0.8f},
-                       {"Verse 2", "verse", "B", 150.0f, 210.0f, 60.0f, -17.8f, 12.0f, 0.0f, -90.0f, -1.0f, -1.0f, -1.0f, 0.8f},
-                       {"Chorus 2", "chorus", "C", 210.0f, 270.0f, 60.0f, -13.9f, 12.0f, 0.0f, -90.0f, -1.0f, -1.0f, -1.0f, 0.8f},
-                       {"Bridge", "bridge", "D", 270.0f, 300.0f, 30.0f, -16.5f, 12.0f, 0.0f, -90.0f, -1.0f, -1.0f, -1.0f, 0.8f},
-                       {"Chorus 3", "chorus", "C", 300.0f, 360.0f, 60.0f, -13.5f, 12.0f, 0.0f, -90.0f, -1.0f, -1.0f, -1.0f, 0.8f},
-                       {"Outro", "outro", "E", 360.0f, 390.0f, 30.0f, -21.0f, 12.0f, 0.0f, -90.0f, -1.0f, -1.0f, -1.0f, 0.8f}};
-    }
-
-    float lo = 0.0f, hi = -99.0f;
-    bool anyValid = false;
-
-    for (const auto& s : sa.sections) {
-        SectionBar b;
-        b.label = juce::String(s.label);
-        b.lufs = s.lufs_integrated;
-        b.valid = (s.lufs_integrated < -0.5f); // 0.0f = not computed
-        if (b.valid) {
-            if (!anyValid) {
-                lo = s.lufs_integrated;
-                hi = s.lufs_integrated;
-                anyValid = true;
-            }
-            lo = juce::jmin(lo, s.lufs_integrated);
-            hi = juce::jmax(hi, s.lufs_integrated);
+    // Only measured sections: no section analysis means no arc (the empty
+    // state says so) - never a made-up example arc.
+    if (r.section_analysis.has_value())
+        for (const auto& s : r.section_analysis->sections) {
+            SectionBar b;
+            b.label = juce::String(s.label);
+            b.lufs = s.lufs_integrated;
+            b.startSec = s.start_sec;
+            b.valid = (s.lufs_integrated < -0.5f); // 0.0f = not computed
+            bars_.push_back(b);
         }
-        bars_.push_back(b);
-    }
-
-    if (anyValid) {
-        minLufs_ = lo - 2.0f; // a little below the quietest for visual breathing room
-        maxLufs_ = hi + 1.0f;
-    }
-
-    if (auto* session = controller_.getActiveSession()) {
-        if (auto genre = controller_.genreDatabase().findById(session->target.primary_genre)) {
-            minLufs_ = juce::jmin(minLufs_, genre->lufs_range_min - 1.5f);
-            maxLufs_ = juce::jmax(maxLufs_, genre->lufs_range_max + 1.5f);
-        }
-    }
-
     computeContrast();
+    rebuildChart();
+    resized(); // the footer row comes and goes with the contrast
     repaint();
+}
+
+void LoudnessArcPanel::rebuildChart()
+{
+    chart_.setVisible(!bars_.empty());
+    double lo = chart::scales::kLufsHi, hi = chart::scales::kLufsLo;
+    std::vector<chart::Bar> bars;
+    for (const auto& b : bars_) {
+        chart::Bar bar;
+        bar.label = b.label;
+        bar.values = {b.valid ? static_cast<double>(b.lufs) : std::nan("")};
+        if (b.valid) {
+            lo = std::min(lo, static_cast<double>(b.lufs));
+            hi = std::max(hi, static_cast<double>(b.lufs));
+        } else {
+            bar.note = TRANS("not measured");
+        }
+        bars.push_back(bar);
+    }
+    chart_.range.reset();
+    chart_.target.reset();
+    juce::String genre;
+    if (auto* session = controller_.getActiveSession())
+        if (auto g = controller_.genreDatabase().findById(session->target.primary_genre)) {
+            chart_.range = std::make_pair(static_cast<double>(g->lufs_range_min), static_cast<double>(g->lufs_range_max));
+            chart_.target = g->lufs_target;
+            lo = std::min(lo, static_cast<double>(g->lufs_range_min));
+            hi = std::max(hi, static_cast<double>(g->lufs_range_max));
+            genre = juce::String(g->name);
+        }
+    // VIS-3: the standard loudness axis, narrowed to what is shown.
+    chart_.x = chart::scales::autoFit(chart::scales::lufs(), lo, hi, 3.0, 12.0);
+    chart_.setXRange(chart_.x.lo, chart_.x.hi);
+    // The bars grow from the left edge; their length is loudness.
+    chart_.setBaseline(chart_.x.lo);
+    chart_.setBars(std::move(bars), {{TRANS("Integrated"), KhensuTheme::vizCategory(0)}});
+    chart_.valueText = [](size_t, size_t, double v) { return juce::String(v, 1) + " LUFS"; };
+
+    // VIS-8: the arc in words.
+    juce::StringArray parts;
+    for (const auto& b : bars_)
+        parts.add(b.label + " " + (b.valid ? juce::String(b.lufs, 1) + " LUFS" : TRANS("not measured")));
+    juce::String summary = TRANS("Loudness per section") + ": " + parts.joinIntoString(", ");
+    if (chart_.range)
+        summary << ". " << (genre.isNotEmpty() ? genre + " " : juce::String()) << TRANS("range") << " "
+                << juce::String(chart_.range->first, 1) << " " << TRANS("to") << " " << juce::String(chart_.range->second, 1)
+                << " LUFS";
+    if (contrastValid_)
+        summary << ". " << TRANS("Lift") << " " << juce::String(measuredContrastDb_, 1) << " dB, "
+                << TRANS("the genre expects about") << " " << juce::String(expectedContrastDb_, 1) << " dB";
+    chart_.setSummary(summary + ".");
 }
 
 void LoudnessArcPanel::computeContrast()
@@ -103,143 +152,53 @@ void LoudnessArcPanel::computeContrast()
     contrastValid_ = true;
 }
 
+void LoudnessArcPanel::resized()
+{
+    PanelCard::resized();
+    auto b = bodyArea();
+    if (contrastValid_) b.removeFromBottom(18);
+    chart_.setBounds(b);
+}
+
 void LoudnessArcPanel::paint(juce::Graphics& g)
 {
     PanelCard::paint(g);
-    auto b = bodyArea().withTrimmedTop(12); // Leave room for target line header label
-
-    // Macrodynamics contrast footer (drawn last, but carved out first so the
-    // bars don't paint over it).
-    juce::Rectangle<int> contrastRow;
-    if (contrastValid_) contrastRow = b.removeFromBottom(16);
-
     if (bars_.empty()) {
         drawEmptyState(g, "No loudness arc yet", "Run a full analysis to see the per-section loudness arc.");
         return;
     }
 
-    const int n = (int)bars_.size();
-    const float range = maxLufs_ - minLufs_;
-    const float barH = juce::jmax(4.0f, (float)b.getHeight() / (float)n - 3.0f);
-    const float labelW = 74.0f;
-    const float valW = 46.0f;
-    const float barAreaW = (float)b.getWidth() - labelW - valW;
-
-    // Genre envelope: shade the acceptable LUFS range (lufs_range_min/max)
-    // behind the bars, so it reads as a band the whole arc should sit
-    // within - not just a single target line with no sense of tolerance.
-    if (range > 0.01f) {
-        if (auto* session = controller_.getActiveSession()) {
-            if (auto genre = controller_.genreDatabase().findById(session->target.primary_genre)) {
-                const float loNorm = juce::jlimit(0.0f, 1.0f, (genre->lufs_range_min - minLufs_) / range);
-                const float hiNorm = juce::jlimit(0.0f, 1.0f, (genre->lufs_range_max - minLufs_) / range);
-                if (hiNorm > loNorm) {
-                    const float bandX = (float)b.getX() + labelW + barAreaW * loNorm;
-                    const float bandW = barAreaW * (hiNorm - loNorm);
-                    g.setColour(KhensuTheme::accentTeal.withAlpha(0.06f));
-                    g.fillRect(bandX, (float)b.getY(), bandW, (float)b.getHeight());
-                }
-            }
-        }
-    }
-
-    float y = (float)b.getY();
-
-    for (const auto& bar : bars_) {
-        juce::Rectangle<float> row((float)b.getX(), y, (float)b.getWidth(), barH);
-
-        // Section label
-        g.setColour(KhensuTheme::textSecondary);
-        g.setFont(khensu::KhensuTheme::uiFont(9.5f, juce::Font::plain));
-        auto labelRect = row.removeFromLeft(labelW);
-        g.drawText(bar.label, labelRect.toNearestInt(), juce::Justification::centredLeft);
-
-        if (bar.valid) {
-            const float norm = range > 0.01f ? juce::jlimit(0.0f, 1.0f, (bar.lufs - minLufs_) / range) : 0.5f;
-
-            // Colour: teal accent for loudest zone, amber middle, muted red for quiet
-            juce::Colour barCol = norm > 0.65f   ? KhensuTheme::accentTeal
-                                  : norm > 0.35f ? KhensuTheme::accentAmber
-                                                 : KhensuTheme::accentRed;
-
-            // Background track
-            g.setColour(KhensuTheme::bgRaised);
-            g.fillRoundedRectangle(row.getX(), row.getY(), barAreaW, barH, 2.0f);
-
-            // Fill bar - proportional to normalised LUFS
-            g.setColour(barCol.withAlpha(0.80f));
-            g.fillRoundedRectangle(row.getX(), row.getY(), barAreaW * norm, barH, 2.0f);
-
-            // LUFS value label
-            g.setColour(KhensuTheme::textPrimary);
-            g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::bold));
-            juce::Rectangle<float> valRect(row.getX() + barAreaW + 4.0f, row.getY(), valW, barH);
-            g.drawText(juce::String(bar.lufs, 1) + " L", valRect.toNearestInt(), juce::Justification::centredLeft);
-
-        } else {
-            // Not computed marker
-            g.setColour(KhensuTheme::textSecondary.withAlpha(0.4f));
-            g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::plain));
-            g.drawText("-", row.toNearestInt(), juce::Justification::centredLeft);
-        }
-
-        y += barH + 3.0f;
-        if (y + barH > (float)b.getBottom()) break;
-    }
-
-    // Paint the target LUFS reference vertical line
-    float targetLufs = -99.0f;
-    if (auto* session = controller_.getActiveSession()) {
-        if (auto genre = controller_.genreDatabase().findById(session->target.primary_genre)) {
-            targetLufs = genre->lufs_target;
-        }
-    }
-    if (targetLufs > minLufs_ && targetLufs < maxLufs_ && range > 0.01f) {
-        const float normTarget = (targetLufs - minLufs_) / range;
-        const float tx = b.getX() + labelW + barAreaW * normTarget;
-
-        g.setColour(KhensuTheme::accentTeal.withAlpha(0.5f));
-        float dashes[] = {3.0f, 3.0f};
-        g.drawDashedLine({tx, (float)b.getY(), tx, (float)b.getBottom()}, dashes, 2, 1.0f);
-
-        g.setFont(khensu::KhensuTheme::uiFont(7.5f, juce::Font::bold));
-        g.setColour(KhensuTheme::accentTeal);
-        g.drawText("TARGET (" + juce::String(juce::roundToInt(targetLufs)) + " LUFS)", (int)tx - 45, (int)b.getY() - 11, 90, 10,
-                   juce::Justification::centred);
-    }
-
     // ---- Macrodynamics contrast footer ----
-    if (contrastValid_ && !contrastRow.isEmpty()) {
-        const float delta = measuredContrastDb_ - expectedContrastDb_;
-        // Within ±2 dB of the genre expectation = healthy; short = flattened
-        // (the over-compression signature); far over = whiplash contrast.
-        juce::Colour col = std::abs(delta) <= 2.0f ? KhensuTheme::accentTeal
-                           : delta < 0.0f          ? KhensuTheme::accentRed
-                                                   : KhensuTheme::accentAmber;
-        juce::String verdict = std::abs(delta) <= 2.0f ? "healthy contrast"
-                               : delta < 0.0f          ? "flattened - check bus compression/limiting"
-                                                       : "extreme - verses may feel disconnected";
+    if (!contrastValid_) return;
+    const auto contrastRow = bodyArea().removeFromBottom(16);
+    const float delta = measuredContrastDb_ - expectedContrastDb_;
+    // Within +/-2 dB of the genre expectation = healthy; short = flattened
+    // (the over-compression signature); far over = whiplash contrast. The
+    // words carry the verdict; colour only marks a problem (VIS-4).
+    const juce::Colour col = std::abs(delta) <= 2.0f ? KhensuTheme::textSecondary
+                             : delta < 0.0f          ? KhensuTheme::accentRed
+                                                     : KhensuTheme::accentAmber;
+    const juce::String verdict = std::abs(delta) <= 2.0f ? "healthy contrast"
+                                 : delta < 0.0f          ? "flattened - check bus compression/limiting"
+                                                         : "extreme - verses may feel disconnected";
 
-        juce::String text;
-        using section_contrast::Basis;
-        if (contrast_.basis == Basis::RoleLabels)
-            text << "VERSE->CHORUS LIFT: ";
-        else if (contrast_.basis == Basis::RepeatStructure)
-            // e.g. "REPEATED-SECTION LIFT (B over A, inferred): " - roles come
-            // from which repeating section is loudest, not from named parts.
-            text << TRANS("REPEATED-SECTION LIFT") << " (" << contrast_.liftLabel << " " << TRANS("over") << " "
-                 << contrast_.baseLabel << ", " << TRANS("inferred") << "): ";
-        else
-            text << "PEAK-SECTION LIFT (approx): ";
-        text << juce::String(measuredContrastDb_, 1) << " dB  -  genre expects ~"
-             << juce::String(expectedContrastDb_, 1) << " dB  -  " << verdict;
+    juce::String text;
+    using section_contrast::Basis;
+    if (contrast_.basis == Basis::RoleLabels)
+        text << "Verse->chorus lift: ";
+    else if (contrast_.basis == Basis::RepeatStructure)
+        // e.g. "Repeated-section lift (B over A, inferred): " - roles come
+        // from which repeating section is loudest, not from named parts.
+        text << TRANS("Repeated-section lift") << " (" << contrast_.liftLabel << " " << TRANS("over") << " "
+             << contrast_.baseLabel << ", " << TRANS("inferred") << "): ";
+    else
+        text << "Peak-section lift (approx): ";
+    text << juce::String(measuredContrastDb_, 1) << " dB  -  genre expects ~" << juce::String(expectedContrastDb_, 1)
+         << " dB  -  " << verdict;
 
-        g.setFont(khensu::KhensuTheme::uiFont(8.5f, juce::Font::bold));
-        g.setColour(col);
-        g.drawText(text, contrastRow, juce::Justification::centredLeft, true);
-    }
+    g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
+    g.setColour(col);
+    g.drawText(text, contrastRow, juce::Justification::centredLeft, true);
 }
-
-void LoudnessArcPanel::resized() { PanelCard::resized(); }
 
 } // namespace khensu

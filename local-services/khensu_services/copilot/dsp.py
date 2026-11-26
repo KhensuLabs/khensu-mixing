@@ -48,6 +48,7 @@ from khensu_services.copilot.dsp_dynamics import (  # noqa: F401
     _apply_transient_shaper,
     _apply_multiband_compressor,
     _apply_dynamic_eq,
+    _align_key,
     _apply_clipper,
     _apply_limiter,
     _apply_spectral_denoise,
@@ -123,10 +124,56 @@ def _rms_peak_db(audio: np.ndarray) -> tuple[float, float]:
 # so where a chain gains/loses headroom is visible stage by stage instead of
 # only as one before/after number.
 # ---------------------------------------------------------------------------
+def chain_wants_key(effect_specs: list[dict] | None) -> bool:
+    """True when a stage of the chain detects on the render's key signal (a
+    DynamicEQ with ``use_key`` 1) - the native ``ChainProcessor::wantsKey``."""
+    for spec in effect_specs or []:
+        if spec.get("effect") == "DynamicEQ":
+            params = _clamped_params("DynamicEQ", spec.get("parameters") or {})
+            if params.get("use_key", 0.0) >= 0.5:
+                return True
+    return False
+
+
+def graph_wants_key(graph: dict | None) -> bool:
+    graph = graph or {}
+    return (chain_wants_key(graph.get("effects")) or chain_wants_key(graph.get("post"))
+            or any(chain_wants_key(b.get("effects")) for b in graph.get("branches") or []))
+
+
+KEY_UNREADABLE_WARNING = "Could not read the key signal; the dynamic EQ keyed on its own input."
+
+
+def load_render_key(key_path: str | None, sr: int, n: int) -> tuple[np.ndarray | None, str | None]:
+    """ENH-6: the render's key signal (a stem) as (channels, n) at ``sr``:
+    decoded through the shared cache, resampled to the input's rate and
+    zero-padded / trimmed to its length. ``(None, warning)`` when it cannot be
+    read - the keyed stages then key on their own input, as the native
+    renderer does."""
+    if not key_path:
+        return None, None
+    try:
+        from khensu_services.analysis.context import load_audio
+        from khensu_services.common.errors import check_decode_budget
+        check_decode_budget(key_path)
+        y, _sr = load_audio(key_path, sr=sr, mono=False)
+        y = np.asarray(y, dtype=np.float64)
+        if y.size == 0 or not np.isfinite(y).all():
+            raise ValueError("empty or non-finite key signal")
+    except Exception as exc:  # any failure falls back to self-keying
+        _log.warning("Render key %s unreadable, keying on the input: %s", key_path, exc)
+        return None, KEY_UNREADABLE_WARNING
+    return _align_key(y, n), None
+
+
 def _run_serial_chain(audio: np.ndarray, sr: int, effect_specs: list[dict],
                       key: np.ndarray | None = None,
-                      layout: ChannelLayout | None = None
+                      layout: ChannelLayout | None = None,
+                      render_key: np.ndarray | None = None,
                       ) -> tuple[np.ndarray, list[str], list[str], list[dict], list[dict]]:
+    """``key`` keys the SidechainCompressor (a graph passes its dry input);
+    ``render_key`` is the render's key signal (ENH-6: a stem, aligned to
+    ``audio``) for the DynamicEQ stages with ``use_key`` 1."""
     processed = audio.astype(np.float64, copy=True)
     if not np.isfinite(processed).all():
         raise ValueError("Source audio contains non-finite samples")
@@ -238,7 +285,7 @@ def _run_serial_chain(audio: np.ndarray, sr: int, effect_specs: list[dict],
             applied.append(name)
         elif name == "DynamicEQ":
             processed = _run_custom_stage(name, lambda buf: _apply_dynamic_eq(
-                buf, sr, **_params("DynamicEQ")))
+                buf, sr, key=render_key, **_params("DynamicEQ")))
             applied.append(name)
         elif name == "Doubler":
             processed = _run_custom_stage(name, lambda buf: _apply_doubler(
@@ -410,7 +457,7 @@ def _apply_output_gain(processed: np.ndarray, normalize: bool,
 
 
 def apply_pedalboard_chain(input_path: str, output_path: str, effect_specs: list[dict],
-                           normalize: bool = False) -> dict:
+                           normalize: bool = False, key_path: str | None = None) -> dict:
     """Apply a flat serial effect list (back-compatible entry point).
 
     Gain staging: by default the chain's own levels are preserved — the output
@@ -422,6 +469,10 @@ def apply_pedalboard_chain(input_path: str, output_path: str, effect_specs: list
     Returns {"applied": [...], "skipped": [...], "harmonic_reports": [...]}.
     harmonic_reports is populated once per TapeSaturation stage in the chain
     (see analyze_saturation_aliasing) — empty when none ran.
+
+    ``key_path`` (ENH-6) is the key signal's file (a stem) for DynamicEQ
+    stages with ``use_key`` 1; when it cannot be read they key on their own
+    input and the result carries ``warnings``.
     """
     data, sr = sf.read(input_path)
     is_multichannel = len(data.shape) > 1 and data.shape[1] > 1
@@ -430,19 +481,29 @@ def apply_pedalboard_chain(input_path: str, output_path: str, effect_specs: list
     # DSP runs, and LFE/front-pair routing is available to the chain (AQ-01).
     layout = ChannelLayout.from_channel_count(audio.shape[0] if is_multichannel else 1)
 
+    warnings: list[str] = []
+    render_key = None
+    if key_path and chain_wants_key(effect_specs):
+        render_key, warning = load_render_key(key_path, int(sr), int(audio.shape[-1]))
+        if warning:
+            warnings.append(warning)
+
     processed, applied, skipped, harmonic_reports, stage_levels = _run_serial_chain(
-        audio, int(sr), effect_specs, layout=layout)
+        audio, int(sr), effect_specs, layout=layout, render_key=render_key)
     processed = _apply_output_gain(processed, normalize, chain_output_ceiling_dbtp(effect_specs))
 
     _atomic_render_write(
         output_path,
         lambda tmp: sf.write(tmp, processed.T if is_multichannel else processed, sr, subtype="PCM_24"))
-    return {"applied": applied, "skipped": skipped, "harmonic_reports": harmonic_reports,
-            "stage_levels": stage_levels}
+    out = {"applied": applied, "skipped": skipped, "harmonic_reports": harmonic_reports,
+           "stage_levels": stage_levels}
+    if warnings:
+        out["warnings"] = warnings
+    return out
 
 
 def apply_graph(input_path: str, output_path: str, graph: dict,
-                normalize: bool = False) -> dict:
+                normalize: bool = False, key_path: str | None = None) -> dict:
     """Apply a processing GRAPH: parallel branches summed, then a serial post chain.
 
     Graph schema (all fields optional)::
@@ -467,6 +528,9 @@ def apply_graph(input_path: str, output_path: str, graph: dict,
 
     A flat ``{"effects": [...]}`` (no branches) is treated as a single wet
     branch, so the graph path is a superset of the flat path.
+
+    ``key_path`` (ENH-6): the key signal for keyed DynamicEQ stages in any
+    branch or the post chain, as in ``apply_pedalboard_chain``.
     """
     data, sr = sf.read(input_path)
     sr = int(sr)
@@ -475,6 +539,13 @@ def apply_graph(input_path: str, output_path: str, graph: dict,
     # Resolve the channel layout up front so an unsupported one fails before any
     # DSP runs, and LFE/front-pair routing is available to every branch (AQ-01).
     layout = ChannelLayout.from_channel_count(audio.shape[0] if is_multichannel else 1)
+
+    warnings: list[str] = []
+    render_key = None
+    if key_path and graph_wants_key(graph):
+        render_key, warning = load_render_key(key_path, sr, int(audio.shape[-1]))
+        if warning:
+            warnings.append(warning)
 
     branches = graph.get("branches")
     if not branches:
@@ -495,7 +566,7 @@ def apply_graph(input_path: str, output_path: str, graph: dict,
             src = _band_split(src, sr, lo, hi)
 
         proc, a, s, hr, sl = _run_serial_chain(src, sr, branch.get("effects", []), key=audio,
-                                               layout=layout)
+                                               layout=layout, render_key=render_key)
         applied += [f"b{bi}:{n}" for n in a]
         skipped += s
         harmonic_reports += [{"branch": bi, **r} for r in hr]
@@ -508,7 +579,8 @@ def apply_graph(input_path: str, output_path: str, graph: dict,
     # Serial post chain on the blended signal (bus glue / limiter / etc.)
     post = graph.get("post", [])
     if post:
-        summed, a, s, hr, sl = _run_serial_chain(summed, sr, post, key=audio, layout=layout)
+        summed, a, s, hr, sl = _run_serial_chain(summed, sr, post, key=audio, layout=layout,
+                                                 render_key=render_key)
         applied += [f"post:{n}" for n in a]
         skipped += s
         harmonic_reports += [{"branch": "post", **r} for r in hr]
@@ -518,8 +590,11 @@ def apply_graph(input_path: str, output_path: str, graph: dict,
     _atomic_render_write(
         output_path,
         lambda tmp: sf.write(tmp, summed.T if is_multichannel else summed, sr, subtype="PCM_24"))
-    return {"applied": applied, "skipped": skipped, "harmonic_reports": harmonic_reports,
-            "stage_levels": stage_levels}
+    out = {"applied": applied, "skipped": skipped, "harmonic_reports": harmonic_reports,
+           "stage_levels": stage_levels}
+    if warnings:
+        out["warnings"] = warnings
+    return out
 
 
 def render_delta(dry_path: str, wet_path: str, output_path: str, normalize_gain_db: float = 0.0) -> dict:
@@ -635,7 +710,7 @@ def _constant_power_crossfade(prev: np.ndarray, cur: np.ndarray) -> np.ndarray:
 
 
 def apply_section_chains(input_path: str, output_path: str, sections: list[dict],
-                         crossfade_ms: float = 30.0) -> dict:
+                         crossfade_ms: float = 30.0, key_path: str | None = None) -> dict:
     """Applies a DIFFERENT effect chain (or none) to each detected song
     section, so a chorus/drop can get more compression/saturation "intensity"
     than a verse without a single one-size-fits-all chain for the whole track.
@@ -653,6 +728,9 @@ def apply_section_chains(input_path: str, output_path: str, sections: list[dict]
     ``crossfade_ms`` after each boundary: the outgoing piece's rendered tail
     fades out while the incoming one fades in, so an intensity change between
     sections ramps instead of stepping (AUDIT-017).
+
+    ``key_path`` (ENH-6): the key signal for keyed DynamicEQ stages, sliced
+    with each section's context window so it stays aligned.
     """
     data, sr = sf.read(input_path)
     sr = int(sr)
@@ -662,6 +740,12 @@ def apply_section_chains(input_path: str, output_path: str, sections: list[dict]
     crossfade_n = max(0, int(sr * crossfade_ms / 1000.0))
 
     spans = _normalise_section_spans(sections, sr, n_total)
+    warnings: list[str] = []
+    render_key = None
+    if key_path and any(chain_wants_key(sec.get("effects")) for sec, _s, _e in spans):
+        render_key, warning = load_render_key(key_path, sr, int(n_total))
+        if warning:
+            warnings.append(warning)
     # Every piece is (start, end, rendered buffer, buffer origin in samples).
     # Pass-through pieces use the source itself, so they extend everywhere.
     pieces: list[tuple[int, int, np.ndarray, int]] = []
@@ -675,7 +759,9 @@ def apply_section_chains(input_path: str, output_path: str, sections: list[dict]
             ctx_lo = max(0, start - crossfade_n)
             ctx_hi = min(n_total, end + crossfade_n)
             seg = audio[..., ctx_lo:ctx_hi]
-            proc, applied, skipped, _hr, _sl = _run_serial_chain(seg, sr, effects)
+            seg_key = render_key[..., ctx_lo:ctx_hi] if render_key is not None else None
+            proc, applied, skipped, _hr, _sl = _run_serial_chain(seg, sr, effects,
+                                                                  render_key=seg_key)
             if proc.shape[-1] != seg.shape[-1]:
                 raise ValueError(f"Section chain changed the segment length: {sec.get('label', '')!r}")
             pieces.append((start, end, proc, ctx_lo))
@@ -724,4 +810,7 @@ def apply_section_chains(input_path: str, output_path: str, sections: list[dict]
     out = _apply_output_gain(out, normalize=False, ceiling_dbtp=ceiling)
 
     _atomic_render_write(output_path, lambda tmp: sf.write(tmp, out.T if is_stereo else out, sr, subtype="PCM_24"))
-    return {"output_path": output_path, "sections": section_reports}
+    result = {"output_path": output_path, "sections": section_reports}
+    if warnings:
+        result["warnings"] = warnings
+    return result

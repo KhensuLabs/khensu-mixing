@@ -37,10 +37,10 @@ TaxonomyMaskingPanel::TaxonomyMaskingPanel(IAppController& c) : PanelCard(c, "Ma
     run_.onRetry([this] { runAnalysis(); });
     run_.setIdle(TRANS("Requires separated stems (auto-runs once they exist)."));
 
-    noteLabel_.setFont(KhensuTheme::labelFont(8.5f));
+    noteLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(noteLabel_);
 
-    fixLabel_.setFont(KhensuTheme::labelFont(9.5f));
+    fixLabel_.setFont(KhensuTheme::labelFont(type::caption));
     fixLabel_.setJustificationType(juce::Justification::topLeft);
     fixLabel_.setMinimumHorizontalScale(1.0f);
     addAndMakeVisible(fixLabel_);
@@ -150,7 +150,7 @@ void TaxonomyMaskingPanel::paint(juce::Graphics& g)
         auto row = b.removeFromTop(rowH);
         const auto col = riskColour(p.score);
 
-        g.setFont(KhensuTheme::labelFont(9.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textSecondary);
         g.drawText(pretty(p.a) + " x " + pretty(p.b), row.removeFromLeft(labelW).reduced(0, 1),
                    juce::Justification::centredLeft, false);
@@ -162,7 +162,7 @@ void TaxonomyMaskingPanel::paint(juce::Graphics& g)
         g.fillRoundedRectangle(
             barArea.toFloat().withWidth(barArea.toFloat().getWidth() * juce::jlimit(0.0f, 1.0f, p.score)), 3.0f);
 
-        g.setFont(KhensuTheme::monoFont(9.0f));
+        g.setFont(KhensuTheme::monoFont(type::caption));
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(juce::String((int)std::round(p.score * 100.0f)) + "%", barArea.reduced(6, 0),
                    juce::Justification::centredRight, false);

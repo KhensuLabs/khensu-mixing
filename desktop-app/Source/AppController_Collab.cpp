@@ -7,6 +7,7 @@
 #include "AppController.h"
 #include "ui/shared/AbxTrialOverlay.h"
 #include "ui/shared/ChainReasoningOverlay.h"
+#include "ui/shared/DecisionNotices.h"
 #include "ui/shared/ExplainerOverlay.h"
 #include "ui/shared/MetricDiffOverlay.h"
 #include "ui/shared/OnboardingWizard.h"
@@ -255,18 +256,32 @@ void AppController::runCollabCommand(CollabCommand command)
                     }
                     juce::String name = v[apif::BundleInspectResponse::session_name].toString();
                     if (name.isEmpty()) name = bundle.getFileNameWithoutExtension();
-                    const juce::String summary =
-                        name + "\n" + juce::String(audioCount) + TRANS(" audio file(s), ") +
-                        juce::String((int)v[apif::BundleInspectResponse::comments]) + TRANS(" comment(s), ") +
-                        juce::String((int)v[apif::BundleInspectResponse::versions]) + TRANS(" version(s).") +
-                        (audioCount == 0 ? "\n" + TRANS("No audio: its notes attach to the open session.")
-                                         : "\n" + TRANS("Its audio becomes a new session."));
-                    juce::AlertWindow::showOkCancelBox(
-                        juce::MessageBoxIconType::QuestionIcon, TRANS("Import session bundle?"), summary,
-                        TRANS("Import"), TRANS("Cancel"), self.getComponent(),
-                        juce::ModalCallbackFunction::create([importBundle](int ok) {
-                            if (ok != 0) importBundle();
-                        }));
+                    // A notice, not a modal box: importing is one additive
+                    // action (a new session, or notes attached to the open
+                    // one); dismissing it is the old Cancel. A second pick
+                    // replaces the queued offer. Unlike the modal box, the
+                    // notice lets the user switch sessions first, so an
+                    // audio-less bundle attaches only to the session it named.
+                    std::function<void()> onImport = importBundle;
+                    if (audioCount == 0)
+                        onImport = [self, importBundle, sid = juce::String(self->sessions_.state().session->id)] {
+                            if (self == nullptr) return;
+                            if (!self->sessions_.state().session ||
+                                juce::String(self->sessions_.state().session->id) != sid) {
+                                self->showExplainer(TRANS("Session bundle"), TRANS("Import"),
+                                                    TRANS("The session changed - pick the bundle again to attach its "
+                                                          "notes to the session that is open now."));
+                                return;
+                            }
+                            importBundle();
+                        };
+                    decision_notices::postReplacing(
+                        self->noticeBar_,
+                        decision_notices::importBundle(
+                            decision_notices::bundleSummary(name, audioCount,
+                                                            (int)v[apif::BundleInspectResponse::comments],
+                                                            (int)v[apif::BundleInspectResponse::versions]),
+                            std::move(onImport)));
                 });
             });
         });

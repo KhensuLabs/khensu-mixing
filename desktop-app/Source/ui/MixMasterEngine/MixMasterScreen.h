@@ -28,6 +28,8 @@
 #include "../shared/ListeningRoomPanel.h"
 #include <khensu/ui/EqCurveComponent.h>
 #include "../shared/SeverityLegendComponent.h"
+#include "../shared/LivePreviewToggle.h"
+#include "../../services/EqBandChain.h"
 
 namespace khensu {
 
@@ -37,7 +39,7 @@ enum class ReportMode;
 // UX2-2: one focal area. The signal chain (the plugin's DSP rack, with the
 // preset bar and rack A/B on top) is the hero; a right rail holds the large
 // meters and the three most severe open recommendations; everything else -
-// loudness (gain staging, streaming), the EQ curve, versions (what changed,
+// loudness (gain staging over the streaming audition), the EQ editor, versions (what changed,
 // render tree, snapshots, timeline), dynamics (the gain X-ray) and presets &
 // tools (preset library, humanize, stem rebalance, listening room) - is a row
 // of five sentence-case tabs under the rack.
@@ -56,8 +58,8 @@ class MixMasterScreen final : public juce::Component {
     bool focusNextIssue();
 
     /// The legacy card index (IShell::showMixMasterCard): 0 streaming, 1 EQ
-    /// curve, 2 timeline, 3 snapshots, 4 signal rack, 5 X-ray, 6 presets,
-    /// 7 humanize - each opens the view that holds it.
+    /// editor, 2 timeline, 3 snapshots, 4 signal rack, 5 X-ray, 6 presets,
+    /// 7 humanize, 8 gain staging - each opens the view that holds it.
     void jumpToCard(int tabIdx);
 
     /// The secondary views, in tab order.
@@ -86,6 +88,8 @@ class MixMasterScreen final : public juce::Component {
     // Live copy of eqCurvePanel's bands, kept in sync via onBandChanged, so
     // "Apply EQ" renders the user's actual edits, not just the suggestions.
     std::vector<EqBand> currentEqBands_;
+    /// STU-9: hear the EQ curve while dragging it; Apply EQ still renders.
+    LivePreviewToggle eqPreview_{controller, TRANS("EQ curve"), [this] { return eqBandsToChain(currentEqBands_); }};
     StreamingImpactPanel streamingPanel_;
     ProvenanceTimelinePanel timelinePanel_;
     SnapshotHistoryPanel snapshotPanel_;
@@ -106,8 +110,6 @@ class MixMasterScreen final : public juce::Component {
     /// CON-5: one Versions view - what changed, the render tree, snapshots
     /// and the provenance timeline as tabs.
     CardGroup versionsGroup_{"versions", TRANS("Versions")};
-    /// CON-2: gain staging and the streaming impact, one view with tabs.
-    CardGroup loudnessGroup_{"loudness", TRANS("Loudness")};
     /// UX2-2: the preset library and the occasional tools, one view.
     CardGroup toolsGroup_{"tools", TRANS("Presets & tools")};
 

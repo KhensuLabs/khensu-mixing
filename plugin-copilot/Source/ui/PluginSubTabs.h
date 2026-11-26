@@ -19,7 +19,7 @@ class PluginSubTabs final : public juce::Component {
         button->setColour(juce::TextButton::buttonOnColourId, PluginLookAndFeel::accentTeal.withAlpha(0.35f));
         button->setColour(juce::TextButton::textColourOnId, PluginLookAndFeel::accentTeal);
         button->setTitle(name);
-        button->setTooltip("Show " + name);
+        button->setTooltip(TRANS("Show") + " " + name);
         const int index = (int)views_.size();
         button->onClick = [this, index] { show(index); };
         addAndMakeVisible(*button);

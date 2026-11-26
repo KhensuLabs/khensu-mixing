@@ -47,7 +47,7 @@ void LiveLufsMeterComponent::paint(juce::Graphics& g)
 
     if (!hasReading_) {
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::labelFont(9.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText(TRANS("Live level (RMS est., not LUFS) appears while the Copilot plugin plays in your DAW."),
                    barsArea, juce::Justification::centredLeft, false);
         return;
@@ -77,7 +77,7 @@ void LiveLufsMeterComponent::paint(juce::Graphics& g)
         g.setColour(row.colour.withAlpha(0.75f));
         g.fillRoundedRectangle(r.toFloat().withWidth(juce::jmax(2.0f, fillW)), 2.0f);
 
-        g.setFont(KhensuTheme::monoFont(8.5f).boldened());
+        g.setFont(KhensuTheme::monoFont(type::caption).boldened());
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(juce::String(row.label) + " " + juce::String(row.value, 1), r.reduced(4, 0),
                    juce::Justification::centredLeft, false);

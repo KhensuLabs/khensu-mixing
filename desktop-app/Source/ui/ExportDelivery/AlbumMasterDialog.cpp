@@ -70,7 +70,7 @@ AlbumMasterDialog::AlbumMasterDialog(const juce::StringArray& trackPaths, Runner
     performerLabel_.setText(TRANS("Performer"), juce::dontSendNotification);
     catalogLabel_.setText(TRANS("UPC / EAN"), juce::dontSendNotification);
     for (auto* l : {&titleLabel_, &performerLabel_, &catalogLabel_}) {
-        l->setFont(KhensuTheme::labelFont(11.0f));
+        l->setFont(KhensuTheme::labelFont(type::caption));
         addAndMakeVisible(*l);
     }
     titleEdit_.setTitle(TRANS("Album title"));
@@ -118,13 +118,13 @@ AlbumMasterDialog::AlbumMasterDialog(const juce::StringArray& trackPaths, Runner
                                 "a plant - this writer has not been validated against one."));
 
     addAndMakeVisible(progressBar_);
-    statusLabel_.setFont(KhensuTheme::labelFont(10.5f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setText(TRANS("Order the tracks, set gaps and ISRCs, then render."), juce::dontSendNotification);
     addAndMakeVisible(statusLabel_);
 
     detailText_.setMultiLine(true);
     detailText_.setReadOnly(true);
-    detailText_.setFont(KhensuTheme::monoFont(10.5f));
+    detailText_.setFont(KhensuTheme::monoFont(type::caption));
     detailText_.setTitle(TRANS("Album master details"));
     addAndMakeVisible(detailText_);
 }
@@ -200,7 +200,7 @@ void AlbumMasterDialog::paintCell(juce::Graphics& g, int row, int col, int w, in
 {
     if (col != colNum) return; // the other columns are EditableCell children
     g.setColour(KhensuTheme::textTertiary);
-    g.setFont(KhensuTheme::monoFont(10.5f));
+    g.setFont(KhensuTheme::monoFont(type::caption));
     g.drawText(juce::String(row + 1), 0, 0, w - 4, h, juce::Justification::centredRight, false);
 }
 
@@ -255,7 +255,7 @@ juce::Component* AlbumMasterDialog::refreshComponentForCell(int row, int col, bo
     if (cell == nullptr) {
         delete existing;
         cell = new EditableCell();
-        cell->setFont(KhensuTheme::labelFont(11.0f));
+        cell->setFont(KhensuTheme::labelFont(type::caption));
         cell->onTextChange = [this, cell] { setCellText(cell->row, cell->col, cell->getText()); };
     }
     cell->row = row;

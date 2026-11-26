@@ -19,6 +19,9 @@
 #include "ara/AraSession.h"
 #include "CopilotPresets.h"
 #include "CopilotUndoHistory.h"
+#include "FixBatch.h"
+#include "monitor/MonitorSolo.h"
+#include "reference/ReferenceTrack.h"
 #include <khensu/mixerchain/RecommendationDspMapper.h>
 #include <atomic>
 #include <array>
@@ -29,6 +32,43 @@
 #include <vector>
 
 namespace khensu {
+
+namespace copilot_params {
+/// STU-10 (state v5): the parameters appended after fix_amount, in
+/// kDspParamIds order - bands 4-6 (on, freq, gain, q, type), then every
+/// band's kind, channels and dynamics, then the transient shaper,
+/// saturation, bass mono and width.
+inline constexpr int kNumV5DspParams = 3 * 5 + mixerchain::kNumEqBands * 7 + 14;
+constexpr std::array<const char*, kNumV5DspParams> makeV5DspParamIds()
+{
+    std::array<const char*, kNumV5DspParams> ids{};
+    size_t n = 0;
+    for (int b = 3; b < mixerchain::kNumEqBands; ++b) {
+        const auto& band = mixerchain::kEqBandParamIds[b];
+        for (const char* id : {band.on, band.freq, band.gain, band.q, band.type}) ids[n++] = id;
+    }
+    for (const auto& band : mixerchain::kEqBandParamIds)
+        for (const char* id : {band.kind, band.mode, band.dynOn, band.dynThreshDb, band.dynRangeDb, band.dynAttackMs,
+                               band.dynReleaseMs})
+            ids[n++] = id;
+    using V5 = mixerchain::DspParamIdsV5;
+    for (const char* id : {V5::tsOn, V5::tsAttackDb, V5::tsSustainDb, V5::tsAttackMs, V5::tsReleaseMs, V5::satOn,
+                           V5::satDriveDb, V5::satWarmth, V5::satMix, V5::satTrimDb, V5::bassMonoOn, V5::bassMonoFreq,
+                           V5::widthOn, V5::widthAmount})
+        ids[n++] = id;
+    return ids;
+}
+
+template <size_t A, size_t B>
+constexpr std::array<const char*, A + B> concatIds(const std::array<const char*, A>& a,
+                                                   const std::array<const char*, B>& b)
+{
+    std::array<const char*, A + B> out{};
+    for (size_t i = 0; i < A; ++i) out[i] = a[i];
+    for (size_t i = 0; i < B; ++i) out[A + i] = b[i];
+    return out;
+}
+} // namespace copilot_params
 
 // THREAD_CONTEXT: processBlock → AudioThread
 //                 createEditor, getStateInformation, loadLastSessionAsync → UIThread
@@ -351,14 +391,47 @@ class KhensuCopilotProcessor final : public juce::AudioProcessor,
         static constexpr const char* deessRangeDb = "deess_range_db";
         /// The Apply-top-fix Amount, 0..1: re-applies the live fix as it moves.
         static constexpr const char* fixAmount = "fix_amount";
+        // STU-10 (state v5): appended after fix_amount, so a v4 project
+        // loads them at their defaults. Every band's ids (bands 1-3's kind,
+        // channels and dynamics too) are mixerchain::kEqBandParamIds.
+        static constexpr const char* eq4On = "eq4_on";
+        static constexpr const char* eq4Freq = "eq4_freq";
+        static constexpr const char* eq4GainDb = "eq4_gain_db";
+        static constexpr const char* eq4Q = "eq4_q";
+        static constexpr const char* eq4Type = "eq4_type";
+        static constexpr const char* eq5On = "eq5_on";
+        static constexpr const char* eq5Freq = "eq5_freq";
+        static constexpr const char* eq5GainDb = "eq5_gain_db";
+        static constexpr const char* eq5Q = "eq5_q";
+        static constexpr const char* eq5Type = "eq5_type";
+        static constexpr const char* eq6On = "eq6_on";
+        static constexpr const char* eq6Freq = "eq6_freq";
+        static constexpr const char* eq6GainDb = "eq6_gain_db";
+        static constexpr const char* eq6Q = "eq6_q";
+        static constexpr const char* eq6Type = "eq6_type";
+        static constexpr const char* tsOn = mixerchain::DspParamIdsV5::tsOn;
+        static constexpr const char* tsAttackDb = mixerchain::DspParamIdsV5::tsAttackDb;
+        static constexpr const char* tsSustainDb = mixerchain::DspParamIdsV5::tsSustainDb;
+        static constexpr const char* tsAttackMs = mixerchain::DspParamIdsV5::tsAttackMs;
+        static constexpr const char* tsReleaseMs = mixerchain::DspParamIdsV5::tsReleaseMs;
+        static constexpr const char* satOn = mixerchain::DspParamIdsV5::satOn;
+        static constexpr const char* satDriveDb = mixerchain::DspParamIdsV5::satDriveDb;
+        static constexpr const char* satWarmth = mixerchain::DspParamIdsV5::satWarmth;
+        static constexpr const char* satMix = mixerchain::DspParamIdsV5::satMix;
+        static constexpr const char* satTrimDb = mixerchain::DspParamIdsV5::satTrimDb;
+        static constexpr const char* bassMonoOn = mixerchain::DspParamIdsV5::bassMonoOn;
+        static constexpr const char* bassMonoFreq = mixerchain::DspParamIdsV5::bassMonoFreq;
+        static constexpr const char* widthOn = mixerchain::DspParamIdsV5::widthOn;
+        static constexpr const char* widthAmount = mixerchain::DspParamIdsV5::widthAmount;
     };
 
     // The built-in DSP-chain params that the AI mixer-chain generator or
     // suggestion auto-apply can write. chain_mix and bypass are chain-level
     // controls, not individual DSP stages, so they're excluded and never get
     // an AI-set dot.
-    static constexpr int kNumDspParams = 37;
-    static constexpr std::array<const char*, kNumDspParams> kDspParamIds{{ParamIDs::hpfOn,
+    // STU-10: the v1-v4 ones, then the v5 ones (copilot_params).
+    static constexpr int kNumLegacyDspParams = 37;
+    static constexpr std::array<const char*, kNumLegacyDspParams> kLegacyDspParamIds{{ParamIDs::hpfOn,
                                                                           ParamIDs::hpfFreq,
                                                                           ParamIDs::lpfOn,
                                                                           ParamIDs::lpfFreq,
@@ -395,6 +468,9 @@ class KhensuCopilotProcessor final : public juce::AudioProcessor,
                                                                           ParamIDs::deessFreq,
                                                                           ParamIDs::deessThreshDb,
                                                                           ParamIDs::deessRangeDb}};
+    static constexpr int kNumDspParams = kNumLegacyDspParams + copilot_params::kNumV5DspParams;
+    static constexpr std::array<const char*, kNumDspParams> kDspParamIds =
+        copilot_params::concatIds(kLegacyDspParamIds, copilot_params::makeV5DspParamIds());
 
     // ---- OVH-8: the live top fix ------------------------------------------------
     struct LiveFixResult {
@@ -415,7 +491,76 @@ class KhensuCopilotProcessor final : public juce::AudioProcessor,
     /// Forgets the live fix (the parameters stay as they are).
     void clearLiveFix();
     bool hasLiveFix() const noexcept { return liveFixActive_.load(std::memory_order_acquire); }
+    /// The (first) live fix's finding id; "" when none.
     std::string getLiveFixId() const;
+    /// True when `recId` is one of the live fixes (Apply all keeps several).
+    bool isLiveFix(const std::string& recId) const;
+    /// How many findings the live fix holds (0, 1, or more after Apply all).
+    size_t getLiveFixCount() const;
+
+    // ---- ENH-10 (3): Apply all safe fixes --------------------------------------
+    struct ApplyAllResult {
+        copilot::FixBatchResult batch; ///< what went in, and what was skipped and why
+        bool applied = false;
+    };
+    /// Applies every finding in `recs` that is safe to apply automatically
+    /// and maps onto the built-in chain, at the current fix_amount, as ONE
+    /// undo step, and keeps them live under the Amount knob (moving it
+    /// re-applies all of them). `recs` should be the open findings, most
+    /// severe first: on a clash the earlier one wins. THREAD_CONTEXT(UIThread).
+    ApplyAllResult applyAllSafeFixes(const std::vector<Recommendation>& recs);
+
+    // ---- ENH-10 (1): reference track ---------------------------------------------
+    /// Decodes `file` on a worker, resampled to the host rate, and makes it the
+    /// reference; `onDone(ok, message)` runs on the message thread. The path
+    /// is saved with the plugin state. THREAD_CONTEXT(UIThread or a host's
+    /// state-restore thread).
+    void loadReferenceAsync(const juce::File& file, std::function<void(bool, juce::String)> onDone = nullptr);
+    void clearReference();
+    /// The loaded reference (nullptr while none / loading). THREAD_CONTEXT(UIThread).
+    copilot::reference::ReferencePtr getReference() const;
+    juce::String getReferencePath() const;
+    /// "" when idle; "Loading..." or the last error otherwise.
+    juce::String getReferenceStatus() const;
+    bool isReferenceLoading() const noexcept { return referenceLoading_.load(std::memory_order_acquire); }
+    /// Hear the reference (loudness matched) instead of the track. Not a
+    /// parameter, not saved; never in an offline render.
+    void setReferenceListening(bool on) noexcept { referencePlayer_.setListening(on); }
+    bool isReferenceListening() const noexcept { return referencePlayer_.isListening(); }
+    void setReferenceMatchMode(copilot::reference::ReferencePlayer::MatchMode mode);
+    copilot::reference::ReferencePlayer::MatchMode getReferenceMatchMode() const noexcept
+    {
+        return referencePlayer_.matchMode();
+    }
+    const copilot::reference::ReferencePlayer& referencePlayer() const noexcept { return referencePlayer_; }
+    /// This track's loudness and dynamics (the host signal after the chain),
+    /// measured the same way as the reference.
+    copilot::reference::LoudnessStats::Result getTrackStats() const noexcept { return trackStats_.result(); }
+    void resetTrackStats() noexcept { trackStats_.requestReset(); }
+    /// Tests: installs an analysed reference synchronously.
+    void setReferenceForTesting(copilot::reference::ReferencePtr data);
+
+    // ---- ENH-10 (2): monitoring solo -----------------------------------------------
+    void setMonitorSolo(copilot::MonitorSolo::Mode mode) noexcept { monitorSolo_.setMode(mode); }
+    copilot::MonitorSolo::Mode getMonitorSolo() const noexcept { return monitorSolo_.mode(); }
+
+    // ---- ENH-10 (4): Mix Hub Unmask ------------------------------------------------
+    /// Asks the other instance of `conflict` (the one that is not this one) to
+    /// cut the shared band (mixhub::unmaskCutFor). False with `message` when
+    /// this instance is not part of the pair. THREAD_CONTEXT(UIThread).
+    bool requestUnmask(const mixhub::MaskingConflict& conflict, juce::String& message);
+    /// Asks `target` to take this instance's cut out again.
+    void requestRemoveUnmask(juce::uint64 target);
+    /// Applies the Unmask requests other instances sent this one (the reaper
+    /// timer calls it; tests call it directly). THREAD_CONTEXT(UIThread).
+    void processMixHubCommands();
+    /// EQ band (1..3) holding the cut `source` asked for here; 0 = none.
+    int unmaskBandFor(juce::uint64 source) const;
+
+    // ---- VIS-9: editor palette (saved per instance) ----------------------------------
+    /// 0 = Dark, 1 = High contrast.
+    int getUiPalette() const noexcept { return uiPalette_.load(std::memory_order_relaxed); }
+    void setUiPalette(int palette);
     float getFixAmount() const noexcept { return pFixAmount_ != nullptr ? pFixAmount_->load(std::memory_order_relaxed) : 1.0f; }
 
     /// Set a parameter by ID from the UI thread (normalises and notifies host).
@@ -490,7 +635,12 @@ class KhensuCopilotProcessor final : public juce::AudioProcessor,
     /// 3 = adds the EQ shapes, the de-esser and fix_amount (new parameters,
     /// default when absent), the editor view, the program / preset name and
     /// the A/B snapshot (UI-8, UI-9, OVH-8).
-    static constexpr int kStateVersion = 3;
+    /// 4 = adds the reference path and its match mode (ENH-10) and the editor
+    /// palette (VIS-9); optional properties, default when absent.
+    /// 5 = STU-10: six EQ bands with kinds, channels and dynamics, and the
+    /// transient shaper, saturation, bass mono and width stages - appended
+    /// parameters only; a v4 state loads them at their defaults (off).
+    static constexpr int kStateVersion = 5;
     /// Version of the embedded hosted-chain node.
     static constexpr int kHostedChainVersion = 1;
     /// Upgrades a state tree saved by an older version, in place. The single
@@ -561,11 +711,36 @@ class KhensuCopilotProcessor final : public juce::AudioProcessor,
     int fixAmountParamIndex_ = -1;
 
     // ---- OVH-8 live fix (message thread, except the flags) ----
-    Recommendation liveFix_;
+    std::vector<Recommendation> liveFixes_; ///< one (Apply top fix) or several (Apply all)
     std::map<std::string, float> liveFixBase_; ///< plain values before the fix
     std::atomic<bool> liveFixActive_{false};
     std::atomic<bool> pendingFixReapply_{false};
     float readPlain(const char* paramId) const noexcept;
+    /// Makes `recs` the live fix over `base` (one undo step named `stepName`).
+    void startLiveFixes(std::vector<Recommendation> recs, std::map<std::string, float> base, const juce::String& stepName);
+
+    // ---- ENH-10 monitoring and reference ----
+    copilot::MonitorSolo monitorSolo_;
+    copilot::reference::ReferencePlayer referencePlayer_;
+    copilot::reference::LoudnessStats trackStats_;
+    copilot::reference::ReferencePtr reference_; ///< message thread
+    juce::String referencePath_;                 ///< guarded by referenceLock_
+    juce::String referenceStatus_;               ///< guarded by referenceLock_
+    mutable juce::CriticalSection referenceLock_;
+    std::atomic<bool> referenceLoading_{false};
+    std::atomic<juce::uint64> referenceGeneration_{0};
+    std::shared_ptr<std::atomic<bool>> referenceCancel_ = std::make_shared<std::atomic<bool>>(false);
+    std::atomic<double> referencePreparedRate_{0.0}; ///< the rate the loaded reference was resampled to
+
+    // ---- ENH-10 Unmask cuts other instances asked for (message thread) ----
+    struct UnmaskSlot {
+        int band = 0;                 ///< 1..6
+        std::array<float, 8> before{}; ///< on, freq, gain, q, type, kind, mode, dyn_on before the cut
+    };
+    std::map<juce::uint64, UnmaskSlot> unmaskSlots_;
+    void applyUnmaskRequest(const mixhub::UnmaskRequest& request);
+
+    std::atomic<int> uiPalette_{0};
 
     // ---- UI-9 programs / presets / snapshots ----
     std::atomic<int> currentProgram_{0};

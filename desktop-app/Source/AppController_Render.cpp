@@ -42,7 +42,7 @@
 #include "ui/ReferenceLibrary/ReferenceLibraryScreen.h"
 #include "session/WorkspaceRecoveryState.h"
 #include "ui/Settings/SettingsScreen.h"
-#include "ui/AiDetection/AiDetectionScreen.h"
+#include "ui/ProvenanceSource/AiDetectionScreen.h"
 #include "midi/Midi2DeviceManager.h"
 #include "ui/shared/RenderPaths.h"
 #include "ui/shared/ServiceErrorHint.h"

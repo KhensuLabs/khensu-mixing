@@ -36,7 +36,7 @@ BadgeStatus trustStatus(const std::string& qualityFlag)
 
 void SongFingerprintStrip::paint(juce::Graphics& g)
 {
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText("SONG FINGERPRINT (3D)", getLocalBounds().withHeight(12), juce::Justification::centredLeft, false);
 
@@ -63,7 +63,7 @@ void SongFingerprintStrip::paint(juce::Graphics& g)
     constexpr float spacing = 8.0f;
     const float barW = (b.getWidth() - spacing * (n - 1)) / (float)n;
 
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     for (int i = 0; i < n; ++i) {
         const float t = juce::jlimit(0.0f, 1.0f, bars[i].value / 100.0f);
         const float bx = b.getX() + (float)i * (barW + spacing);
@@ -104,7 +104,7 @@ void GenreBlendStrip::paint(juce::Graphics& g)
     }
 
     full.removeFromTop(2.0f);
-    g.setFont(KhensuTheme::labelFont(8.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     juce::String label;
     for (size_t i = 0; i < blend_.size() && i < 3; ++i) {
@@ -171,7 +171,7 @@ SongInfoPanel::SongInfoPanel(IAppController& c) : PanelCard(c, "Song Info")
 
     addAndMakeVisible(genreBadge_);
     addAndMakeVisible(moodBadge_);
-    genreContextLabel_.setFont(KhensuTheme::labelFont(9.0f));
+    genreContextLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(genreContextLabel_);
     confirmGenreButton_.setTooltip(TRANS("Use the detected genre as this session's genre, so the Mastering Agent, "
                                          "Section Intensity and genre-relative chat chains can run."));
@@ -183,16 +183,16 @@ SongInfoPanel::SongInfoPanel(IAppController& c) : PanelCard(c, "Song Info")
     energyMeter_.setTargetZone(40.0f, 80.0f);
     for (auto& ring : targetRings_) addChildComponent(ring);
 
-    fileSpecsLabel_.setFont(KhensuTheme::bodyFont(11.0f));
+    fileSpecsLabel_.setFont(KhensuTheme::bodyFont(type::caption));
     addAndMakeVisible(fileSpecsLabel_);
-    musicLabel_.setFont(KhensuTheme::bodyFont(11.0f));
+    musicLabel_.setFont(KhensuTheme::bodyFont(type::caption));
     musicLabel_.setMinimumHorizontalScale(0.7f);
     addAndMakeVisible(musicLabel_);
     addChildComponent(errorState_);
     errorState_.onRetry([this] { fetchMeasurementTrust(); });
 
     // Measurement trust map (pipeline #5): how much to trust the key numbers.
-    trustLabel_.setFont(KhensuTheme::labelFont(9.5f));
+    trustLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addChildComponent(trustLabel_);
     for (auto& badge : trustBadges_) addChildComponent(badge);
 

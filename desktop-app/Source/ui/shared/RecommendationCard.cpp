@@ -62,7 +62,7 @@ RecommendationCard::RecommendationCard(IAppController& controller) : controller_
     addAndMakeVisible(dismissButton_);
     dismissButton_.setVisible(false);
 
-    juce::Font linkFont = KhensuTheme::bodyFont(11.0f);
+    juce::Font linkFont = KhensuTheme::bodyFont(type::caption);
     linkFont.setUnderline(true);
     learnMoreButton_.setFont(linkFont, false);
     learnMoreButton_.setVisible(false);
@@ -120,7 +120,7 @@ void RecommendationCard::setupSliders()
     addAndMakeVisible(freqSlider_);
     freqSlider_.setVisible(false);
     freqLabel_.setText(TRANS("Freq (Hz)"), juce::dontSendNotification);
-    freqLabel_.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::plain));
+    freqLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     freqLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     addAndMakeVisible(freqLabel_);
     freqLabel_.setVisible(false);
@@ -130,7 +130,7 @@ void RecommendationCard::setupSliders()
     addAndMakeVisible(gainSlider_);
     gainSlider_.setVisible(false);
     gainLabel_.setText(TRANS("Gain (dB)"), juce::dontSendNotification);
-    gainLabel_.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::plain));
+    gainLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     gainLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     addAndMakeVisible(gainLabel_);
     gainLabel_.setVisible(false);
@@ -140,7 +140,7 @@ void RecommendationCard::setupSliders()
     addAndMakeVisible(qSlider_);
     qSlider_.setVisible(false);
     qLabel_.setText(TRANS("Q"), juce::dontSendNotification);
-    qLabel_.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::plain));
+    qLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     qLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     addAndMakeVisible(qLabel_);
     qLabel_.setVisible(false);
@@ -453,7 +453,7 @@ void RecommendationCard::paint(juce::Graphics& g)
     auto row = b.removeFromTop(collapsedHeight());
 
     // Severity index number
-    g.setFont(KhensuTheme::monoFont(10.0f));
+    g.setFont(KhensuTheme::monoFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     auto indexArea = row.removeFromLeft(28);
     g.drawText(juce::String(static_cast<int>(rec_.severity)), indexArea, juce::Justification::centredLeft, false);
@@ -464,7 +464,7 @@ void RecommendationCard::paint(juce::Graphics& g)
     g.setColour(badgeCol.withAlpha(0.2f));
     g.fillRoundedRectangle(pillArea.toFloat().reduced(0.0f, 8.0f), 4.0f);
     g.setColour(badgeCol);
-    g.setFont(KhensuTheme::labelFont(10.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.drawText(cat, pillArea, juce::Justification::centred, false);
 
     row.removeFromLeft(KhensuTheme::sp2);
@@ -477,10 +477,10 @@ void RecommendationCard::paint(juce::Graphics& g)
         auto id = juce::String(rec_.id);
         auto sep = id.lastIndexOfChar('_');
         if (sep > 0) actionText = id.substring(0, sep).replace("_", " ");
-        g.setFont(KhensuTheme::bodyFont(12.0f));
+        g.setFont(KhensuTheme::bodyFont(type::secondary));
         g.setColour(KhensuTheme::textTertiary);
     } else {
-        g.setFont(KhensuTheme::bodyFont(12.0f));
+        g.setFont(KhensuTheme::bodyFont(type::secondary));
         g.setColour(KhensuTheme::textPrimary);
     }
     auto textArea = row.removeFromLeft(row.getWidth() - 20);
@@ -489,23 +489,23 @@ void RecommendationCard::paint(juce::Graphics& g)
         const auto tag = FindingCalibrationCache::basisTag(issueCode_);
         const bool calibrated = tag.startsWith("calibrated");
         g.setColour(calibrated ? KhensuTheme::accentGreen : KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText(tag, textArea.removeFromRight(calibrated ? 104 : 64), juce::Justification::centredRight, false);
-        g.setFont(KhensuTheme::bodyFont(12.0f));
+        g.setFont(KhensuTheme::bodyFont(type::secondary));
         g.setColour(rec_.suggested_action.empty() ? KhensuTheme::textTertiary : KhensuTheme::textPrimary);
     }
     if (personalReason_.isNotEmpty()) {
         // CE-AI-2: a small tag; the full reason leads the expanded detail.
         g.setColour(KhensuTheme::accentTeal);
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText(TRANS("FOR YOU"), textArea.removeFromRight(56), juce::Justification::centredRight, false);
-        g.setFont(KhensuTheme::bodyFont(12.0f));
+        g.setFont(KhensuTheme::bodyFont(type::secondary));
         g.setColour(rec_.suggested_action.empty() ? KhensuTheme::textTertiary : KhensuTheme::textPrimary);
     }
     g.drawText(actionText, textArea, juce::Justification::centredLeft, true);
 
     // Expand arrow
-    g.setFont(KhensuTheme::labelFont(11.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText(expanded_ ? juce::String(juce::CharPointer_UTF8("\xe2\x96\xbe"))
                          : juce::String(juce::CharPointer_UTF8("\xe2\x96\xb8")),
@@ -530,13 +530,13 @@ void RecommendationCard::paint(juce::Graphics& g)
             chipRow.removeFromRight(220); // reserve space for buttons on right
             for (const auto& [k, v] : rec_.suggested_parameters) {
                 juce::String chip = juce::String(k) + ": " + juce::String(v, 1);
-                const int chipW = juce::GlyphArrangement::getStringWidthInt(KhensuTheme::monoFont(10.0f), chip) + 16;
+                const int chipW = juce::GlyphArrangement::getStringWidthInt(KhensuTheme::monoFont(type::caption), chip) + 16;
                 if (chipRow.getWidth() < chipW) break;
                 auto chipBounds = chipRow.removeFromLeft(chipW).reduced(0, 2);
                 chipRow.removeFromLeft(4);
                 g.setColour(KhensuTheme::bgOverlay);
                 g.fillRoundedRectangle(chipBounds.toFloat(), 3.0f);
-                g.setFont(KhensuTheme::monoFont(10.0f));
+                g.setFont(KhensuTheme::monoFont(type::caption));
                 g.setColour(KhensuTheme::textTertiary);
                 g.drawText(chip, chipBounds, juce::Justification::centred, false);
             }
@@ -545,7 +545,7 @@ void RecommendationCard::paint(juce::Graphics& g)
         // Evidence, measurement precision/abstention, then rationale. The
         // numeric precision is intentionally never labelled as a likelihood
         // that the intervention works (Recommendation's contract).
-        g.setFont(KhensuTheme::bodyFont(12.0f));
+        g.setFont(KhensuTheme::bodyFont(type::secondary));
         g.setColour(KhensuTheme::textSecondary);
         g.drawMultiLineText(detailText_, expandedArea.getX(), expandedArea.getY() + 12,
                             expandedArea.getWidth());

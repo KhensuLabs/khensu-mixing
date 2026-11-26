@@ -1,5 +1,6 @@
 #include "EqCurveMiniPanel.h"
 #include "../PluginProcessor.h"
+#include <khensu/mixerchain/RecommendationDspMapper.h>
 #include <khensu/common/AppPaths.h>
 #include <khensu/feedback/FeedbackManager.h>
 #include <cmath>
@@ -7,15 +8,14 @@
 namespace khensu {
 
 namespace {
-using P = KhensuCopilotProcessor::ParamIDs;
-const char* const kFreqIds[3] = {P::eqFreq, P::eq2Freq, P::eq3Freq};
-const char* const kGainIds[3] = {P::eqGainDb, P::eq2GainDb, P::eq3GainDb};
-const char* const kQIds[3] = {P::eqQ, P::eq2Q, P::eq3Q};
+// STU-10: all six built-in bands.
+constexpr int kBands = mixerchain::kNumEqBands;
+const mixerchain::EqBandParamIds& bandIds(int index) { return mixerchain::kEqBandParamIds[index]; }
 
 void forEachBandParam(juce::AudioProcessorValueTreeState& apvts, int index,
                       const std::function<void(juce::RangedAudioParameter&)>& fn)
 {
-    for (const char* id : {kFreqIds[index], kGainIds[index], kQIds[index]})
+    for (const char* id : {bandIds(index).freq, bandIds(index).gain, bandIds(index).q})
         if (auto* p = apvts.getParameter(id)) fn(*p);
 }
 } // namespace
@@ -26,23 +26,23 @@ EqCurveMiniPanel::EqCurveMiniPanel(KhensuCopilotProcessor& proc) : processor_(pr
     // and the override is persisted ONCE per drag with the real baseline
     // (previously a thread + DB write per mouse event, baselines 0 / 1000).
     eqCurve_.onBandDragStarted([this](int index, const EqBand& band) {
-        if (index < 0 || index > 2) return;
+        if (index < 0 || index >= kBands) return;
         dragBaseline_ = band;
         forEachBandParam(processor_.getAPVTS(), index, [](auto& p) { p.beginChangeGesture(); });
     });
     eqCurve_.onBandChanged([this](int index, const EqBand& band) {
-        if (index < 0 || index > 2) return;
+        if (index < 0 || index >= kBands) return;
         auto& apvts = processor_.getAPVTS();
         const auto set = [&](const char* id, float plain) {
             if (auto* p = apvts.getParameter(id)) p->setValueNotifyingHost(p->convertTo0to1(plain));
         };
-        set(kFreqIds[index], band.hz);
-        set(kGainIds[index], band.gain_db);
-        set(kQIds[index], band.q);
+        set(bandIds(index).freq, band.hz);
+        set(bandIds(index).gain, band.gain_db);
+        set(bandIds(index).q, band.q);
         if (index < (int)lastSyncedBands_.size()) lastSyncedBands_[(size_t)index] = band;
     });
     eqCurve_.onBandDragEnded([this](int index, const EqBand& band) {
-        if (index < 0 || index > 2) return;
+        if (index < 0 || index >= kBands) return;
         forEachBandParam(processor_.getAPVTS(), index, [](auto& p) { p.endChangeGesture(); });
         persistOverride(index, dragBaseline_, band);
     });
@@ -92,17 +92,17 @@ void EqCurveMiniPanel::resized() { eqCurve_.setBounds(getLocalBounds()); }
 
 std::vector<EqBand> EqCurveMiniPanel::readBandsFromApvts() const
 {
-    using P = KhensuCopilotProcessor::ParamIDs;
     auto& apvts = processor_.getAPVTS();
     auto raw = [&](const char* id) {
         auto* p = apvts.getRawParameterValue(id);
         return p != nullptr ? p->load() : 0.0f;
     };
 
-    std::vector<EqBand> bands(3);
-    bands[0] = {raw(P::eqFreq), raw(P::eqGainDb), raw(P::eqQ), false, raw(P::eqOn) > 0.5f};
-    bands[1] = {raw(P::eq2Freq), raw(P::eq2GainDb), raw(P::eq2Q), false, raw(P::eq2On) > 0.5f};
-    bands[2] = {raw(P::eq3Freq), raw(P::eq3GainDb), raw(P::eq3Q), false, raw(P::eq3On) > 0.5f};
+    std::vector<EqBand> bands(static_cast<size_t>(kBands));
+    for (int i = 0; i < kBands; ++i) {
+        const auto& ids = bandIds(i);
+        bands[static_cast<size_t>(i)] = {raw(ids.freq), raw(ids.gain), raw(ids.q), false, raw(ids.on) > 0.5f};
+    }
     return bands;
 }
 

@@ -207,6 +207,21 @@ OfflineRenderResult OfflineChainRenderer::renderFile(const juce::File& input, co
     ChainProcessor chainProc;
     if (!chainProc.prepare(chain, res.sampleRate, res.numChannels, res.error)) return res;
     for (const auto& s : chain) res.applied.push_back(s.effect);
+
+    // ENH-6: the key signal, when a stage keys on one.
+    std::unique_ptr<juce::AudioFormatReader> keyReader;
+    if (chainProc.wantsKey() && !options.keyPath.empty()) {
+        keyReader = AudioFileProber::openReader(formats, juce::File(juce::String::fromUTF8(options.keyPath.c_str())));
+        if (keyReader == nullptr) {
+            res.warnings.push_back("Could not read the key signal; the dynamic EQ keyed on its own input.");
+        } else if (std::abs(keyReader->sampleRate - res.sampleRate) > 0.5 || keyReader->numChannels < 1) {
+            res.warnings.push_back("The key signal's sample rate differs from the source; the dynamic EQ keyed on "
+                                   "its own input.");
+            keyReader.reset();
+        } else {
+            chainProc.attachKey(static_cast<int>(keyReader->numChannels));
+        }
+    }
     const bool limiterLast = chain.back().effect == "Limiter";
 
     const auto cancelled = [&options] { return options.shouldCancel && options.shouldCancel(); };
@@ -293,6 +308,9 @@ OfflineRenderResult OfflineChainRenderer::renderFile(const juce::File& input, co
 
         const int blockSize = std::max(256, options.blockSize);
         juce::AudioBuffer<float> buffer(res.numChannels, blockSize);
+        const int keyChannels = keyReader ? static_cast<int>(keyReader->numChannels) : 0;
+        juce::AudioBuffer<float> keyBuffer(std::max(1, keyChannels), keyReader ? blockSize : 1);
+        PlanarBlock keyBlock;
         for (std::int64_t pos = 0; pos < res.numSamples; pos += blockSize) {
             if (cancelled()) {
                 writer.reset();
@@ -319,7 +337,22 @@ OfflineRenderResult OfflineChainRenderer::renderFile(const juce::File& input, co
                 }
             }
             inMeter.push(block);
-            chainProc.process(std::move(block), sink);
+            if (keyReader) {
+                // Past the key's end the reader fills silence, so the key is
+                // always as long as the input.
+                if (!keyReader->read(&keyBuffer, 0, n, pos, true, true)) keyBuffer.clear();
+                keyBlock.ch.resize(static_cast<size_t>(keyChannels));
+                for (int c = 0; c < keyChannels; ++c) {
+                    const float* src = keyBuffer.getReadPointer(c);
+                    auto& dst = keyBlock.ch[static_cast<size_t>(c)];
+                    dst.resize(static_cast<size_t>(n));
+                    for (int i = 0; i < n; ++i)
+                        dst[static_cast<size_t>(i)] = std::isfinite(src[i]) ? static_cast<double>(src[i]) : 0.0;
+                }
+                chainProc.process(std::move(block), sink, &keyBlock);
+            } else {
+                chainProc.process(std::move(block), sink);
+            }
             progress(renderFrom + renderShare * static_cast<double>(pos + n) /
                                       static_cast<double>(std::max<std::int64_t>(1, res.numSamples)));
         }

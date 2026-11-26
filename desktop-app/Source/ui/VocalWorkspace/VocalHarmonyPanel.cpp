@@ -128,7 +128,7 @@ void VocalHarmonyPanel::paint(juce::Graphics& g)
     PanelCard::paint(g);
     if (!showsResult()) return;
     g.setColour(result_.lowQualityExtraction ? KhensuTheme::accentAmber : KhensuTheme::textPrimary);
-    g.setFont(KhensuTheme::labelFont(10.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.drawFittedText(ft::vocalHarmonySummary(result_), textArea_, juce::Justification::topLeft,
                      juce::jmax(1, textArea_.getHeight() / 13), 1.0f);
 }

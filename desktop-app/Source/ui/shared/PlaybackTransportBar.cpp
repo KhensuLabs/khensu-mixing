@@ -1,6 +1,7 @@
 #include "PlaybackTransportBar.h"
 #include "../../IAppController.h"
 #include "KhensuLookAndFeel.h"
+#include "MonitorStateText.h"
 
 namespace khensu {
 
@@ -56,6 +57,8 @@ void PlaybackTransportBar::applyThemeColours()
     undoButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::textSecondary);
     redoButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::bgVoid);
     redoButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::textSecondary);
+    monitorButton_.setColour(juce::TextButton::textColourOffId,
+                             monitorBadge_.isNotEmpty() ? KhensuTheme::accentAmber : KhensuTheme::textSecondary);
 }
 
 PlaybackTransportBar::PlaybackTransportBar(IAppController& controller) : controller_(controller)
@@ -102,7 +105,7 @@ PlaybackTransportBar::PlaybackTransportBar(IAppController& controller) : control
     // Volume label
     volumeLabel_.setText(juce::CharPointer_UTF8("\xf0\x9f\x94\x8a"), juce::dontSendNotification); // Speaker icon
     volumeLabel_.setAccessible(false);
-    volumeLabel_.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::plain));
+    volumeLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::plain));
     addAndMakeVisible(volumeLabel_);
 
     // Volume slider
@@ -192,6 +195,16 @@ PlaybackTransportBar::PlaybackTransportBar(IAppController& controller) : control
 
     addChildComponent(meters_); // UI-5: shown with a session (updateControls)
 
+    // STU-5: monitoring. A listening aid on the device output (after the A/B
+    // match and the meters), never in a render or an export.
+    monitorButton_.setButtonText(monitor_text::buttonText(IPlayback::MonitorMode::Full, false));
+    monitorButton_.setTitle(TRANS("Monitoring"));
+    monitorButton_.setTooltip(TRANS("Listen to the mono sum, the side signal or the sub below 120 Hz, or dim the "
+                                    "output by 20 dB. Playback only: renders and exports are never affected."));
+    monitorButton_.setExplicitFocusOrder(9);
+    monitorButton_.onClick = [this] { showMonitorMenu(); };
+    addAndMakeVisible(monitorButton_);
+
     startTimer(40); // 25 fps updates
 }
 
@@ -201,13 +214,55 @@ void PlaybackTransportBar::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
 
-    // Top border divider line
-    g.setColour(KhensuTheme::borderActive);
-    g.drawHorizontalLine(0, 0.0f, (float)bounds.getWidth());
+    // LG-10: frosted liquid-glass transport rail refracting the live smoke backdrop.
+    auto* root = getTopLevelComponent();
+    if (root != nullptr && root != this) {
+        KhensuLookAndFeel::drawFrostedRail(g, bounds, root->getLocalBounds(),
+                                           root->getLocalArea(this, bounds), true, false);
+    } else {
+        g.setColour(KhensuTheme::borderActive);
+        g.drawHorizontalLine(0, 0.0f, (float)bounds.getWidth());
+        g.setColour(KhensuTheme::bgBase.withAlpha(0.85f));
+        g.fillRect(bounds.withTrimmedTop(1));
+    }
 
-    // Deep glassmorphic backplate
-    g.setColour(KhensuTheme::bgBase.withAlpha(0.85f));
-    g.fillRect(bounds.withTrimmedTop(1));
+    // STU-5: the monitoring badge - amber, so a forgotten Mono or Dim is
+    // never mistaken for the mix.
+    if (monitorBadge_.isNotEmpty() && !monitorBadgeArea_.isEmpty()) {
+        const auto pill =
+            monitorBadgeArea_.toFloat().withSizeKeepingCentre((float)monitorBadgeArea_.getWidth(), 22.0f);
+        g.setColour(KhensuTheme::accentAmberDim);
+        g.fillRoundedRectangle(pill, 11.0f);
+        g.setColour(KhensuTheme::accentAmber);
+        g.drawRoundedRectangle(pill.reduced(0.75f), 11.0f, 1.5f);
+        g.setFont(KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
+        g.drawFittedText(monitorBadge_, pill.toNearestInt().reduced(6, 0), juce::Justification::centred, 1);
+    }
+}
+
+void PlaybackTransportBar::showMonitorMenu()
+{
+    using Mode = IPlayback::MonitorMode;
+    auto& playback = controller_.playback();
+    const auto current = playback.monitorMode();
+    juce::PopupMenu menu;
+    const std::pair<Mode, juce::String> modes[] = {{Mode::Full, TRANS("Full (the mix)")},
+                                                   {Mode::Mono, TRANS("Mono (L+R)/2")},
+                                                   {Mode::Side, TRANS("Side (L-R)/2")},
+                                                   {Mode::Sub, TRANS("Sub < 120 Hz")}};
+    for (const auto& [mode, name] : modes) menu.addItem((int)mode + 1, name, true, mode == current);
+    menu.addSeparator();
+    menu.addItem(100, TRANS("Dim -20 dB"), true, playback.monitorDim());
+    juce::Component::SafePointer<PlaybackTransportBar> self(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&monitorButton_), [self](int choice) {
+        if (self == nullptr || choice == 0) return;
+        auto& pb = self->controller_.playback();
+        if (choice == 100)
+            pb.setMonitorDim(!pb.monitorDim());
+        else
+            pb.setMonitorMode(static_cast<Mode>(juce::jlimit(0, 3, choice - 1)));
+        self->updateControls();
+    });
 }
 
 void PlaybackTransportBar::resized()
@@ -243,6 +298,16 @@ void PlaybackTransportBar::resized()
         b.removeFromRight(12);
     } else {
         meters_.setBounds({});
+    }
+    // STU-5: Monitor, with room for its badge beside it.
+    if (b.getWidth() > 420) {
+        monitorButton_.setBounds(b.removeFromRight(92).withSizeKeepingCentre(92, KhensuTheme::buttonHSmall));
+        b.removeFromRight(6);
+        monitorBadgeArea_ = b.getWidth() > 600 ? b.removeFromRight(170) : juce::Rectangle<int>();
+        b.removeFromRight(monitorBadgeArea_.isEmpty() ? 6 : 12);
+    } else {
+        monitorButton_.setBounds({});
+        monitorBadgeArea_ = {};
     }
     auto right = b.removeFromRight(150);
     volumeLabel_.setBounds(right.removeFromLeft(24).withSizeKeepingCentre(24, 24));
@@ -323,6 +388,22 @@ void PlaybackTransportBar::updateControls()
                                    : TRANS("Nothing to undo"));
     redoButton_.setTooltip(canRedo ? TRANS("Redo: switch to") + " " + controller_.renders().describeRenderAt(1)
                                    : TRANS("Nothing to redo"));
+
+    // STU-5: the monitoring state - button text and the amber badge.
+    {
+        const auto mode = controller_.playback().monitorMode();
+        const bool dim = controller_.playback().monitorDim();
+        const auto buttonText = monitor_text::buttonText(mode, dim);
+        if (monitorButton_.getButtonText() != buttonText) monitorButton_.setButtonText(buttonText);
+        const auto badge = monitor_text::badgeText(mode, dim);
+        if (badge != monitorBadge_) {
+            monitorBadge_ = badge;
+            // The button turns amber too (a narrow window has no badge).
+            monitorButton_.setColour(juce::TextButton::textColourOffId,
+                                     badge.isNotEmpty() ? KhensuTheme::accentAmber : KhensuTheme::textSecondary);
+            repaint(monitorBadgeArea_);
+        }
+    }
 
     // WF-1: the choice only matters once there is a version besides the
     // original (or the user already picked the original).

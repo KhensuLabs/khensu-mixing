@@ -10,12 +10,12 @@ namespace khensu {
 
 void VocalFingerprintStrip::paint(juce::Graphics& g)
 {
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText(TRANS("VOCAL FINGERPRINT (3D)"), getLocalBounds().withHeight(12), juce::Justification::centredLeft, false);
 
     if (!hasData_) {
-        g.setFont(KhensuTheme::bodyFont(11.0f));
+        g.setFont(KhensuTheme::bodyFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(emptyText_.isEmpty() ? TRANS("No stems yet - isolate stems to see the vocal fingerprint.")
                                         : emptyText_,
@@ -44,7 +44,7 @@ void VocalFingerprintStrip::paint(juce::Graphics& g)
     constexpr float spacing = 8.0f;
     const float barW = (b.getWidth() - spacing * (n - 1)) / (float)n;
 
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     for (int i = 0; i < n; ++i) {
         const float t = juce::jlimit(0.0f, 1.0f, bars[i].value);
         const float bx = b.getX() + (float)i * (barW + spacing);

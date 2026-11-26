@@ -44,15 +44,15 @@ class KhensuErrorState final : public juce::Component {
         auto inner = getLocalBounds().reduced(20);
         inner.removeFromBottom(40);
 
-        g.setFont(KhensuTheme::metricFont(26.0f));
+        g.setFont(KhensuTheme::metricFont(type::headline));
         g.setColour(KhensuTheme::accentRed);
         g.drawText("!", inner.removeFromTop(inner.getHeight() / 2), juce::Justification::centred, false);
 
-        g.setFont(KhensuTheme::labelFont(12.0f).boldened());
+        g.setFont(KhensuTheme::labelFont(type::secondary).boldened());
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(headline_, inner.removeFromTop(20), juce::Justification::centred, false);
 
-        g.setFont(KhensuTheme::bodyFont(11.0f));
+        g.setFont(KhensuTheme::bodyFont(type::caption));
         g.setColour(KhensuTheme::textSecondary);
         g.drawText(detail_, inner, juce::Justification::centredTop, true);
     }

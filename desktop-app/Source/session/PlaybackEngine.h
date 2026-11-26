@@ -4,6 +4,8 @@
 #include <atomic>
 #include <memory>
 #include "PlaybackMeterTap.h"
+#include "LivePreviewStage.h"
+#include <khensu/dsp/MonitorSolo.h>
 
 namespace khensu {
 
@@ -25,6 +27,15 @@ namespace khensu {
 /// position on the audio thread) and crossfadeTo() moves between them with an
 /// equal-power crossfade over kCrossfadeMs - no fade-out, reload and fade-in,
 /// and no level dip in the middle.
+///
+/// The chain, source to device:
+///   decks -> AbMixer (A/B, matched gains) -> LivePreviewStage (STU-9: a
+///   chain heard while it is edited) -> FadeGate (+ the meter tap) ->
+///   MonitorStage (STU-5: Mono / Side / Sub / Dim) -> device.
+/// Monitoring comes after the A/B match and after the meters (they keep
+/// reading the program, not the monitoring), and only on this device path:
+/// renders and exports are written by the render services from files and
+/// never pass through it.
 class PlaybackEngine {
   public:
     /// Length of the fade-out / fade-in around a source switch, start or stop.
@@ -67,6 +78,16 @@ class PlaybackEngine {
 
     /// UI-5: what the device plays, measured on the audio thread (lock-free).
     PlaybackMeterTap& meterTap() noexcept { return meterTap_; }
+
+    // ---- STU-5: monitoring (any thread; the device output only) ----
+    void setMonitorMode(dsp::MonitorSolo::Mode mode) noexcept { monitorStage_.solo().setMode(mode); }
+    dsp::MonitorSolo::Mode monitorMode() const noexcept { return monitorStage_.solo().mode(); }
+    void setMonitorDim(bool dim) noexcept { monitorStage_.solo().setDim(dim); }
+    bool monitorDim() const noexcept { return monitorStage_.solo().dim(); }
+
+    // ---- STU-9: live preview (message thread) ----
+    LivePreviewStage& livePreview() noexcept { return livePreview_; }
+    const LivePreviewStage& livePreview() const noexcept { return livePreview_; }
 
     /// Opens an independent reader for the file (caller owns / deletes it) —
     /// used for off-thread waveform-peak scanning without disturbing playback.
@@ -145,6 +166,30 @@ class PlaybackEngine {
         float t_ = 0.0f; // audio thread only
     };
 
+    /// STU-5: the monitoring stage at the end of the chain (after the meter
+    /// tap). Playback only - see the chain above.
+    class MonitorStage final : public juce::AudioSource {
+      public:
+        explicit MonitorStage(juce::AudioSource& input) : input_(input) {}
+        void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override
+        {
+            input_.prepareToPlay(samplesPerBlockExpected, sampleRate);
+            solo_.prepare(sampleRate, samplesPerBlockExpected);
+        }
+        void releaseResources() override { input_.releaseResources(); }
+        void getNextAudioBlock(const juce::AudioSourceChannelInfo& info) override
+        {
+            input_.getNextAudioBlock(info);
+            if (info.buffer != nullptr) solo_.process(*info.buffer, info.startSample, info.numSamples, false);
+        }
+        dsp::MonitorSolo& solo() noexcept { return solo_; }
+        const dsp::MonitorSolo& solo() const noexcept { return solo_; }
+
+      private:
+        juce::AudioSource& input_;
+        dsp::MonitorSolo solo_;
+    };
+
   private:
     /// True when an audio device is open and calling back, i.e. a fade can
     /// actually progress (otherwise waiting for one would only stall).
@@ -170,7 +215,9 @@ class PlaybackEngine {
     juce::AudioTransportSource altTransport_;
     AbMixer mixer_{transportSource_, altTransport_};
     PlaybackMeterTap meterTap_;
-    FadeGate fadeGate_{mixer_, &meterTap_};
+    LivePreviewStage livePreview_{mixer_};
+    FadeGate fadeGate_{livePreview_, &meterTap_};
+    MonitorStage monitorStage_{fadeGate_};
     juce::AudioFormatManager formatManager_;
     std::unique_ptr<juce::AudioFormatReaderSource> readerSource_;
     // Owned here (not by the transport) so play() can wait on it; declared

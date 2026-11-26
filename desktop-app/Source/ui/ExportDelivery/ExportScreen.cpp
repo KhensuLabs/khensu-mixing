@@ -72,12 +72,12 @@ ExportScreen::ExportScreen(IAppController& c)
     exportPage_.addChildComponent(customLufsSlider_);
 
     // ── Gain callout ────────────────────────────────────────────────────
-    gainCalloutLabel_.setFont(KhensuTheme::monoFont(11.0f));
+    gainCalloutLabel_.setFont(KhensuTheme::monoFont(type::caption));
     gainCalloutLabel_.setJustificationType(juce::Justification::centredLeft);
     exportPage_.addAndMakeVisible(gainCalloutLabel_);
 
     // ── Broadcast / podcast compliance ──────────────────────────────────
-    complianceLabel_.setFont(KhensuTheme::monoFont(11.0f));
+    complianceLabel_.setFont(KhensuTheme::monoFont(type::caption));
     complianceLabel_.setJustificationType(juce::Justification::topLeft);
     complianceLabel_.setMinimumHorizontalScale(1.0f);
     complianceLabel_.setTitle(TRANS("Delivery compliance"));
@@ -89,6 +89,9 @@ ExportScreen::ExportScreen(IAppController& c)
 
     // ── Output path panel ───────────────────────────────────────────────
     exportPage_.addAndMakeVisible(formatPanel_);
+    // AUTO-2: a saved preset carries the export loudness too.
+    formatPanel_.loudnessKey = [this] { return currentLoudnessKey(); };
+    formatPanel_.applyLoudnessKey = [this](const juce::String& key) { applyLoudnessKey(key); };
 
     // ── Report panel ────────────────────────────────────────────────────
     exportPage_.addAndMakeVisible(reportPanel_);
@@ -114,6 +117,20 @@ ExportScreen::ExportScreen(IAppController& c)
         showStep(kExportStep);
         platformMastersPanel_.run();
     };
+    // ENH-5: a macro set over every track of the project - the board runs it.
+    masterAssistant_.onApplyToProject = [this](const master_macros::MacroSet& set) {
+        ProjectBoardPanel::MasterOptions o;
+        o.fix = false; // the Master Assistant masters; fixing is the board's own button
+        o.style = master_macros::styleId(set.style);
+        o.strength = set.strength;
+        o.loudnessOffsetDb = set.macros.loudnessDb;
+        o.ceilingDbtp = set.macros.ceilingDbtp;
+        o.label = set.name.isNotEmpty() ? set.name : TRANS("Master Assistant");
+        showStep(kAlbumStep);
+        projectBoard_.fixAndMasterAll(o);
+    };
+    // ENH-4: Export all writes in the Export step's format.
+    projectBoard_.exportFormat = [this] { return formatPanel_.getState(); };
     stepStrip_.addSegment(TRANS("Finish"));
     stepStrip_.addSegment(TRANS("Export"));
     stepStrip_.addSegment(TRANS("Delivery"));
@@ -132,6 +149,7 @@ ExportScreen::ExportScreen(IAppController& c)
     exportAudioButton_.onClick = [this]() { onExport(); };
     // UX-3: the screen's primary action lives in its header.
     titleLabel_.setAction(&exportAudioButton_);
+    button_role::markPrimary(exportAudioButton_, step_ != kFinishStep); // Finish shows first (UXR-2)
 
     // ── Cancel button ───────────────────────────────────────────────────
     cancelButton_.onClick = [this]() { cancelRequested_->store(true); };
@@ -155,6 +173,8 @@ void ExportTargetsAdvisoryPanel::loadTargets()
     // SafePointer on both hops: this fires at app startup with a 60 s
     // bridge timeout - closing the app mid-request must not touch a
     // freed component.
+    if (loading_) return;
+    loading_ = true;
     juce::Component::SafePointer<ExportTargetsAdvisoryPanel> self(this);
     controller_.runInBackground([self]() {
         ipc::HttpServiceBridge bridge;
@@ -181,12 +201,30 @@ void ExportTargetsAdvisoryPanel::loadTargets()
 
         juce::MessageManager::callAsync([self, text, failed = outcome.is_err()]() {
             if (self == nullptr) return;
+            self->loading_ = false;
             // UX-7: while the engine isn't up, the shared placeholder (the
             // notice bar says why), not a failure of its own.
             const bool engineDown = self->controller_.lifecycle().getPythonServiceStatus() != PythonStatus::Running;
             self->textBox_.setText(failed && engineDown ? service_status::waitingPlaceholder() : text, false);
+            // BUG-2: listen for the engine coming up and fetch then. A
+            // failure with the engine running is retried too (it may still
+            // be finishing its start-up), at a slower pace.
+            if (!failed || engineDown) self->runningRetries_ = 0;
+            self->waitingForEngine_ = failed && (engineDown || ++self->runningRetries_ <= 12);
+            if (self->waitingForEngine_)
+                self->startTimer(engineDown ? 1000 : 5000);
+            else
+                self->stopTimer();
         });
     });
+}
+
+void ExportTargetsAdvisoryPanel::timerCallback()
+{
+    if (!waitingForEngine_ || loading_) return;
+    if (controller_.lifecycle().getPythonServiceStatus() != PythonStatus::Running) return; // keep watching
+    stopTimer();
+    loadTargets();
 }
 
 ExportScreen::~ExportScreen() = default;
@@ -353,6 +391,43 @@ void ExportScreen::refreshCompliance()
     });
 }
 
+juce::String ExportScreen::currentLoudnessKey() const
+{
+    const int selId = platformPresetBox_.getSelectedId();
+    if (selId == kAsMasteredId) return {};
+    if (selId != customPresetItemId_ && selId >= 1 && selId <= (int)loadedTargets_.size())
+        return juce::String(loadedTargets_[(size_t)(selId - 1)].id);
+    return export_presets::customLoudnessKey(targetLufsCustom_);
+}
+
+void ExportScreen::applyLoudnessKey(const juce::String& key)
+{
+    int selectId = -1;
+    if (key.isEmpty()) {
+        selectId = kAsMasteredId;
+    } else if (export_presets::isCustomLoudness(key)) {
+        targetLufsCustom_ = export_presets::customLoudnessLufs(key);
+        customLufsSlider_.setValue(targetLufsCustom_, juce::dontSendNotification);
+        selectId = customPresetItemId_;
+    } else {
+        for (size_t i = 0; i < loadedTargets_.size(); ++i)
+            if (juce::String(loadedTargets_[i].id) == key) selectId = (int)i + 1;
+    }
+    if (selectId < 0) return; // a target this service does not list (yet): keep the current choice
+    platformPresetBox_.setSelectedId(selectId, juce::sendNotificationSync);
+}
+
+ExportScreen::SelectedTarget ExportScreen::targetForKey(const juce::String& key) const
+{
+    if (key.isEmpty()) return {0.0f, -1.0f, TRANS("As mastered"), false, {}};
+    if (export_presets::isCustomLoudness(key))
+        return {export_presets::customLoudnessLufs(key), -1.0f, TRANS("Custom"), true, {}};
+    for (const auto& t : loadedTargets_)
+        if (juce::String(t.id) == key)
+            return {(float)t.lufs_integrated, (float)t.true_peak_dbtp, juce::String(t.name), true, t.id};
+    return {0.0f, -1.0f, TRANS("As mastered"), false, {}}; // unknown target: no gain rather than a wrong one
+}
+
 ExportScreen::SelectedTarget ExportScreen::currentTarget() const
 {
     const int selId = platformPresetBox_.getSelectedId();
@@ -385,7 +460,7 @@ void ExportScreen::paint(juce::Graphics& g)
 
         // Status text
         progArea.removeFromTop(KhensuTheme::sp2);
-        g.setFont(KhensuTheme::monoFont(11.0f));
+        g.setFont(KhensuTheme::monoFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(exportStatusText_, progArea, juce::Justification::centredLeft, true);
     }
@@ -580,6 +655,12 @@ void ExportScreen::startExport()
                                                      r.loudness.true_peak_dbtp, job.target.ceiling());
         job.gainKnown = true;
     }
+    if (controller_.hasAnalysis() && !exportingRender)
+        job.levels = std::make_pair(controller_.currentAnalysis().loudness.lufs_integrated,
+                                    controller_.currentAnalysis().loudness.true_peak_dbtp);
+    // AUTO-2: the extra formats, named after the original with each suffix.
+    job.extras = formatPanel_.extraPresets();
+    job.extraPaths = export_presets::plannedOutputs(panelState.outputPath, juce::String(s->files[0].path), job.extras);
     job.opts = opts;
 
     juce::Component::SafePointer<ExportScreen> self(this);
@@ -589,15 +670,20 @@ void ExportScreen::startExport()
         // The session analysis describes the ORIGINAL; a render's loudness
         // differs, so measure the file actually being exported. Unmeasurable
         // (service down) exports at unity gain rather than a wrong gain.
-        if (exportingRender && job.target.normalize) {
+        const bool extrasNormalise = std::any_of(job.extras.begin(), job.extras.end(),
+                                                 [](const export_presets::Preset& p) { return p.loudness.isNotEmpty(); });
+        if (exportingRender && (job.target.normalize || extrasNormalise)) {
             if (auto qs = bridge.analyzeQuickStats(job.opts.sourcePath.toStdString()); qs.is_ok()) {
                 const juce::var v = qs.value();
                 if (!v[af::QuickStatsResponse::integrated_lufs].isVoid()
                     && !v[af::QuickStatsResponse::true_peak_dbtp].isVoid()) {
-                    job.opts.gainLinear = AudioExporter::computeGain(
-                        static_cast<float>((double)v[af::QuickStatsResponse::integrated_lufs]), job.target.lufs,
-                        static_cast<float>((double)v[af::QuickStatsResponse::true_peak_dbtp]), job.target.ceiling());
-                    job.gainKnown = true;
+                    job.levels = std::make_pair(static_cast<float>((double)v[af::QuickStatsResponse::integrated_lufs]),
+                                                static_cast<float>((double)v[af::QuickStatsResponse::true_peak_dbtp]));
+                    if (job.target.normalize) {
+                        job.opts.gainLinear = AudioExporter::computeGain(job.levels->first, job.target.lufs,
+                                                                         job.levels->second, job.target.ceiling());
+                        job.gainKnown = true;
+                    }
                 }
             }
         }
@@ -693,6 +779,12 @@ void ExportScreen::beginWrite(const ExportJob& job)
         self->exportStatusText_ = status;
         self->repaint();
 
+        // AUTO-2: the extra formats follow, one after the other.
+        if (!job.extras.empty()) {
+            self->writeExtras(job, 0, status, 0);
+            return;
+        }
+
         // Re-measure the WRITTEN file against the delivery standard, so the
         // verdict is about what was delivered, not a prediction (UIX-05).
         if (!job.complianceTarget || job.target.id.empty()) return;
@@ -717,6 +809,58 @@ void ExportScreen::beginWrite(const ExportJob& job)
     });
 }
 
+void ExportScreen::writeExtras(ExportJob job, size_t index, juce::String status, int written)
+{
+    if (index >= job.extras.size() || index >= job.extraPaths.size()) {
+        exportStatusText_ = status + "  " + TRANS("Also wrote %w of %n formats.")
+                                               .replace("%w", juce::String(written))
+                                               .replace("%n", juce::String((int)job.extras.size()));
+        isExporting_ = false;
+        exportAudioButton_.setEnabled(controller_.hasActiveSession());
+        cancelButton_.setVisible(false);
+        repaint();
+        return;
+    }
+    if (job.opts.cancelFlag != nullptr && job.opts.cancelFlag->load()) {
+        exportStatusText_ = status + "  " + TRANS("The other formats were cancelled.");
+        isExporting_ = false;
+        exportAudioButton_.setEnabled(controller_.hasActiveSession());
+        cancelButton_.setVisible(false);
+        repaint();
+        return;
+    }
+    const auto& p = job.extras[index];
+    AudioExportOptions opts = job.opts;
+    opts.outputPath = job.extraPaths[index];
+    opts.format = p.format;
+    opts.bitDepth = AudioExportOptions::supportsBitDepth(p.format, p.bitDepth) ? p.bitDepth
+                                                                                : AudioExportOptions::BitDepth::Bits24;
+    opts.sampleRate = p.sampleRate;
+    opts.mp3Bitrate = p.mp3Bitrate;
+    const auto target = targetForKey(p.loudness);
+    opts.gainLinear = 1.0f;
+    if (target.normalize && job.levels.has_value())
+        opts.gainLinear = AudioExporter::computeGain(job.levels->first, target.lufs, job.levels->second, target.ceiling());
+    // An unmeasured source is written at unity rather than at a guessed gain.
+    isExporting_ = true;
+    cancelButton_.setVisible(true);
+    exportAudioButton_.setEnabled(false);
+    exportStatusText_ = TRANS("Writing %p (%i of %n)...")
+                            .replace("%p", juce::File(opts.outputPath).getFileName())
+                            .replace("%i", juce::String((int)index + 1))
+                            .replace("%n", juce::String((int)job.extras.size()));
+    exportProgressAtomic_->store(0.0f);
+    startTimerHz(15);
+    repaint();
+    juce::Component::SafePointer<ExportScreen> self(this);
+    controller_.renders().exportAudio(opts, [self, job, index, status, written](bool ok, juce::String msg) {
+        if (self == nullptr) return;
+        self->stopTimer();
+        if (!ok) juce::Logger::writeToLog("Export: extra format failed: " + msg);
+        self->writeExtras(job, index + 1, status, written + (ok ? 1 : 0));
+    });
+}
+
 void ExportScreen::showStep(int step)
 {
     step_ = juce::jlimit(0, kStepCount - 1, step);
@@ -730,6 +874,9 @@ void ExportScreen::showStep(int step)
     if (step_ == kExportStep) platformMastersPanel_.refreshIfIdle();
     if (step_ == kDeliveryStep) deliveryPackagePanel_.refreshIfIdle();
     if (stepStrip_.getSelected() != step_) stepStrip_.setSelected(step_);
+    // UXR-2: one primary per view - on Finish it is the card's "Master it",
+    // so the header's Export Audio is drawn as a secondary there.
+    button_role::markPrimary(exportAudioButton_, step_ != kFinishStep);
     resized();
 }
 
@@ -760,7 +907,7 @@ void ExportScreen::resized()
         page->setBounds(b);
 
     // ---- Finish: the Master Assistant (FEAT-2) ----
-    masterAssistant_.setBounds(finishPage_.getLocalBounds().withWidth(juce::jmin(900, finishPage_.getWidth())));
+    masterAssistant_.setBounds(finishPage_.getLocalBounds()); // UXR-2: the full width
 
     // ---- Export: target and format on the left, the report on the right ----
     {
@@ -790,7 +937,7 @@ void ExportScreen::resized()
         // Batch Render sits under the report, whose card has room to spare: in
         // the left column it left Format & Output ~200 px at 900 px tall and
         // cut off its Sample Rate row (2026-11-18 session check).
-        batchPanel_.setBounds(pb.removeFromBottom(juce::jlimit(0, pb.getHeight(), 130)));
+        batchPanel_.setBounds(pb.removeFromBottom(juce::jlimit(0, pb.getHeight(), juce::jmax(150, pb.getHeight() * 45 / 100))));
         pb.removeFromBottom(juce::jmin(pb.getHeight(), static_cast<int>(KhensuTheme::cardGap)));
         reportPanel_.setBounds(pb);
     }

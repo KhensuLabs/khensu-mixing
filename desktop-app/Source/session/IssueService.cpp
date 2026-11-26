@@ -5,7 +5,9 @@
 #include "../services/IAnalysisHub.h"
 #include "../services/IRenders.h"
 #include "../services/IServiceLifecycle.h"
+#include "FixAllSafe.h"
 #include "RecommendationChain.h"
+#include <khensu/recommendations/MaskingChain.h>
 #include "RenderHistory.h"
 #include "SessionService.h"
 #include <khensu/analysis/AnalysisResult.h>
@@ -235,7 +237,7 @@ void IssueService::fixScaled(const std::string& recId, float amount, Done onDone
                     // The render is now the current version (and the A/B's B
                     // side): a kept fix. The check (FEAT-1) says whether it
                     // worked.
-                    s->fixRenders_[pathOrError] = FixRender{recId, true, amount};
+                    s->addFixRender(pathOrError, FixRender{recId, true, amount});
                     s->record(recId, true, /*learn*/ true, "Fixed via the issue queue (rendered)");
                 }
             }
@@ -263,6 +265,7 @@ void IssueService::fixInRegion(const std::string& recId, double startSec, double
     }
     IRenders::ChainRender render;
     render.chain = buildRecommendationChain(*rec);
+    if (const auto dyn = maskingDynamicEq(*rec)) render.keyStem = juce::String(dyn->keyStem);
     if (render.chain.empty()) {
         if (onDone) onDone(false, TRANS("This finding has no one-click fix to render."));
         return;
@@ -288,7 +291,7 @@ void IssueService::fixInRegion(const std::string& recId, double startSec, double
             if (s != nullptr) {
                 s->fixInFlight_ = false;
                 if (ok) {
-                    s->fixRenders_[pathOrError] = FixRender{recId, true, 1.0f};
+                    s->addFixRender(pathOrError, FixRender{recId, true, 1.0f});
                     s->record(recId, true, /*learn*/ true, "Fixed in one section via the issue queue (rendered)");
                 }
             }
@@ -309,6 +312,82 @@ bool IssueService::fixTopIssue(Done onDone)
             return true;
         }
     return false;
+}
+
+void IssueService::addFixRender(const juce::String& path, FixRender fixRender)
+{
+    for (auto [it, end] = fixRenders_.equal_range(path); it != end; ++it)
+        if (it->second.recId == fixRender.recId) {
+            it->second = fixRender;
+            return;
+        }
+    fixRenders_.emplace(path, std::move(fixRender));
+}
+
+const std::map<juce::String, finding_evidence::Entry>& IssueService::evidence() const
+{
+    return hasEvidenceOverride_ ? evidenceOverride_ : finding_evidence::table();
+}
+
+IIssues::SafeFixPlan IssueService::safeFixes() const
+{
+    SafeFixPlan out;
+    const auto p = fix_all_safe::plan(list(), evidence());
+    if (p.chain.empty()) {
+        for (const auto& [code, why] : p.skipped) out.skipped.emplace_back(code, why);
+        return out;
+    }
+    out.recIds = p.recIds;
+    out.skipped = p.skipped;
+    return out;
+}
+
+bool IssueService::fixAllSafe(Done onDone)
+{
+    if (fixInFlight_) { // handled: say why, as fix() does
+        if (onDone) onDone(false, TRANS("Another fix is still rendering. Try again when it finishes."));
+        return true;
+    }
+    const auto p = fix_all_safe::plan(list(), evidence());
+    if (p.empty()) return false;
+
+    IRenders::ChainRender render;
+    render.chain = p.chain;
+    render.description = TRANS("Fix all safe") + " (" + juce::String(static_cast<int>(p.recIds.size())) + ")";
+    render.sourceRecommendationId = "fix_all_safe";
+    fixInFlight_ = true;
+    juce::WeakReference<IssueService> self(this);
+    const auto recIds = p.recIds;
+    const auto out = renders_.renderVersion(
+        render, "_fix_all_safe",
+        [self, recIds, onDone, generation = generation_](IRenders::RenderOutcome outcome,
+                                                          const juce::String& pathOrError, const juce::var&) {
+            auto* s = self.get();
+            const bool ok = outcome == IRenders::RenderOutcome::Rendered;
+            if (s != nullptr && s->generation_ != generation) {
+                if (onDone) onDone(false, TRANS("The session changed before the fix finished."));
+                return;
+            }
+            if (s != nullptr) {
+                s->fixInFlight_ = false;
+                if (ok)
+                    for (const auto& recId : recIds) {
+                        // One render, every finding it fixes: each is kept or
+                        // undone with it (FIX-3) and checked on its own (FEAT-1).
+                        s->addFixRender(pathOrError, FixRender{recId, true, 1.0f});
+                        s->record(recId, true, /*learn*/ true, "Fixed via Fix all safe (rendered)");
+                    }
+            }
+            if (onDone) {
+                if (ok) onDone(true, pathOrError);
+                else if (outcome == IRenders::RenderOutcome::Cancelled) onDone(false, TRANS("Render cancelled."));
+                else if (outcome == IRenders::RenderOutcome::SessionChanged)
+                    onDone(false, TRANS("The session changed before the fix finished."));
+                else onDone(false, pathOrError.isNotEmpty() ? pathOrError : TRANS("The fix did not render."));
+            }
+        });
+    if (out == juce::File()) fixInFlight_ = false; // refused synchronously (onDone already ran)
+    return true;
 }
 
 void IssueService::markDone(const std::string& recId)

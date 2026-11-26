@@ -31,7 +31,7 @@ class PythonServiceManager : private juce::Thread {
     /// check is a STALE service process (old build still bound to the port):
     /// the diagnosed root cause of "Could not reach /analyze/..." panels, since
     /// its routes predate the ones this app calls (spec §0).
-    static constexpr const char* kExpectedServiceVersion = "0.2.105";
+    static constexpr const char* kExpectedServiceVersion = "0.2.107";
 
     PythonServiceManager() : juce::Thread("khensu-service-launch") {}
     ~PythonServiceManager() override

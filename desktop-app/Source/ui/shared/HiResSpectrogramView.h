@@ -1,7 +1,8 @@
 // desktop-app/Source/ui/shared/HiResSpectrogramView.h
 // The detailed spectrogram (VIZ-S1): the whole song as level over time and
 // frequency, measured natively at high resolution (4096-point FFT, 256 log
-// bands 30 Hz - 16 kHz, up to 3000 frames; khensu/analysis/TrackTimeline.h).
+// bands 30 Hz - 16 kHz, up to 3000 frames; khensu/analysis/TrackTimeline.h), drawn
+// on the standard 20 Hz - 20 kHz axis (VIS-3, ui::viz) with the unmeasured strips dark.
 //   - a perceptually uniform colour map (viz::spectrogram, magma), rendered
 //     per pixel at the view's own size with interpolation across bands and
 //     averaging across frames, so it is smooth at any zoom;
@@ -68,6 +69,8 @@ class HiResSpectrogramView final : public juce::Component, public juce::Settable
     void renderViewImage();
     void setTargetView(double start, double end, bool animate);
     int frameAt(double sec) const;
+    /// The fractional band index at `hz` (log between centres), -1 outside the measured range.
+    double bandPosAt(float hz) const;
     void drawAxes(juce::Graphics& g, juce::Rectangle<float> plot);
     void drawSections(juce::Graphics& g, juce::Rectangle<float> plot);
     void drawFindings(juce::Graphics& g, juce::Rectangle<float> plot);
@@ -83,7 +86,8 @@ class HiResSpectrogramView final : public juce::Component, public juce::Settable
     std::vector<float> meanDb_; ///< per band, the whole song
     float topDb_ = 0.0f;        ///< the 99.5th percentile: the top of the colour map
     float rangeDb_ = 84.0f;     ///< the map spans topDb_ - rangeDb_ .. topDb_
-    double fLo_ = 30.0, fHi_ = 16000.0;
+    double fLo_ = 20.0, fHi_ = 20000.0; ///< VIS-3: the standard axis (ui::viz::kFreqMinHz..kFreqMaxHz)
+    std::vector<float> bandHz_;         ///< the measured bands' centres
 
     std::array<juce::PixelARGB, 256> lut_{};
     juce::Image viewImage_;

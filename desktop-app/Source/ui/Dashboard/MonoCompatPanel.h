@@ -4,6 +4,7 @@
 #include <JuceHeader.h>
 #include "AutoScanCompletion.h"
 #include "../shared/KhensuTheme.h" // ThemeListener
+#include "../shared/ChartKitDesktop.h"
 #include "../shared/PanelCard.h"
 #include "../shared/PanelRunState.h"
 #include <vector>
@@ -31,6 +32,7 @@ class MonoCompatPanel final : public PanelCard {
         autoScan_.reset();
         systems_.clear();
         run_.reset();
+        rebuildChart();
         resized();
         repaint();
     }
@@ -46,6 +48,8 @@ class MonoCompatPanel final : public PanelCard {
     juce::TextButton analyzeButton_{TRANS("Check Mono")};
     bool stereo_ = true;
     std::vector<Sys> systems_;
+    void rebuildChart();
+    ThemedBarChart chart_; ///< VIS-1: one bar per playback system
     /// Status line, error state and the run button's busy state (UX-8).
     PanelRunState run_{this, &analyzeButton_};
     /// Re-applies every cached palette colour. Called at construction and on

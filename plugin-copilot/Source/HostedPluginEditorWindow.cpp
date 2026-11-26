@@ -1,11 +1,12 @@
 #include "HostedPluginEditorWindow.h"
 #include <khensu/ui/KhensuPalette.h>
+#include "ui/PluginLookAndFeel.h"
 
 namespace khensu {
 
 HostedPluginEditorWindow::HostedPluginEditorWindow(std::shared_ptr<juce::AudioPluginInstance> instance,
                                                    const juce::String& title, std::function<void()> onCloseRequested)
-    : juce::DocumentWindow(title, ui::Palette::bgBase, juce::DocumentWindow::closeButton),
+    : juce::DocumentWindow(title, PluginLookAndFeel::bgDark, juce::DocumentWindow::closeButton),
       instance_(std::move(instance)), onCloseRequested_(std::move(onCloseRequested))
 {
     setUsingNativeTitleBar(true);

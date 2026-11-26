@@ -2,6 +2,7 @@
 #include <functional>
 #include <JuceHeader.h>
 #include <khensu/ipc/HttpServiceBridge.h>
+#include <khensu/mixerchain/DspChainMapper.h>
 
 namespace khensu {
 
@@ -18,6 +19,18 @@ class MixerChainMiniPanel final : public juce::Component {
     /// WF-9: after the chain is loaded into the DSP chain, the editor shows
     /// it there - the plugin chain's one editor.
     std::function<void()> onLoadedIntoDsp;
+    /// STU-17: applies the mapped recipe and reports it (the editor's apply
+    /// strip, with what was skipped and why); returns true when anything was
+    /// loaded. Unset, the panel writes the values to the processor itself.
+    std::function<bool(const mixerchain::RecipeDspMapping&)> onApplyRecipe;
+
+    /// STU-17 (tests): "Load into DSP chain" on `recipe` as if generated.
+    void loadRecipeForTesting(const ipc::HttpServiceBridge::MixerChainResponse& recipe)
+    {
+        lastResponse_ = recipe;
+        applyChainToProcessor();
+    }
+    juce::String statusTextForTesting() const { return descriptionLabel.getText(); }
 
   private:
     void generateChain();

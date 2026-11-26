@@ -141,7 +141,7 @@ PlaybackEngine::PlaybackEngine()
     readAheadThread_.startThread(juce::Thread::Priority::high);
     deviceManager_.initialiseWithDefaultDevices(0, 2);
     deviceManager_.addAudioCallback(&sourcePlayer_);
-    sourcePlayer_.setSource(&fadeGate_);
+    sourcePlayer_.setSource(&monitorStage_);
     formatManager_.registerBasicFormats();
 }
 

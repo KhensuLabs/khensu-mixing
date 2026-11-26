@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/MixMasterEngine/RenderTreePanel.cpp
 #include "RenderTreePanel.h"
+#include "AbPins.h"
 #include "../shared/FixDifferenceView.h"
 #include "../shared/PanelRunState.h"
 #include "../shared/TimelineCache.h"
@@ -17,7 +18,7 @@ namespace apif = khensu::api::fields;
 namespace khensu {
 
 namespace {
-constexpr int kInfoLineH = 16;
+constexpr int kInfoLineH = 28; // a small button's height: Reset A/B sits on it (STU-8)
 } // namespace
 
 RenderTreePanel::RenderTreePanel(IAppController& c) : PanelCard(c, "Render Tree")
@@ -29,15 +30,31 @@ RenderTreePanel::RenderTreePanel(IAppController& c) : PanelCard(c, "Render Tree"
                        "back to it.\n\nRight-click a node to name or tag it (a restore point), branch from it "
                        "(new renders are then recorded on that branch), compare it with the current version, or "
                        "export its branch as a .khensu bundle. Versions saved in an earlier run are listed under "
-                       "Saved versions; click one to make it the current audition version again."));
+                       "Saved versions; click one to make it the current audition version again.\n\nThe A and B "
+                       "buttons on a row (or Pin as A / Pin as B in its menu) play that version as a side of the "
+                       "loudness-matched A/B, so any two versions can be compared. Pinning changes only what plays: "
+                       "the current version and its fix check stay as they are. Reset A/B goes back to the "
+                       "original against the current version."));
     setTitle(TRANS("Render tree"));
     setDescription(TRANS("Render history with names, tags and branches. Right-click a node for actions."));
+
+    // STU-8: back to the default comparison after pinning versions.
+    resetAbButton_.setButtonText(TRANS("Reset A/B"));
+    resetAbButton_.setTooltip(TRANS("Compare the original (A) with the current version (B) again."));
+    resetAbButton_.onClick = [this] { resetAb(); };
+    addChildComponent(resetAbButton_);
 
     renderTreeListener_ = listen(controller_.renders(), this, &IRenders::addRenderTreeListener,
                                  &IRenders::removeRenderTreeListener, [this]() {
                                      syncVersions();
+                                     updateResetButton();
                                      repaint();
                                  });
+    abAppliedListener_ = listen(controller_.playback(), this, &IPlayback::addAbRenderAppliedListener,
+                                &IPlayback::removeAbRenderAppliedListener, [this]() {
+                                    updateResetButton();
+                                    repaint();
+                                });
 }
 
 RenderTreePanel::~RenderTreePanel()
@@ -97,6 +114,12 @@ void RenderTreePanel::mouseMove(const juce::MouseEvent& e)
     const auto& tree = controller_.renders().renderTree();
     for (const auto& nl : layout_) {
         if (nl.index < 0) continue;
+        for (const bool sideA : {true, false}) // STU-8
+            if (pinBounds(nl, sideA).expanded(2.0f).contains(e.position)) {
+                setTooltip(sideA ? TRANS("Play this version as A in the loudness-matched A/B")
+                                 : TRANS("Play this version as B in the loudness-matched A/B"));
+                return;
+            }
         const auto spark = juce::Rectangle<float>(static_cast<float>(getWidth() - 132), nl.dot.getCentreY() - 9.0f, 120.0f, 18.0f);
         if (!spark.contains(e.position)) continue;
         const auto it = diffByPath_.find(tree[(size_t)nl.index].path);
@@ -119,7 +142,89 @@ void RenderTreePanel::resetForSession()
     activeBranch_.clear();
     syncedSessionId_.clear();
     status_.clear();
+    // The pins themselves are playback state, cleared with the session
+    // (PlaybackService::resetForSession).
+    resetAbButton_.setVisible(false);
     repaint();
+}
+
+// ---------------------------------------------------------------------------
+// STU-8: pin any two versions as A and B
+// ---------------------------------------------------------------------------
+
+namespace {
+ab_pins::State pinState(IAppController& c)
+{
+    return ab_pins::resolve(c.renders().renderTree(), c.playback().abReferencePath(), c.playback().abProcessedPath(),
+                            c.renders().currentRenderPath());
+}
+} // namespace
+
+void RenderTreePanel::pinAs(bool sideA, int treeIndex)
+{
+    const auto& tree = controller_.renders().renderTree();
+    if (treeIndex < 0 || treeIndex >= static_cast<int>(tree.size())) return;
+    const juce::String path = tree[static_cast<size_t>(treeIndex)].path;
+    if (!juce::File(path).existsAsFile()) {
+        setStatus(TRANS("That version's file is missing."));
+        return;
+    }
+    auto& playback = controller_.playback();
+    if (sideA)
+        playback.setAbReferencePath(path);
+    else
+        playback.setAbProcessedPath(path); // loudness-matched to A, measured if new
+    const auto name = "R" + juce::String(treeIndex + 1);
+    setStatus(sideA ? TRANS("A is now") + " " + name : TRANS("B is now") + " " + name);
+    updateResetButton();
+}
+
+void RenderTreePanel::resetAb()
+{
+    const auto reset = ab_pins::resetTo(controller_.renders().currentRenderPath());
+    auto& playback = controller_.playback();
+    playback.setAbReferencePath(reset.aPath);
+    if (playback.abProcessedPath() != reset.bPath) playback.setAbProcessedPath(reset.bPath);
+    setStatus(TRANS("A/B: original against the current version."));
+    updateResetButton();
+}
+
+void RenderTreePanel::updateResetButton()
+{
+    const bool show = controller_.getActiveSession() != nullptr && !pinState(controller_).isDefault;
+    if (resetAbButton_.isVisible() != show) {
+        resetAbButton_.setVisible(show);
+        resized();
+    }
+}
+
+juce::String RenderTreePanel::abSummary() const
+{
+    const auto s = pinState(controller_);
+    if (!s.hasB) return {};
+    const auto side = [](int node, const juce::String& path) {
+        return node >= 0 ? "R" + juce::String(node + 1) : juce::File(path).getFileNameWithoutExtension();
+    };
+    const juce::String a = s.aIsOriginal ? TRANS("original")
+                                         : side(s.aNode, controller_.playback().abReferencePath());
+    return TRANS("A/B:") + " " + a + " " + TRANS("vs") + " " + side(s.bNode, controller_.playback().abProcessedPath());
+}
+
+juce::Rectangle<float> RenderTreePanel::pinBounds(const NodeLayout& nl, bool sideA) const
+{
+    // Left of the difference sparkline (or the right edge on a narrow card).
+    const float right = getWidth() > 360 ? static_cast<float>(getWidth() - 140) : static_cast<float>(getWidth() - 8);
+    const float x = right - (sideA ? 2.0f : 1.0f) * (kPinW + 4.0f);
+    return {x, nl.dot.getCentreY() - kPinH * 0.5f, kPinW, kPinH};
+}
+
+void RenderTreePanel::resized()
+{
+    PanelCard::resized();
+    auto info = bodyArea();
+    info.removeFromTop(28);
+    auto line = info.removeFromTop(kInfoLineH);
+    resetAbButton_.setBounds(line.removeFromRight(110).reduced(4, 0));
 }
 
 void RenderTreePanel::setStatus(const juce::String& s)
@@ -131,6 +236,7 @@ void RenderTreePanel::setStatus(const juce::String& s)
 juce::String RenderTreePanel::headerText() const
 {
     juce::String t = TRANS("Branch: ") + (activeBranch_.isEmpty() ? TRANS("main") : activeBranch_);
+    if (const auto ab = abSummary(); ab.isNotEmpty()) t << "   " << ab; // STU-8
     if (status_.isNotEmpty()) t << "   " << status_;
     return t;
 }
@@ -271,9 +377,11 @@ void RenderTreePanel::paint(juce::Graphics& g)
 
     auto info = bodyArea();
     info.removeFromTop(28);
-    g.setFont(KhensuTheme::labelFont(10.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(activeBranch_.isEmpty() ? KhensuTheme::textTertiary : KhensuTheme::accentTeal);
-    g.drawText(headerText(), info.removeFromTop(kInfoLineH).reduced(8, 0), juce::Justification::centredLeft, true);
+    auto infoLine = info.removeFromTop(kInfoLineH).reduced(8, 0);
+    if (resetAbButton_.isVisible()) infoLine.removeFromRight(resetAbButton_.getWidth() + 8);
+    g.drawText(headerText(), infoLine, juce::Justification::centredLeft, true);
 
     const auto& tree = controller_.renders().renderTree();
     if (layout_.empty()) {
@@ -283,6 +391,7 @@ void RenderTreePanel::paint(juce::Graphics& g)
     }
 
     const int current = controller_.renders().currentRenderTreeNode();
+    const auto pins = pinState(controller_); // STU-8
 
     // Connectors first (parent dot -> child dot), so dots draw on top.
     g.setColour(KhensuTheme::borderActive);
@@ -301,7 +410,7 @@ void RenderTreePanel::paint(juce::Graphics& g)
     }
 
     if (savedHeaderY_ >= 0) {
-        g.setFont(KhensuTheme::labelFont(10.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(TRANS("Saved versions (earlier runs) - click to restore"), bodyArea().getX() + 8, savedHeaderY_,
                    getWidth() - 16, 16, juce::Justification::centredLeft, true);
@@ -330,14 +439,16 @@ void RenderTreePanel::paint(juce::Graphics& g)
         }
         const int textX = (int)nl.dot.getRight() + 8;
         const int textY = (int)nl.dot.getCentreY() - 8;
-        g.setFont(KhensuTheme::labelFont(10.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(isCurrent ? KhensuTheme::textPrimary : KhensuTheme::textSecondary);
-        const int nameW = juce::jmin(getWidth() - textX - 8,
-                                     juce::GlyphArrangement::getStringWidthInt(KhensuTheme::labelFont(10.0f), name) + 4);
+        // Text stops before the A / B pins (STU-8) on a tree row.
+        const int textRight = nl.index >= 0 ? static_cast<int>(pinBounds(nl, true).getX()) - 4 : getWidth() - 8;
+        const int nameW = juce::jmax(0, juce::jmin(textRight - textX,
+                                     juce::GlyphArrangement::getStringWidthInt(KhensuTheme::labelFont(type::caption), name) + 4));
         g.drawText(name, textX, textY, nameW, 16, juce::Justification::centredLeft, true);
-        if (extra.isNotEmpty()) {
+        if (extra.isNotEmpty() && textRight - textX - nameW > 0) {
             g.setColour(KhensuTheme::accentBlue);
-            g.drawText(extra, textX + nameW, textY, getWidth() - textX - nameW - 140, 16,
+            g.drawText(extra, textX + nameW, textY, textRight - textX - nameW, 16,
                        juce::Justification::centredLeft, true);
         }
         // VIZ-N4: what this version changed against the original.
@@ -352,6 +463,21 @@ void RenderTreePanel::paint(juce::Graphics& g)
                 juce::MessageManager::callAsync([self, path] { // paint() stays pure
                     if (self != nullptr) self->requestDiff(path);
                 });
+            }
+        }
+        // STU-8: "A" / "B" - filled on the version that plays as that side.
+        if (nl.index >= 0) {
+            for (const bool sideA : {true, false}) {
+                const auto r = pinBounds(nl, sideA);
+                const bool on = nl.index == (sideA ? pins.aNode : pins.bNode);
+                g.setColour(on ? KhensuTheme::accentTeal : KhensuTheme::borderSubtle);
+                if (on)
+                    g.fillRoundedRectangle(r, 4.0f);
+                else
+                    g.drawRoundedRectangle(r.reduced(0.5f), 4.0f, 1.0f);
+                g.setColour(on ? KhensuTheme::bgVoid : KhensuTheme::textTertiary);
+                g.setFont(KhensuTheme::labelFont(type::caption));
+                g.drawText(sideA ? "A" : "B", r, juce::Justification::centred, false);
             }
         }
     }
@@ -370,6 +496,11 @@ void RenderTreePanel::mouseDown(const juce::MouseEvent& e)
             restoreSaved(nl.savedPath);
             return;
         }
+        for (const bool sideA : {true, false}) // STU-8: the row's A / B pins
+            if (!e.mods.isPopupMenu() && pinBounds(nl, sideA).expanded(2.0f).contains(e.position)) {
+                pinAs(sideA, nl.index);
+                return;
+            }
         if (e.mods.isPopupMenu()) {
             showNodeMenu(nl.index, controller_.renders().renderTree()[(size_t)nl.index].path);
             return;
@@ -405,6 +536,12 @@ void RenderTreePanel::showNodeMenu(int treeIndex, const juce::String& path)
     m.addSeparator();
     m.addItem(5, TRANS("Compare with current..."));
     m.addItem(6, TRANS("Export branch as bundle..."), known);
+    // STU-8: compare any two versions, loudness-matched. Playback only.
+    m.addSeparator();
+    const auto pins = pinState(controller_);
+    m.addItem(7, TRANS("Pin as A"), true, pins.aNode == treeIndex);
+    m.addItem(8, TRANS("Pin as B"), true, pins.bNode == treeIndex);
+    m.addItem(9, TRANS("Reset A/B (original vs current)"), !pins.isDefault);
     if (!known) m.addSectionHeader(TRANS("Saving this version... try again in a moment"));
 
     juce::Component::SafePointer<RenderTreePanel> self(this);
@@ -421,6 +558,9 @@ void RenderTreePanel::showNodeMenu(int treeIndex, const juce::String& path)
                                 break;
                             case 5: self->compareWithCurrent(path); break;
                             case 6: self->exportBranch(v.branch); break;
+                            case 7: self->pinAs(true, treeIndex); break;
+                            case 8: self->pinAs(false, treeIndex); break;
+                            case 9: self->resetAb(); break;
                             default: break;
                         }
                     });

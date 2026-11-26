@@ -22,7 +22,7 @@ void CorrelationStripComponent::setBands(std::vector<std::pair<juce::String, flo
 void CorrelationStripComponent::paint(juce::Graphics& g)
 {
     if (bands_.empty()) {
-        g.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
         g.setColour(KhensuTheme::textSecondary);
         g.drawText(TRANS("Correlation by band: needs deep analysis."), getLocalBounds(),
                    juce::Justification::centredLeft, true);
@@ -53,7 +53,7 @@ void CorrelationStripComponent::paint(juce::Graphics& g)
         else
             g.fillRoundedRectangle(x, zeroY, barW, barH, 2.0f);
 
-        g.setFont(khensu::KhensuTheme::uiFont(9.5f, juce::Font::plain));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
         g.setColour(KhensuTheme::textSecondary);
         g.drawText(band, juce::Rectangle<float>(bounds.getX() + slotW * i, bounds.getBottom() - 12.0f, slotW, 12.0f),
                    juce::Justification::centred, true);
@@ -89,12 +89,12 @@ PhasePanel::PhasePanel(IAppController& c) : PanelCard(c, "Phase")
     harshnessMeter_.setVisible(false);
     addChildComponent(harshnessMeter_);
 
-    harshnessPeakLabel_.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::plain));
+    harshnessPeakLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::plain));
     harshnessPeakLabel_.setVisible(false);
     addChildComponent(harshnessPeakLabel_);
 
     for (auto* l : {&monoCompatLabel_, &msImbalanceLabel_, &symmetryLabel_}) {
-        l->setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+        l->setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
         l->setVisible(false);
         addAndMakeVisible(*l);
     }
@@ -106,7 +106,7 @@ PhasePanel::PhasePanel(IAppController& c) : PanelCard(c, "Phase")
     findCulpritButton_.onClick = [this] { findCulprits(); };
     addAndMakeVisible(findCulpritButton_);
 
-    culpritLabel_.setFont(khensu::KhensuTheme::uiFont(10.5f, juce::Font::plain));
+    culpritLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     culpritLabel_.setJustificationType(juce::Justification::topLeft);
     culpritLabel_.setVisible(false);
     addChildComponent(culpritLabel_);

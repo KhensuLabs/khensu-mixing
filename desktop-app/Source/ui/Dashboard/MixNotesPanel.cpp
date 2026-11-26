@@ -60,7 +60,7 @@ MixNotesPanel::MixNotesPanel(IAppController& c) : PanelCard(c, "Mix Notes"), tim
 
     // Causal chains (pipeline #7): a compact "why these relate" strip above the
     // cards. Hidden until the evidence-graph fetch returns a non-empty chain.
-    evidenceLabel_.setFont(KhensuTheme::labelFont(9.5f));
+    evidenceLabel_.setFont(KhensuTheme::labelFont(type::caption));
     evidenceLabel_.setJustificationType(juce::Justification::topLeft);
     evidenceLabel_.setMinimumHorizontalScale(1.0f);
     addChildComponent(evidenceLabel_);

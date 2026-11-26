@@ -22,33 +22,7 @@ class CommandPaletteOverlay::SearchEditor final : public juce::TextEditor {
 // ---- fuzzy scoring ----------------------------------------------------------
 int CommandPaletteOverlay::fuzzyScore(const juce::String& pattern, const juce::String& text)
 {
-    if (pattern.isEmpty()) return 0; // everything matches an empty query
-    const auto pat = pattern.toLowerCase();
-    const auto str = text.toLowerCase();
-
-    int score = 0, run = 0;
-    auto p = pat.getCharPointer();
-    auto s = str.getCharPointer();
-    juce_wchar prev = 0;
-
-    for (auto pc = p.getAndAdvance(); pc != 0;) {
-        bool matched = false;
-        for (auto sc = s.getAndAdvance(); sc != 0; sc = s.getAndAdvance()) {
-            if (sc == pc) {
-                score += 1 + run;                                                       // contiguous runs compound
-                if (prev == 0 || prev == ' ' || prev == '/' || prev == '-') score += 8; // word-start bonus
-                run += 2;
-                prev = sc;
-                matched = true;
-                break;
-            }
-            run = 0;
-            prev = sc;
-        }
-        if (!matched) return -1; // a pattern char had no match ahead
-        pc = p.getAndAdvance();
-    }
-    return score;
+    return palette_search::fuzzyScore(pattern, text);
 }
 
 // ---- ctor/dtor -------------------------------------------------------------
@@ -63,7 +37,8 @@ void CommandPaletteOverlay::applyThemeColours()
     search_->setColour(juce::TextEditor::textColourId, KhensuTheme::textPrimary);
     search_->setColour(juce::TextEditor::highlightColourId, KhensuTheme::accentTeal.withAlpha(0.25f));
     search_->setColour(juce::CaretComponent::caretColourId, KhensuTheme::accentTeal);
-    search_->setTextToShowWhenEmpty(TRANS("Search commands..."), KhensuTheme::textTertiary);
+    search_->setTextToShowWhenEmpty(TRANS("Search commands, cards, genres and findings..."),
+                                    KhensuTheme::textTertiary);
 }
 
 CommandPaletteOverlay::CommandPaletteOverlay(std::vector<Command> commands) : commands_(std::move(commands))
@@ -72,7 +47,7 @@ CommandPaletteOverlay::CommandPaletteOverlay(std::vector<Command> commands) : co
     setInterceptsMouseClicks(true, true);
 
     search_ = std::make_unique<SearchEditor>();
-    search_->setFont(KhensuTheme::bodyFont(18.0f));
+    search_->setFont(KhensuTheme::bodyFont(type::title));
     applyThemeColours();
     search_->setJustification(juce::Justification::centredLeft);
     search_->onTextChange = [this]() {
@@ -128,20 +103,14 @@ void CommandPaletteOverlay::refilter()
 {
     const juce::String q = search_ ? search_->getText() : juce::String();
 
-    std::vector<std::pair<int, int>> scored; // (score, index)
-    scored.reserve(commands_.size());
-    for (int i = 0; i < (int)commands_.size(); ++i) {
-        if (i == freeTextIndex_) continue; // placed below, never fuzzy-matched
-        const auto& c = commands_[i];
-        const int s = juce::jmax(fuzzyScore(q, c.name), fuzzyScore(q, c.name + " " + c.keywords) - 2);
-        if (s >= 0) scored.push_back({s, i});
-    }
-    // Stable-ish: higher score first, ties keep declaration order.
-    std::stable_sort(scored.begin(), scored.end(), [](auto& a, auto& b) { return a.first > b.first; });
-
-    filtered_.clear();
-    for (auto& [s, i] : scored)
-        filtered_.push_back(i);
+    // STU-7: commands, cards, findings and genres, ranked and grouped by
+    // kind (PaletteSearch.h). The free-text row is placed below, never
+    // fuzzy-matched.
+    std::vector<palette_search::Entry> entries;
+    entries.reserve(commands_.size());
+    for (const auto& c : commands_)
+        entries.push_back({c.name, c.keywords, c.kind});
+    filtered_ = palette_search::rank(q, entries, freeTextIndex_);
 
     // CE-AG-4: a multi-word query can also be run as a mix instruction.
     const juce::String instruction = q.trim();
@@ -234,9 +203,9 @@ void CommandPaletteOverlay::paint(juce::Graphics& g)
     auto list = card.withTrimmedTop(kPad).reduced(kPad, 0);
 
     if (filtered_.empty()) {
-        g.setFont(KhensuTheme::bodyFont(14.0f));
+        g.setFont(KhensuTheme::bodyFont(type::large));
         g.setColour(KhensuTheme::textTertiary);
-        g.drawText("No matching commands", list.removeFromTop(kRowH), juce::Justification::centred, true);
+        g.drawText(TRANS("No matches"), list.removeFromTop(kRowH), juce::Justification::centred, true);
         return;
     }
 
@@ -246,6 +215,12 @@ void CommandPaletteOverlay::paint(juce::Graphics& g)
         if (idx >= (int)filtered_.size()) break;
         const auto& cmd = commands_[filtered_[(size_t)idx]];
         auto row = list.removeFromTop(kRowH);
+
+        // STU-7: a hairline where one kind's group of results ends.
+        if (idx > 0 && commands_[filtered_[(size_t)idx - 1]].kind != cmd.kind) {
+            g.setColour(KhensuTheme::borderSubtle);
+            g.fillRect(row.getX() + 12, row.getY(), row.getWidth() - 24, 1);
+        }
 
         const bool sel = (idx == selected_);
         if (sel) {
@@ -259,11 +234,11 @@ void CommandPaletteOverlay::paint(juce::Graphics& g)
         auto text = row.reduced(14, 0);
         // Category tag on the right
         auto tag = text.removeFromRight(64);
-        g.setFont(KhensuTheme::labelFont(10.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(sel ? KhensuTheme::accentTeal : KhensuTheme::textTertiary);
         g.drawText(cmd.category.toUpperCase(), tag, juce::Justification::centredRight, false);
 
-        g.setFont(KhensuTheme::bodyFont(15.0f));
+        g.setFont(KhensuTheme::bodyFont(type::subtitle));
         g.setColour(sel ? KhensuTheme::textPrimary : KhensuTheme::textSecondary);
         g.drawText(cmd.name, text, juce::Justification::centredLeft, true);
     }

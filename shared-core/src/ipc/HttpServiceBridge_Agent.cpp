@@ -56,6 +56,26 @@ void AgentApi::cancelAgentMixJob(const juce::String& jobId)
     postIgnoringResult("/agent/mix/" + jobId + "/cancel");
 }
 
+khensu::Result<juce::var, BridgeError> AgentApi::listAgentSessions(int limit)
+{
+    return getJson(juce::String(khensu::api::routes::get_agent_sessions.path) + "?limit=" +
+                       juce::String(juce::jlimit(1, 500, limit)),
+                   detailOptions());
+}
+
+khensu::Result<juce::var, BridgeError> AgentApi::agentFindings(const juce::String& filePath,
+                                                               const juce::String& sessionId)
+{
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    if (filePath.isNotEmpty()) o->setProperty(apif::AgentFindingsRequest::file_path, filePath);
+    if (sessionId.isNotEmpty()) o->setProperty(apif::AgentFindingsRequest::session_id, sessionId);
+    // Measuring decodes the whole file: give it a render's time, not the default.
+    auto opts = detailOptions();
+    opts.timeoutMs = heavyTimeoutMs(heavy_timeout::kStemAnalysisMs, timeout_ms_);
+    opts.readDeadlineMs = opts.timeoutMs;
+    return postJson(khensu::api::routes::post_agent_findings.path, juce::var(o.get()), opts);
+}
+
 khensu::Result<juce::var, BridgeError> AgentApi::getLlmProviders(bool refresh)
 {
     // Probing three localhost ports takes about a second when none answer.

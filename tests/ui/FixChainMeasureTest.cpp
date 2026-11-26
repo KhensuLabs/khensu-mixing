@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "session/RecommendationChain.h"
 #include <khensu/analysis/AudioAnalyzer.h>
+#include <khensu/mixerchain/RecommendationDspMapper.h>
 #include <khensu/recommendations/RecommendationEngine.h>
 #include <khensu/targets/CreativeTarget.h>
 #include <khensu/targets/GenreDatabase.h>
@@ -72,6 +73,40 @@ TEST_CASE("Fix chains for the corpus fix check", "[.fixchain]")
                     chain.add(juce::var(spec.get()));
                 }
                 f->setProperty("chain", chain);
+                // STU-16: the plugin's fix for the same finding (the shared
+                // mapper behind the plugin's Apply / Apply all, at 100 %),
+                // as the service effects that render it the same way - so a
+                // finding the desktop only advises on (width) is still
+                // checked. Only the stages with an exact service twin.
+                const auto mapped = mixerchain::mapRecommendationToDsp(rec, 1.0f, nullptr);
+                juce::Array<juce::var> pluginChain;
+                const auto value = [&mapped](const char* id, float& v) {
+                    const auto it = mapped.values.find(id);
+                    if (it == mapped.values.end()) return false;
+                    v = it->second;
+                    return true;
+                };
+                float on = 0.0f, width = 1.0f;
+                if (value(mixerchain::DspParamIdsV5::widthOn, on) && on > 0.5f
+                    && value(mixerchain::DspParamIdsV5::widthAmount, width)) {
+                    // RealtimeStereoWidth and the service's StereoWidener
+                    // both scale the side by `width`.
+                    juce::DynamicObject::Ptr spec = new juce::DynamicObject();
+                    spec->setProperty("effect", "StereoWidener");
+                    juce::DynamicObject::Ptr params = new juce::DynamicObject();
+                    params->setProperty("width", width);
+                    spec->setProperty("parameters", juce::var(params.get()));
+                    pluginChain.add(juce::var(spec.get()));
+                }
+                f->setProperty("plugin_chain", pluginChain);
+                f->setProperty("safe_to_auto_apply", rec.safe_to_auto_apply);
+                for (const auto& e : rec.evidence) {
+                    if (e.measurement == "Stereo width" && e.threshold.has_value()) {
+                        f->setProperty("width", e.value);
+                        f->setProperty("width_edge", *e.threshold);
+                    }
+                    if (e.measurement == "Mid/side balance") f->setProperty("ms_balance", e.value);
+                }
                 findings.add(juce::var(f.get()));
             }
             o->setProperty("findings", findings);

@@ -9,6 +9,7 @@
 #include <JuceHeader.h>
 #include "../shared/PanelCard.h"
 #include <khensu/analysis/AnalysisResult.h>
+#include <khensu/ui/ChartKit.h>
 #include <array>
 
 namespace khensu {
@@ -42,6 +43,10 @@ class GainStagingPanel final : public PanelCard {
     void setData(const AnalysisResult& r);
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
+    /// VIS-8: what a screen reader reads for the gauges.
+    juce::String summary() const;
 
     struct Gauge {
         juce::String label;
@@ -56,6 +61,8 @@ class GainStagingPanel final : public PanelCard {
 
   private:
     void paintGauge(juce::Graphics& g, const Gauge& gauge, juce::Rectangle<int> area) const;
+    void paintBody(juce::Graphics& g);
+    int gaugeAt(juce::Point<int> pos) const;
 
     std::array<Gauge, 5> gauges_;
     juce::String playbackLine_;
@@ -74,6 +81,9 @@ class GainStagingPanel final : public PanelCard {
     juce::Rectangle<int> statusArea_;
     juce::Rectangle<int> specBalanceArea_;
     juce::Rectangle<int> stereoBarArea_;
+    int hoveredGauge_ = -1;
+    juce::Point<float> hoverPos_;
+    ui::chart::ChartSummary gaugesSummary_; ///< VIS-8
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GainStagingPanel)
 };

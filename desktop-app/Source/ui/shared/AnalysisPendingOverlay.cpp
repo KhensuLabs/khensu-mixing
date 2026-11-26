@@ -143,17 +143,17 @@ void AnalysisPendingOverlay::paint(juce::Graphics& g)
     }
 
     g.setColour(KhensuTheme::textPrimary);
-    g.setFont(KhensuTheme::uiFont(20.0f, juce::Font::bold));
+    g.setFont(KhensuTheme::uiFont(type::heading, juce::Font::bold));
     g.drawText(title, b.removeFromTop(30), juce::Justification::centredLeft, true);
     b.removeFromTop(6);
     g.setColour(KhensuTheme::textSecondary);
-    g.setFont(KhensuTheme::bodyFont(14.0f));
+    g.setFont(KhensuTheme::bodyFont(type::large));
     g.drawFittedText(body, b.removeFromTop(40), juce::Justification::topLeft, 2);
 
     if (mode_ == Mode::Analyzing) {
         b.removeFromTop(10);
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::labelFont(12.0f));
+        g.setFont(KhensuTheme::labelFont(type::secondary));
         auto line = b.removeFromTop(18);
         g.drawText(juce::String(juce::roundToInt(fraction_ * 100.0f)) + "%", line.removeFromRight(48),
                    juce::Justification::centredRight, false);
@@ -169,10 +169,10 @@ void AnalysisPendingOverlay::paint(juce::Graphics& g)
         if (provisionalText_.isNotEmpty()) {
             b.removeFromTop(14);
             g.setColour(KhensuTheme::textTertiary);
-            g.setFont(KhensuTheme::labelFont(12.0f));
+            g.setFont(KhensuTheme::labelFont(type::secondary));
             g.drawText(TRANS("PROVISIONAL - FAST PASS"), b.removeFromTop(16), juce::Justification::centredLeft, true);
             g.setColour(KhensuTheme::textSecondary);
-            g.setFont(KhensuTheme::bodyFont(14.0f));
+            g.setFont(KhensuTheme::bodyFont(type::large));
             g.drawText(provisionalText_, b.removeFromTop(22), juce::Justification::centredLeft, true);
         }
     }

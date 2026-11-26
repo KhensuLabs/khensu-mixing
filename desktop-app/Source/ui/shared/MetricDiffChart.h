@@ -30,8 +30,14 @@ class MetricDiffChart final : public juce::Component {
     static int preferredHeight(int numericRowCount) { return 8 + numericRowCount * 30; }
 
     void paint(juce::Graphics& g) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
+    /// VIS-8: what a screen reader reads.
+    juce::String summary() const;
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
   private:
+    juce::Point<float> hoverPos_{-1.0f, -1.0f};
     std::vector<MetricDiffTable::Row> rows_;
     juce::String labelA_ = "A", labelB_ = "B";
 

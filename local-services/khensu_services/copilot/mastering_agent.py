@@ -69,6 +69,111 @@ _MAX_CONSECUTIVE_WARNED = 2
 # The guardrail's crest-drop warning text (render_guardrails.post_render_guardrail).
 _CREST_WARNING_PREFIX = "Crest factor fell"
 
+# --- Mastering styles (ENH-5) ------------------------------------------------
+# A style moves the targets the loop converges to and seeds the chain with the
+# colour the style asks for; "balanced" is the genre's own targets and no seed
+# (exactly the behaviour before styles existed). Every shift is at full
+# strength (1.0) and scales linearly with ``strength``. The limiter ceiling is
+# the genre's true-peak ceiling for every style, so "loud" is louder only up
+# to the same platform-safe true peak.
+STYLES = ("warm", "balanced", "open", "loud")
+DEFAULT_STYLE = "balanced"
+DEFAULT_STRENGTH = 0.5
+_STYLE_SHIFTS: dict[str, dict[str, float]] = {
+    #            LUFS target   crest target   centroid target (x ratio**strength)
+    "balanced": {"lufs_db": 0.0, "crest_db": 0.0, "centroid_ratio": 1.0},
+    "warm":     {"lufs_db": -0.5, "crest_db": 0.5, "centroid_ratio": 0.78},
+    "open":     {"lufs_db": 0.0, "crest_db": 2.0, "centroid_ratio": 1.18},
+    "loud":     {"lufs_db": 4.0, "crest_db": -2.0, "centroid_ratio": 1.0},
+}
+# "loud" never targets louder than this integrated loudness, whatever the genre.
+_LOUD_LUFS_CAP = -6.0
+# The crest target never goes below this (a brick wall is not a style).
+_MIN_CREST_TARGET_DB = 4.0
+_AIR_SHELF_HZ = 12000.0
+_WARM_SHELF_HZ = 180.0
+
+
+def normalize_style(style: str | None) -> str:
+    """``style`` lower-cased, or ``balanced`` when it is not a known style."""
+    value = str(style or "").strip().lower()
+    return value if value in STYLES else DEFAULT_STYLE
+
+
+def _clamp_strength(strength: float | None) -> float:
+    try:
+        value = float(DEFAULT_STRENGTH if strength is None else strength)
+    except (TypeError, ValueError):
+        return DEFAULT_STRENGTH
+    if value != value:   # NaN
+        return DEFAULT_STRENGTH
+    return min(1.0, max(0.0, value))
+
+
+def styled_genre(genre: dict, style: str, strength: float) -> dict:
+    """``genre`` with its loudness, crest and centroid targets moved by
+    ``style`` at ``strength`` (0..1). ``balanced`` returns ``genre`` unchanged."""
+    style = normalize_style(style)
+    strength = _clamp_strength(strength)
+    if style == DEFAULT_STYLE or strength <= 0.0:
+        return genre
+    shift = _STYLE_SHIFTS[style]
+    out = dict(genre)
+    lufs = float(genre.get("lufs_target", -12.0)) + shift["lufs_db"] * strength
+    if shift["lufs_db"] > 0.0:
+        lufs = min(lufs, max(_LOUD_LUFS_CAP, float(genre.get("lufs_target", -12.0))))
+    out["lufs_target"] = lufs
+    out["crest_factor_target_db"] = max(_MIN_CREST_TARGET_DB,
+                                        crest_target_db(genre) + shift["crest_db"] * strength)
+    out["spectral_centroid_hz"] = (float(genre.get("spectral_centroid_hz", 2500.0))
+                                   * shift["centroid_ratio"] ** strength)
+    return out
+
+
+def style_seed_stages(style: str, strength: float) -> list[dict]:
+    """The stages a style starts the chain with (before any caller chain):
+    warm = a low shelf and gentle tape saturation, open = an air shelf,
+    loud and balanced = none (loud gets there through the gain into the
+    limiter)."""
+    style = normalize_style(style)
+    strength = _clamp_strength(strength)
+    if strength <= 0.0:
+        return []
+    if style == "warm":
+        return [
+            {"effect": "LowShelfFilter",
+             "parameters": {"cutoff_frequency_hz": _WARM_SHELF_HZ,
+                            "gain_db": round(1.5 * strength, 2), "q": 0.707}},
+            {"effect": "TapeSaturation",
+             "parameters": {"drive_db": round(4.0 * strength, 2), "warmth": 0.7,
+                            "mix": round(0.4 * strength, 3), "output_trim_db": 0.0}},
+        ]
+    if style == "open":
+        return [{"effect": "HighShelfFilter",
+                 "parameters": {"cutoff_frequency_hz": _AIR_SHELF_HZ,
+                                "gain_db": round(2.0 * strength, 2), "q": 0.707}}]
+    return []
+
+
+def style_summary(style: str, strength: float) -> str:
+    """One line saying what the style did to the targets, for the report."""
+    style = normalize_style(style)
+    strength = _clamp_strength(strength)
+    if style == DEFAULT_STYLE or strength <= 0.0:
+        return "Balanced: the genre's own targets."
+    shift = _STYLE_SHIFTS[style]
+    parts = []
+    if shift["lufs_db"]:
+        parts.append(f"loudness {shift['lufs_db'] * strength:+.1f} LU")
+    if shift["crest_db"]:
+        parts.append(f"crest {shift['crest_db'] * strength:+.1f} dB")
+    if shift["centroid_ratio"] != 1.0:
+        parts.append(f"brightness x{shift['centroid_ratio'] ** strength:.2f}")
+    seeds = ", ".join(s["effect"] for s in style_seed_stages(style, strength))
+    if seeds:
+        parts.append("starts with " + seeds)
+    return f"{style.capitalize()} at {round(strength * 100)}%: " + "; ".join(parts) + "."
+
 
 def ceiling_dbtp_for(genre: dict) -> float:
     """The limiter ceiling for ``genre``: its ``true_peak_max`` (clamped to a
@@ -296,7 +401,9 @@ def _guardrail_failed(exc: BaseException) -> dict:
 def run_mastering_agent(file_path: str, output_dir: str, genre: dict,
                         initial_chain: list[dict] | None = None,
                         max_iterations: int = 5,
-                        should_cancel=None) -> dict:
+                        should_cancel=None,
+                        style: str = DEFAULT_STYLE,
+                        strength: float = DEFAULT_STRENGTH) -> dict:
     """Runs the render -> analyze -> critique -> adjust loop.
 
     ``output_dir`` should be private to this run (the job endpoint passes a
@@ -306,6 +413,10 @@ def run_mastering_agent(file_path: str, output_dir: str, genre: dict,
     iterations, so the job-queue wrapper can cooperatively cancel a
     multi-render loop the same way the other job queues do.
 
+    ``style`` (warm | balanced | open | loud) at ``strength`` (0..1) moves the
+    targets and seeds the chain (ENH-5, ``styled_genre`` /
+    ``style_seed_stages``); ``balanced`` is the genre's own targets.
+
     Returns {"converged": bool, "iterations": [...], "final_output_path": str}.
     Each iteration record: {"iteration", "chain", "metrics", "deltas",
     "critique", "output_path", "converged"}.
@@ -313,7 +424,12 @@ def run_mastering_agent(file_path: str, output_dir: str, genre: dict,
     from khensu_services.copilot.render_guardrails import post_render_guardrail
 
     ceiling = ceiling_dbtp_for(genre)
-    chain = _with_limiter_last(copy.deepcopy(initial_chain), ceiling) if initial_chain else []
+    style = normalize_style(style)
+    strength = _clamp_strength(strength)
+    genre = styled_genre(genre, style, strength)
+    seeds = style_seed_stages(style, strength)
+    start = seeds + copy.deepcopy(initial_chain or [])
+    chain = _with_limiter_last(start, ceiling) if start else []
     os.makedirs(output_dir, exist_ok=True)
     iterations: list[dict] = []
 
@@ -445,5 +561,15 @@ def run_mastering_agent(file_path: str, output_dir: str, genre: dict,
         # Back-compat: keep final_output_path but point it at the best *safe*
         # candidate, never an unsafe last iteration.
         "final_output_path": best_safe_path,
-        "decision_hash": decision_hash("mastering_agent", genre.get("id", ""), file_path, max_iterations),
+        "decision_hash": (decision_hash("mastering_agent", genre.get("id", ""), file_path, max_iterations)
+                          if style == DEFAULT_STYLE else
+                          decision_hash("mastering_agent", genre.get("id", ""), file_path, max_iterations,
+                                        style, round(strength, 3))),
+        "style": style,
+        "strength": round(strength, 3),
+        "style_summary": style_summary(style, strength),
+        "targets": {"lufs": float(genre.get("lufs_target", -12.0)),
+                    "crest_db": crest_target_db(genre),
+                    "centroid_hz": float(genre.get("spectral_centroid_hz", 2500.0)),
+                    "ceiling_dbtp": ceiling},
     }

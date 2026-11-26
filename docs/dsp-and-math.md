@@ -65,6 +65,13 @@ samples at the channel's own peak (within 0.999 of it) that does not move
 reported. Channels whose RMS is below -90 dBFS are ignored (the ratio of two
 noise values means nothing).
 
+**PSR (peak to short-term loudness, STU-3)** at each timeline hop is the
+highest sample peak over the 3 s window ending there minus the short-term
+loudness at that hop (`analysis/PeakToLoudness.h`, from the timeline's
+`peakDbfs` and `shortTermLufs`; sample peak, since the timeline holds no
+per-window true peak). Windows quieter than -50 LUFS have none. A run under
+6 dB lasting at least 2 s is marked *squashed*.
+
 **DC offset** is the mean sample value; it is a finding only when the offset
 holds through the file, not in one passage.
 
@@ -401,6 +408,64 @@ Rendering the parity fixtures both ways agrees within 0.05 LU integrated,
 reduction (the octave bands above 4 kHz of a hissy signal) within 0.1 dB
 (FN2-2a).
 
+**The rest of the service's stages render natively too (ENH-6,
+`ExtendedChainStages`).** Same names, parameters and clamps
+(`dsp_params._PARAM_CLAMPS`), so one chain JSON renders the same on both
+sides:
+
+| Effect | Processing |
+|---|---|
+| DynamicEQ | zero-phase 4th-order Butterworth band around f (1/q octaves wide); a linked attack / release follower of its mean abs; out = (x - band) + band gr, gr = (env / T)^(1/R - 1) above T, floored at -max_reduction_db. Native extensions: `shape` (0 bell, 1 low shelf, 2 high shelf) and `use_key` = 1 - detect on the render's **key** signal (a separated stem) through the same band filter |
+| MultibandCompressor | three zero-phase Butterworth bands (4th order run forward and back = a Linkwitz-Riley 8 magnitude, no phase shift), each through the glue compressor's core (linked peak detector, 6 dB soft knee), summed, times makeup; native per-band attack / release / makeup |
+| MidSideProcessor | mid and side gains; native RBJ bells on mid and side and a 12 dB/oct side high-pass |
+| Exciter | zero-phase high-passed band, tanh(drive (b + even b^2)), high-passed again, scaled to the band's whole-signal RMS (a profile pass) and mixed in |
+| BassMonoMaker | the mid's zero-phase low band plus each side's zero-phase high band |
+| NoiseGate | pedalboard's (JUCE's): 50 ms RMS ballistics, then attack / release, gain (env / T)^(R - 1) below T |
+
+The zero-phase stages run over chunks with enough real context either side
+for their slowest pole to ring down 140 dB (x 1.5 for a resonant section),
+and handle the file's edges as scipy's `sosfiltfilt` does, so the edges'
+true peak matches too. The parity fixtures (72 chains) agree within
+0.00035 LU integrated, 0.0005 dB true peak and 0.005 dB per octave band.
+The fixtures (77 chains) include a high-shelf DynamicEQ and two keyed ones.
+
+**A masking fix is a keyed dynamic EQ (ENH-6).** A stem-masking finding
+renders as a DynamicEQ on the band the pair shares (centre sqrt(lo hi),
+q = 1 / log2(hi / lo) clamped to 0.3..18, threshold -30 dB, ratio 4, 5 /
+120 ms, the finding's cut as the maximum reduction), keyed on the
+higher-priority stem of the pair (vocals, then drums, bass, other), instead
+of a static cut that thins the other part all the time. A native render is
+given the key stem's file when it has been separated
+(`OfflineRenderOptions::keyPath`); a service render is sent the stem's name
+(`key_stem`, looked up in the request's `stem_paths`), decodes it, resamples
+it to the source's rate and pads or trims it to the source's length (a
+section render gets the key's matching slice). The detector then follows
+the key's energy in the band (`use_key`), and `shape` picks bell, low shelf
+or high shelf. Without a key file - not separated, an unknown stem, an
+unreadable file - the stage keys on its own input, still a dynamic EQ, and
+the service says so in the response's `warnings`.
+
+**Fix all safe (ENH-2)** renders the safe findings as one chain: a finding
+qualifies when its fix is not advice-only, has no denoise stage, and its
+Fix cleared it on >= 70 % of >= 10 corpus tracks (`finding_evidence.json`).
+Chains merge in stage order (high-pass, EQ, dynamics, colour, width, gain,
+limiter); duplicates collapse to the highest high-pass cutoff, the sum of
+the gains and the lowest limiter ceiling.
+
+**Mastering styles (ENH-5).** A style moves the mastering agent's targets
+and seeds its chain; every shift is at strength 1 and scales linearly with
+the strength s (0-1, default 0.5):
+
+| Style | LUFS target | Crest target | Centroid target | Seed stages |
+|---|---|---|---|---|
+| Balanced | genre's | genre's | genre's | none |
+| Warm | -0.5 s dB | +0.5 s dB | x 0.78^s | 180 Hz low shelf +1.5 s dB; tape saturation (drive 4 s dB, warmth 0.7, mix 0.4 s) |
+| Open | 0 | +2 s dB | x 1.18^s | 12 kHz high shelf +2 s dB |
+| Loud | +4 s dB, never above max(-6 LUFS, the genre's target) | -2 s dB | genre's | none (gain into the limiter) |
+
+The crest target never goes below 4 dB, and the limiter ceiling is the
+genre's true-peak ceiling for every style.
+
 **In the plugin (OVH-8)** a fix is applied live to the Copilot's own chain
 instead of rendered: `RecommendationDspMapper` puts each key on a parameter
 (shelves on a real shelf band, a notch on a free band, gain keys relative to
@@ -415,6 +480,19 @@ shared 4x interpolator (MEAS-5) evaluated around samples within 6 dB of the
 block's sample peak; integrated loudness keeps every gated 400 ms block in a
 0.1 LU histogram (counts and energy sums) and applies the -70 LUFS and -10 LU
 gates over it, so nothing grows while the host plays.
+
+**Width fix (STU-10 / STU-16).** Width w = 2S²/(M²+S²) gives the side/mid
+energy ratio r = w / (2 - w); a side gain g scales r by g², so the gain that
+lands on a target width t is g = sqrt(r_t / r). The target is the genre edge
+the finding crossed, 0.03 inside it. The analyzer clamps w at 1 once the
+side is as loud as the mid; for such a reading the too-wide finding's
+"Mid/side balance" b = (M² - S²)/(M² + S²) gives the unclamped width 1 - b.
+Corpus check (first 8 of 134 tracks, side x2 / x0.2 defects): too wide
+cleared 4 of 4, each landing exactly at edge - 0.03; too narrow cleared 0
+of 5, because the width stage stops at x2 and undoing x0.2 needs x2.6-5.
+The sub-too-wide finding's render fix is BassMonoMaker at 120 Hz (the
+finding measures 20-100 Hz and the corpus `sub_wide` defect widens below
+120 Hz); its fix-clears rate is not yet measured.
 
 ## 9. Safety gates
 

@@ -61,12 +61,12 @@ LlmProviderPanel::LlmProviderPanel(IAppController& c, std::string baseUrl, juce:
       configDir_(configDir == juce::File() ? juce::File(juce::String(AppPaths::dataDirectory())) : std::move(configDir))
 {
     applyThemeColours();
-    headingLabel_.setFont(KhensuTheme::uiFont(12.0f, juce::Font::bold));
-    reportLabel_.setFont(KhensuTheme::labelFont(10.5f));
+    headingLabel_.setFont(KhensuTheme::uiFont(type::secondary, juce::Font::bold));
+    reportLabel_.setFont(KhensuTheme::labelFont(type::caption));
     reportLabel_.setJustificationType(juce::Justification::topLeft);
     reportLabel_.setText(TRANS("Checking which LLM is available..."), juce::dontSendNotification);
     for (auto* l : {&ggufLabel_, &urlLabel_})
-        l->setFont(KhensuTheme::labelFont(10.5f));
+        l->setFont(KhensuTheme::labelFont(type::caption));
 
     detectButton_.setTooltip(TRANS("Look for llama.cpp server (:8080), Ollama (:11434) and LM Studio (:1234) on this "
                                    "computer"));

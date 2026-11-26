@@ -37,7 +37,7 @@ AbxTrialOverlay::AbxTrialOverlay(IAppController& controller, juce::StringArray b
     addAndMakeVisible(card_);
 
     titleLabel_.setText(TRANS("Delta Solo & Blind ABX"), juce::dontSendNotification);
-    titleLabel_.setFont(khensu::KhensuTheme::uiFont(15.0f, juce::Font::bold));
+    titleLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::subtitle, juce::Font::bold));
     card_.addAndMakeVisible(titleLabel_);
 
     closeButton_.onClick = [this]() {
@@ -50,13 +50,13 @@ AbxTrialOverlay::AbxTrialOverlay(IAppController& controller, juce::StringArray b
     deltaSoloButton_.onClick = [this]() { playDeltaSolo(); };
     card_.addAndMakeVisible(deltaSoloButton_);
 
-    deltaStatusLabel_.setFont(khensu::KhensuTheme::uiFont(10.5f, juce::Font::plain));
+    deltaStatusLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     card_.addAndMakeVisible(deltaStatusLabel_);
 
     startTrialButton_.onClick = [this]() { startTrial(); };
     card_.addAndMakeVisible(startTrialButton_);
 
-    trialStatusLabel_.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    trialStatusLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     // Honest labelling (§10.3): against a reference this is an
     // IDENTIFICATION test (can you tell your mix from another master?), not a
     // transparency test of your processing.
@@ -75,11 +75,11 @@ AbxTrialOverlay::AbxTrialOverlay(IAppController& controller, juce::StringArray b
     guessBButton_.onClick = [this]() { guess(true); };
     card_.addAndMakeVisible(guessBButton_);
 
-    scoreLabel_.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::bold));
+    scoreLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::bold));
     scoreLabel_.setText(TRANS("Score: 0 / 0"), juce::dontSendNotification);
     card_.addAndMakeVisible(scoreLabel_);
 
-    preferenceLabel_.setFont(khensu::KhensuTheme::uiFont(10.5f, juce::Font::plain));
+    preferenceLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     preferenceLabel_.setText(TRANS("Separately, tell the app which you prefer at equal loudness - it learns "
                                    "whether you like the processing, not a loudness."),
                              juce::dontSendNotification);

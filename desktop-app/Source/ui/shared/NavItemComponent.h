@@ -28,9 +28,16 @@ class NavItemComponent final : public juce::Component {
     bool keyPressed(const juce::KeyPress& key) override;
     void focusGained(FocusChangeType) override { repaint(); }
     void focusLost(FocusChangeType) override { repaint(); }
-    void mouseEnter(const juce::MouseEvent&) override
+    void mouseEnter(const juce::MouseEvent& e) override
     {
         hovered_ = true;
+        cursorPos_ = e.position;
+        repaint();
+    }
+    void mouseMove(const juce::MouseEvent& e) override
+    {
+        hovered_ = true;
+        cursorPos_ = e.position;
         repaint();
     }
     void mouseExit(const juce::MouseEvent&) override
@@ -44,6 +51,7 @@ class NavItemComponent final : public juce::Component {
     nav_icons::Icon icon_ = nav_icons::Icon::None;
     bool active_ = false;
     bool hovered_ = false;
+    juce::Point<float> cursorPos_{};
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(NavItemComponent)
 };
 

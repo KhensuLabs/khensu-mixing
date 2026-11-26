@@ -2,12 +2,18 @@
 // Batch Render: apply the session's last-applied effect chain to every audio
 // file in a folder through the service's /copilot/apply_chain/batch job queue.
 // Per-file success/failure - one corrupt take doesn't sink the batch.
+// ENH-4: a per-file mode - every file analysed, fixed on its own findings
+// (the verified agent loop: only findings with a renderable, verified fix)
+// and optionally mastered in a style, through /copilot/batch/smart; per-file
+// progress, a results table (LUFS and true peak before / after, findings
+// cleared) and Cancel.
 // THREAD_CONTEXT(UIThread)
 #pragma once
 #include <JuceHeader.h>
 #include "../shared/KhensuTheme.h" // ThemeListener
 #include "../shared/PanelCard.h"
 #include "../../RenderJobManager.h" // GuardrailRejection
+#include "DeliveryResultView.h"
 #include <functional>
 #include <vector>
 #include <atomic>
@@ -39,6 +45,11 @@ class BatchRenderPanel final : public PanelCard {
     void pollJob(const juce::String& jobId);
     /// Re-checks folder + chain availability and updates the run button/hint.
     void refreshReadiness();
+    /// ENH-4: true when each file is analysed, fixed and mastered on its own.
+    bool perFileMode() const noexcept { return modeBox_.getSelectedId() == kPerFileMode; }
+    void setPerFileMode(bool perFile);
+    /// The per-file results as table rows (tests build them from a status).
+    static DeliveryResult smartResultsTable(const ipc::HttpServiceBridge::SmartBatchStatus& s);
 
 #if KHENSU_TESTS
     void setInputFolderForTesting(const juce::File& folder);
@@ -46,6 +57,18 @@ class BatchRenderPanel final : public PanelCard {
 #endif
 
   private:
+
+    // ENH-4 mode: the same chain for every file, or each file on its own terms.
+    static constexpr int kSameChainMode = 1;
+    static constexpr int kPerFileMode = 2;
+    juce::ComboBox modeBox_;
+    juce::ToggleButton masterToggle_{TRANS("Master too")};
+    juce::ComboBox styleBox_;
+    DeliveryResultView smartResults_;
+    juce::String smartJobId_;
+    void runPerFile();
+    void pollSmartJob(const juce::String& jobId);
+    void finishSmartRun(const ipc::HttpServiceBridge::SmartBatchStatus& s);
 
     juce::TextButton chooseButton_{juce::String::fromUTF8("Choose Folder...")};
     juce::TextButton runButton_{TRANS("Process Folder")};

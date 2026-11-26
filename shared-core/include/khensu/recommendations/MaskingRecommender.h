@@ -6,6 +6,7 @@
 #include <khensu/recommendations/Recommendation.h>
 #include <khensu/recommendations/RecommendationType.h>
 #include <khensu/recommendations/ProcessingStage.h>
+#include <khensu/recommendations/MaskingChain.h>
 #include <khensu/common/FrequencyRange.h>
 #include <algorithm>
 #include <string>
@@ -103,8 +104,13 @@ class MaskingRecommender {
 
             r.suggested_action = "Apply a complementary EQ cut on one of the two stems around " +
                                  std::to_string((int)bandLoHz) + "-" + std::to_string((int)bandHiHz) +
-                                 " Hz (e.g. cut " + pair.stem_b + " to make room for " + pair.stem_a + ").";
+                                 " Hz (e.g. cut " + pair.stem_b + " to make room for " + pair.stem_a +
+                                 ") - ideally a dynamic EQ keyed from the leading part, so the cut only "
+                                 "acts while both play.";
             r.suggested_parameters = {{"eq_freq_hz", (bandLoHz + bandHiHz) / 2.0f}, {"eq_gain_db", cutDb}};
+            // ENH-6: the render is a dynamic EQ keyed on the leading stem
+            // (MaskingChain.h) - the cut only acts while both parts play.
+            writeMaskingDynamicEq(r.suggested_parameters, pair.stem_a, pair.stem_b, bandLoHz, bandHiHz, cutDb);
             r.is_target_relative = false;
             r.safe_to_auto_apply = false;
             r.stage = ProcessingStage::MixChannel;

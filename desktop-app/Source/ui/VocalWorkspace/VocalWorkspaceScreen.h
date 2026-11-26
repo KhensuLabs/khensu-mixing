@@ -12,8 +12,6 @@
 #include "VocalMacroPanel.h"
 #include "VocalHookPanel.h"
 #include "VocalQuickStatsPanel.h"
-#include "StemMaskingPanel.h"
-#include "StemEnergyPanel.h"
 #include "LyricIntelligibilityPanel.h"
 #include "VocalRenderPanel.h"
 #include "GainRiderPanel.h"
@@ -27,6 +25,7 @@
 #include "MixMapCanvas.h"
 #include "../shared/PanelDockManager.h"
 #include "../shared/SegmentedControl.h"
+#include "../shared/FeatureHomeLink.h"
 
 namespace khensu {
 
@@ -56,12 +55,12 @@ class VocalWorkspaceScreen final : public juce::Component {
     /// (masking, pitch accuracy, gain ride) fire once per source file.
     juce::String lastStemAutoScanPath_;
 
-    // Per-stem solo row (visible once stems are Ready). "Full Mix" un-solos.
-    juce::TextButton soloVocalsButton_{TRANS("Vocals")};
-    juce::TextButton soloDrumsButton_{TRANS("Drums")};
-    juce::TextButton soloBassButton_{TRANS("Bass")};
-    juce::TextButton soloOtherButton_{TRANS("Other")};
-    juce::TextButton soloFullMixButton_{TRANS("Full Mix")};
+    // Per-stem solo row (visible once stems are Ready). "Full mix" un-solos.
+    // UXR-5: one segmented choice, drawn like every tab row (it was five
+    // buttons tinted by hand, the selected one unreadable).
+    SegmentedControl stemListen_;
+    /// The stems in the row's order; "" is the full mix.
+    static constexpr const char* kListenStems[] = {"vocals", "drums", "bass", "other", ""};
 
     void layoutContent();
     /// The current-vocal row (WF-4): shown while an edit is the current vocal.
@@ -103,9 +102,10 @@ class VocalWorkspaceScreen final : public juce::Component {
     juce::Viewport viewport_;
     // UX-14: three tabs instead of 19 panels on one page - Edit (pitch, word
     // gain, ride, comp, align, harmony), Diagnose (accuracy, intelligibility,
-    // masking, energy, stats, hooks, preflight) and Tone (strategy, macros,
-    // render). One container per tab; the viewport shows the active one, so a
-    // card's own visibility (stem cards appear once stems exist) is untouched.
+    // the mix map, stats, hooks, preflight) and Vocal tone (strategy, macros,
+    // render; UXR-11: "Tone" also names an Analysis card group). One
+    // container per tab; the viewport shows the active one, so a card's own
+    // visibility (stem cards appear once stems exist) is untouched.
     SegmentedControl tabStrip_;
     juce::Component editContent_, diagnoseContent_, toneContent_;
     int activeTab_ = 0;
@@ -122,16 +122,17 @@ class VocalWorkspaceScreen final : public juce::Component {
     PitchAccuracyPanel pitchAccuracy_;
     VocalHookPanel hookPanel;
     VocalQuickStatsPanel vocalStats_;
-    StemMaskingPanel stemMasking_;
-    StemEnergyPanel stemEnergy_;
     LyricIntelligibilityPanel lyricIntelligibility_;
     PitchNoteGridEditor pitchEditor_;
     WordClipGainEditor wordClipGain_;
     TakeAlignmentPanel takeAlignment_;
     VocalHarmonyPanel vocalHarmony_; ///< harmony-line MIDI export (/analyze/vocal_harmony)
     MixMapCanvas mixMap_;
-    /// CON-6: the stem views - masking, energy, the mix map - share one card
-    /// with tabs (shown once stems exist).
+    /// ENH-8: stem energy and masking live in Analysis > Stems; this links
+    /// there. The mix map (stems placed by spectrum and energy, with masking
+    /// edges) stays: Analysis does not show it.
+    FeatureHomeLink stemsLink_;
+    /// CON-6: the stem card (shown once stems exist).
     CardGroup stemsGroup_{"stems", TRANS("Stems")};
     /// Re-applies every cached palette colour. Called at construction and on
     /// each theme change.

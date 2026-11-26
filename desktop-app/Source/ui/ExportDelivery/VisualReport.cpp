@@ -241,7 +241,7 @@ juce::String buildHtml(const Input& in)
     if (in.hero.hasSpread())
         h << "<span>&#9632; " << TRANS("released") << " " << escape(in.hero.spreadName) << ": " << TRANS("middle 50 % (dark) and 80 % (light)")
           << ", " << juce::String(in.hero.spreadTracks) << " " << TRANS("tracks") << "</span><span style=\"color:" << hex(juce::Colour(viz::kDivergingWarm))
-          << "\">" << TRANS("red: more energy than released tracks") << "</span><span style=\"color:" << hex(juce::Colour(viz::kDivergingCool)) << "\">"
+          << "\">" << TRANS("orange: more energy than released tracks") << "</span><span style=\"color:" << hex(juce::Colour(viz::kDivergingCool)) << "\">"
           << TRANS("blue: less") << "</span>";
     h << "</div></div>";
 

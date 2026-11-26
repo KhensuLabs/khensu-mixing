@@ -20,6 +20,7 @@ inline ui::chart::Style desktopChartStyle()
     s.tooltipBg = KhensuTheme::bgOverlay.withAlpha(0.97f);
     s.tooltipText = KhensuTheme::textPrimary;
     s.tooltipBorder = KhensuTheme::borderActive;
+    s.playhead = KhensuTheme::textPrimary.withAlpha(0.85f);
     s.fontSize = KhensuTheme::kFontLabel;
     return s;
 }

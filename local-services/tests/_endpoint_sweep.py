@@ -164,6 +164,7 @@ _STATUS_URLS = {
     "/copilot/platform_masters/start": "/copilot/platform_masters/status/{}",
     "/copilot/apply_chain/start": "/copilot/apply_chain/status/{}",
     "/copilot/apply_chain/batch/start": "/copilot/apply_chain/batch/status/{}",
+    "/copilot/batch/smart/start": "/copilot/batch/smart/status/{}",
     "/copilot/apply_section_chain/start": "/copilot/apply_section_chain/status/{}",
     "/analyze/multitrack/start": "/analyze/multitrack/status/{}",
     "/album/master/start": "/album/master/status/{}",

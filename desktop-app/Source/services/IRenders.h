@@ -81,6 +81,9 @@ class IRenders {
         std::vector<ipc::HttpServiceBridge::EffectSpec> chain;
         juce::String sourceRecommendationId;
         juce::String targetStem;          ///< empty = the mix (AI-02)
+        /// ENH-6: the separated stem a keyed DynamicEQ stage listens to (a
+        /// masking fix: "vocals", ...); empty = the stage keys on its input.
+        juce::String keyStem;
         bool genreRelative = false;       ///< the chain moves the track toward a genre target
         bool genreActionAllowed = false;  ///< ... and the genre call is confident enough
         juce::String abstainedReason;     ///< why it isn't, when it isn't

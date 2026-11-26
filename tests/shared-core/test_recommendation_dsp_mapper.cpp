@@ -82,9 +82,21 @@ TEST_CASE("Shelves land on a real shelf band, bells and notches on free bands", 
     CHECK(notch.values.at("eq3_gain_db") == Approx(-3.0f)); // a cut, scaled by the amount
     CHECK(notch.values.at("eq3_q") == Approx(6.0f));
 
+    // STU-10: bands 4-6 are free once 1-3 are taken; a band taken is reset
+    // to a plain stereo, static band.
+    const auto fourth = mapRecommendationToDsp(recWith({{"eq_freq_hz", 300.0f}, {"eq_gain_db", -2.0f}}), 1.0f,
+                                               baseFrom({{"eq_on", 1.0f}, {"eq2_on", 1.0f}, {"eq3_on", 1.0f}}));
+    CHECK(fourth.values.at("eq4_on") == 1.0f);
+    CHECK(fourth.values.at("eq4_freq") == Approx(300.0f));
+    CHECK(fourth.values.at("eq4_kind") == static_cast<float>(EqBandKind::Shape));
+    CHECK(fourth.values.at("eq4_mode") == static_cast<float>(EqBandChannels::Stereo));
+    CHECK(fourth.values.at("eq4_dyn_on") == 0.0f);
+
     // No free band: the EQ keys are reported, not forced onto a used band.
+    std::map<std::string, float> allOn;
+    for (const auto& band : kEqBandParamIds) allOn[band.on] = 1.0f;
     const auto full = mapRecommendationToDsp(recWith({{"eq_freq_hz", 300.0f}, {"eq_gain_db", -2.0f}}), 1.0f,
-                                             baseFrom({{"eq_on", 1.0f}, {"eq2_on", 1.0f}, {"eq3_on", 1.0f}}));
+                                             baseFrom(allOn));
     CHECK(full.values.empty());
     CHECK(contains(full.unmappedKeys, "eq_gain_db"));
 }
@@ -139,19 +151,142 @@ TEST_CASE("Gain keys move the output gain relative to its value before the fix",
 
 TEST_CASE("Keys the built-in chain cannot do are reported", "[ovh8][mapper]")
 {
-    const auto fix = mapRecommendationToDsp(recWith({{"stereo_width", 1.2f},
-                                                     {"denoise_reduction_db", 6.0f},
-                                                     {"transient_attack_db", 2.0f},
-                                                     {"saturation_drive_db", 3.0f},
-                                                     {"reverb_wet", 0.2f},
-                                                     {"something_new", 1.0f}}),
-                                            1.0f, baseFrom({}));
+    const auto fix = mapRecommendationToDsp(
+        recWith({{"denoise_reduction_db", 6.0f}, {"reverb_wet", 0.2f}, {"something_new", 1.0f}}), 1.0f, baseFrom({}));
     CHECK(fix.values.empty());
-    CHECK(fix.unmappedKeys.size() == 6);
-    CHECK(contains(fix.unmappedKeys, "stereo_width"));
+    CHECK(fix.unmappedKeys.size() == 3);
+    CHECK(contains(fix.unmappedKeys, "denoise_reduction_db"));
     CHECK(contains(fix.unmappedKeys, "something_new"));
     float lo = 0.0f, hi = 0.0f;
     CHECK(dspParamRange("deess_freq", lo, hi));
     CHECK(lo == Approx(2000.0f));
+    CHECK(dspParamRange("eq5_dyn_release_ms", lo, hi));
+    CHECK(hi == Approx(2000.0f));
+    CHECK(dspParamRange("width_amount", lo, hi));
+    CHECK(hi == Approx(2.0f));
     CHECK_FALSE(dspParamRange("not_a_param", lo, hi));
+}
+
+TEST_CASE("Width, transient and saturation keys map onto the v5 stages (STU-10)", "[stu10][mapper]")
+{
+    const auto fix = mapRecommendationToDsp(
+        recWith({{"stereo_width", 1.2f}, {"transient_attack_db", 4.0f}, {"saturation_drive_db", 3.0f}}), 0.5f,
+        baseFrom({}));
+    CHECK(fix.unmappedKeys.empty());
+    CHECK(fix.values.at("width_on") == 1.0f);
+    CHECK(fix.values.at("width_amount") == Approx(1.1f)); // 1 + (1.2 - 1) x 0.5
+    CHECK(fix.values.at("ts_on") == 1.0f);
+    CHECK(fix.values.at("ts_attack_db") == Approx(2.0f));
+    CHECK(fix.values.at("ts_sustain_db") == Approx(0.0f));
+    CHECK(fix.values.at("sat_on") == 1.0f);
+    CHECK(fix.values.at("sat_drive_db") == Approx(1.5f));
+    CHECK(fix.values.at("sat_warmth") == Approx(0.5f));
+    CHECK(fix.values.at("sat_mix") == Approx(1.0f));
+}
+
+TEST_CASE("A stereo-width finding without parameters is solved from its evidence (STU-10)", "[stu10][mapper]")
+{
+    // Width 0.80 over a 0.60 genre maximum: aim 0.03 inside it.
+    Recommendation wide = recWith({});
+    wide.id = "stereo_too_wide_file1";
+    EvidenceItem e;
+    e.measurement = "Stereo width";
+    e.value = 0.80f;
+    e.threshold = 0.60f;
+    e.comparison = "above";
+    wide.evidence.push_back(e);
+    const auto fix = mapRecommendationToDsp(wide, 1.0f, baseFrom({}));
+    REQUIRE(fix.values.count("width_amount") == 1);
+    const float g = fix.values.at("width_amount");
+    CHECK(g == Approx(sideGainForWidth(0.80f, 0.57f)));
+    CHECK(g < 1.0f);
+    // The gain puts the width where it aimed: r' = g^2 r, w = 2r / (1 + r).
+    const double r = 0.80 / (2.0 - 0.80) * static_cast<double>(g) * static_cast<double>(g);
+    CHECK(2.0 * r / (1.0 + r) == Approx(0.57).margin(1e-4));
+    // Half the amount moves half way from 1.
+    CHECK(mapRecommendationToDsp(wide, 0.5f, baseFrom({})).values.at("width_amount") == Approx(1.0f + (g - 1.0f) * 0.5f));
+
+    Recommendation narrow = wide;
+    narrow.id = "stereo_too_narrow_file1";
+    narrow.evidence[0].value = 0.20f;
+    narrow.evidence[0].threshold = 0.35f;
+    CHECK(mapRecommendationToDsp(narrow, 1.0f, baseFrom({})).values.at("width_amount") > 1.0f);
+
+    // Without the evidence there is nothing to solve from.
+    Recommendation bare = recWith({});
+    bare.id = "stereo_too_wide_file1";
+    CHECK(mapRecommendationToDsp(bare, 1.0f, baseFrom({})).empty());
+}
+
+TEST_CASE("A too-wide width reading clamped at 1 is solved from the M/S balance (STU-16)", "[stu16][mapper]")
+{
+    // Side 1.5x as loud as the mid in energy: r = 1.5, unclamped width
+    // 2r / (1 + r) = 1.2, M/S balance (1 - r) / (1 + r) = -0.2; the analyzer
+    // reports the width as 1.
+    Recommendation wide = recWith({});
+    wide.id = "stereo_too_wide_file1";
+    EvidenceItem w;
+    w.measurement = "Stereo width";
+    w.value = 1.0f;
+    w.threshold = 0.60f;
+    w.comparison = "above";
+    wide.evidence.push_back(w);
+
+    // Without the balance a clamped reading is solved from 1 itself: a
+    // partial fix, gentler than the one the balance gives.
+    const auto partial = mapRecommendationToDsp(wide, 1.0f, baseFrom({}));
+    REQUIRE(partial.values.count("width_amount") == 1);
+    CHECK(partial.values.at("width_amount") == Approx(sideGainForWidth(1.0f, 0.57f)));
+
+    EvidenceItem b;
+    b.measurement = "Mid/side balance";
+    b.value = -0.2f;
+    wide.evidence.push_back(b);
+    const auto fix = mapRecommendationToDsp(wide, 1.0f, baseFrom({}));
+    REQUIRE(fix.values.count("width_amount") == 1);
+    const double g = fix.values.at("width_amount");
+    CHECK(g == Approx(sideGainForWidth(1.2f, 0.57f)));
+    const double r = 1.5 * g * g;
+    CHECK(2.0 * r / (1.0 + r) == Approx(0.57).margin(1e-4));
+
+    // An unclamped reading keeps solving from the width itself.
+    wide.evidence[0].value = 0.80f;
+    CHECK(mapRecommendationToDsp(wide, 1.0f, baseFrom({})).values.at("width_amount")
+          == Approx(sideGainForWidth(0.80f, 0.57f)));
+}
+
+TEST_CASE("Sub-bass too wide monos the low end; bass_mono_hz sets the crossover (STU-10)", "[stu10][mapper]")
+{
+    Recommendation sub = recWith({});
+    sub.id = "sub_bass_too_wide_file1";
+    const auto fix = mapRecommendationToDsp(sub, 1.0f, baseFrom({}));
+    CHECK(fix.values.at("bassmono_on") == 1.0f);
+    CHECK(fix.values.at("bassmono_freq") == Approx(kSubBassMonoHz));
+    const auto keyed = mapRecommendationToDsp(recWith({{"bass_mono_hz", 90.0f}}), 1.0f, baseFrom({}));
+    CHECK(keyed.values.at("bassmono_freq") == Approx(90.0f));
+    CHECK(keyed.unmappedKeys.empty());
+}
+
+TEST_CASE("The stem-masking plan lands on a self-keyed dynamic band (STU-10)", "[stu10][mapper]")
+{
+    // What MaskingRecommender writes: a static fallback and the dynamic plan.
+    const auto rec = recWith({{"eq_freq_hz", 2000.0f},
+                              {"eq_gain_db", -3.0f},
+                              {"dyneq_freq_hz", 1900.0f},
+                              {"dyneq_q", 1.5f},
+                              {"dyneq_threshold_db", -30.0f},
+                              {"dyneq_max_cut_db", 4.0f},
+                              {"dyneq_key_stem", 0.0f},
+                              {"dyneq_target_stem", 2.0f}});
+    const auto fix = mapRecommendationToDsp(rec, 0.5f, baseFrom({{"eq_on", 1.0f}}));
+    CHECK(fix.values.at("eq2_on") == 1.0f);
+    CHECK(fix.values.at("eq2_freq") == Approx(1900.0f));
+    CHECK(fix.values.at("eq2_gain_db") == Approx(0.0f));
+    CHECK(fix.values.at("eq2_q") == Approx(1.5f));
+    CHECK(fix.values.at("eq2_dyn_on") == 1.0f);
+    CHECK(fix.values.at("eq2_dyn_thresh_db") == Approx(-30.0f));
+    CHECK(fix.values.at("eq2_dyn_range_db") == Approx(2.0f)); // the depth follows the amount
+    CHECK(fix.values.count("eq3_on") == 0);                    // the static fallback is not placed too
+    // The plugin cannot key on another stem: that key is reported.
+    CHECK(fix.unmappedKeys == std::vector<std::string>{"dyneq_key_stem"});
 }

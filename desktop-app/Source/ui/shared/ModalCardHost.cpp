@@ -30,21 +30,24 @@ void ModalCardHost::visibilityChanged() { takePendingFocus(); }
 
 void ModalCardHost::paint(juce::Graphics& g)
 {
-    // Modal backdrop scrim routed through the theme token (per-theme alpha -
-    // opaque in high-contrast, subtle in light) instead of a hardcoded black
-    // alpha, so every modal dims consistently (glassmorphism token contract).
+    // Modal backdrop scrim routed through the theme token.
     g.fillAll(KhensuTheme::scrim);
     if (!drawCardBackground_) return;
 
-    auto bounds = cardBounds().toFloat();
+    const auto cb = cardBounds();
+    // LG-12: layered ambient + contact shadow for true floating glass depth.
+    juce::DropShadow(KhensuTheme::shadowColour.withMultipliedAlpha(1.1f), 32, {0, 12}).drawForRectangle(g, cb);
+    juce::DropShadow(KhensuTheme::shadowColour.withMultipliedAlpha(0.85f), 10, {0, 3}).drawForRectangle(g, cb);
 
-    // Themed drop shadow under the raised card (KhensuTheme::shadowColour).
-    juce::DropShadow(KhensuTheme::shadowColour, 24, {0, 6}).drawForRectangle(g, cardBounds());
-
-    g.setColour(cardColour_);
-    g.fillRoundedRectangle(bounds, cornerRadius_);
-    g.setColour(borderColour_);
-    g.drawRoundedRectangle(bounds, cornerRadius_, borderThickness_);
+    // Route modal card through Liquid Glass Raised surface + live smoke refraction.
+    auto* root = getTopLevelComponent();
+    if (root != nullptr && root != this) {
+        KhensuLookAndFeel::drawGlassPanel(g, cb, GlassPanelVariant::Raised,
+                                          KhensuLookAndFeel::glassBackdrop(root->getLocalBounds(), GlassPanelVariant::Raised),
+                                          root->getLocalArea(this, cb));
+    } else {
+        KhensuLookAndFeel::drawGlassPanel(g, cb, GlassPanelVariant::Raised);
+    }
 }
 
 void ModalCardHost::mouseDown(const juce::MouseEvent& event)

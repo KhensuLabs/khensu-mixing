@@ -12,6 +12,8 @@
 #include "../shared/ServiceErrorHint.h"
 #include "../shared/SessionEpoch.h"
 #include "EvidenceReportBody.h"
+#include "DawMarkerExport.h"
+#include "../shared/TimelineMarkers.h"
 #include <khensu/ipc/HttpServiceBridge.h>
 #include <khensu/ipc/generated/ApiSchema.h>
 
@@ -49,7 +51,7 @@ ReportPanel::ReportPanel(IAppController& c) : PanelCard(c, "REPORT")
     addAndMakeVisible(quickExportButton_);
 
     modeLabel_.setText(TRANS("Report Mode:"), juce::dontSendNotification);
-    modeLabel_.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::bold));
+    modeLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::bold));
     addAndMakeVisible(modeLabel_);
 
     modeControl_.addSegment("CLIENT SUMMARY");
@@ -66,11 +68,11 @@ ReportPanel::ReportPanel(IAppController& c) : PanelCard(c, "REPORT")
     addAndMakeVisible(modeControl_);
 
     outputDirLabel_.setText(TRANS("Output file:"), juce::dontSendNotification);
-    outputDirLabel_.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::bold));
+    outputDirLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::bold));
     addAndMakeVisible(outputDirLabel_);
 
     outputPathDisplay_.setText(TRANS("(no output path chosen)"), juce::dontSendNotification);
-    outputPathDisplay_.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    outputPathDisplay_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     addAndMakeVisible(outputPathDisplay_);
 
     chooseOutputButton_.onClick = [this]() { onChooseOutput(); };
@@ -85,7 +87,7 @@ ReportPanel::ReportPanel(IAppController& c) : PanelCard(c, "REPORT")
     addAndMakeVisible(evidenceButton_);
 
     statusLabel_.setText(TRANS("Idle"), juce::dontSendNotification);
-    statusLabel_.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    statusLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     addAndMakeVisible(statusLabel_);
 
     openButton_.setEnabled(false);
@@ -101,8 +103,13 @@ ReportPanel::ReportPanel(IAppController& c) : PanelCard(c, "REPORT")
     visualButton_.onClick = [this]() { onSaveVisual(); };
     addAndMakeVisible(visualButton_);
 
+    markersButton_.setTooltip(TRANS("Save the sections and the findings that happen at a moment as markers for a DAW: "
+                                    "a CSV, Reaper regions and markers, or a MIDI file at the session tempo"));
+    markersButton_.onClick = [this]() { onExportMarkers(); };
+    addAndMakeVisible(markersButton_);
+
     pdfStatusLabel_.setText("", juce::dontSendNotification);
-    pdfStatusLabel_.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    pdfStatusLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     addAndMakeVisible(pdfStatusLabel_);
 }
 
@@ -145,7 +152,11 @@ void ReportPanel::resized()
 
     savePdfButton_.setBounds(b.removeFromTop(rowH));
     b.removeFromTop(gap);
-    visualButton_.setBounds(b.removeFromTop(rowH));
+    {
+        auto row = b.removeFromTop(rowH);
+        markersButton_.setBounds(row.removeFromRight(row.getWidth() / 2).withTrimmedLeft(gap / 2));
+        visualButton_.setBounds(row.withTrimmedRight(gap / 2));
+    }
     b.removeFromTop(2);
 
     pdfStatusLabel_.setBounds(b.removeFromTop(16));
@@ -253,6 +264,74 @@ void ReportPanel::writeVisual(const juce::File& file)
             if (ok) file.startAsProcess();
         },
         [](ReportPanel& self) { self.visualButton_.setEnabled(true); }, true);
+}
+
+void ReportPanel::onExportMarkers()
+{
+    if (!controller_.hasActiveSession() || !controller_.hasAnalysis()) {
+        statusLabel_.setText(TRANS("Analyse a track first."), juce::dontSendNotification);
+        return;
+    }
+    using daw_marker_export::Format;
+    juce::PopupMenu menu;
+    menu.addItem(1 + static_cast<int>(Format::Csv), TRANS("CSV (name, start, end, kind)"));
+    menu.addItem(1 + static_cast<int>(Format::ReaperCsv), TRANS("Reaper regions and markers (CSV)"));
+    menu.addItem(1 + static_cast<int>(Format::Midi), TRANS("MIDI file with markers"));
+    juce::Component::SafePointer<ReportPanel> self(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&markersButton_), [self](int chosen) {
+        if (self != nullptr && chosen > 0) self->chooseMarkersFile(chosen - 1);
+    });
+}
+
+void ReportPanel::chooseMarkersFile(int format)
+{
+    const auto f = static_cast<daw_marker_export::Format>(format);
+    juce::String base = "khensu";
+    if (const auto* s = controller_.getActiveSession()) base = juce::File::createLegalFileName(juce::String(s->name).trim());
+    const juce::String ext = daw_marker_export::extension(f);
+    chooser_ = std::make_unique<juce::FileChooser>(
+        TRANS("Save DAW Markers As..."),
+        juce::File::getSpecialLocation(juce::File::userDesktopDirectory)
+            .getChildFile(base + daw_marker_export::suffix(f) + ext),
+        "*" + ext);
+    juce::Component::SafePointer<ReportPanel> self(this);
+    chooser_->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [self, format](const juce::FileChooser& fc) {
+                              if (self != nullptr && fc.getResult() != juce::File{}) self->writeMarkers(fc.getResult(), format);
+                          });
+}
+
+void ReportPanel::writeMarkers(const juce::File& file, int format)
+{
+    // The session's state is read here; the timeline is measured (or read
+    // from the cache) and the file written on a worker.
+    std::vector<SectionData> sections;
+    if (controller_.currentAnalysis().section_analysis) sections = controller_.currentAnalysis().section_analysis->sections;
+    const double bpm = static_cast<double>(controller_.currentAnalysis().python_data.bpm_detected);
+    auto issues = controller_.issues().list();
+    const auto original = controller_.activeSourcePath();
+    const auto current = controller_.renders().currentRenderPath();
+    const auto audio = current.isNotEmpty() ? current : original;
+    statusLabel_.setText(TRANS("Writing the DAW markers..."), juce::dontSendNotification);
+    markersButton_.setEnabled(false);
+    fetchQuietly(
+        *this, controller_,
+        [file, format, sections = std::move(sections), issues = std::move(issues), audio, bpm] {
+            const auto tl = timeline_cache::measure(audio);
+            const auto findings = timeline_markers::build(issues, tl.get(), sections);
+            const auto markers = daw_marker_export::collect(sections, findings);
+            const bool ok = daw_marker_export::write(file, static_cast<daw_marker_export::Format>(format), markers, bpm);
+            return std::make_pair(ok, markers.size());
+        },
+        [file](ReportPanel& self, std::pair<bool, size_t> result) {
+            self.statusLabel_.setText(result.first ? TRANS("DAW markers saved:") + " " + file.getFileName() + " ("
+                                                         + juce::String(static_cast<int>(result.second)) + " "
+                                                         + TRANS("markers") + ")"
+                                                   : TRANS("The DAW markers could not be written."),
+                                      juce::dontSendNotification);
+        },
+        [](ReportPanel& self) { self.markersButton_.setEnabled(true); }, true);
 }
 
 void ReportPanel::onGenerate()

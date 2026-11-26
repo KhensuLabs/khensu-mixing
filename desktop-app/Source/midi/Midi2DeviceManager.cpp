@@ -95,6 +95,8 @@ bool Midi2DeviceManager::connectInput(const juce::String& sourceIdentifier)
 
     input_ = session_->connectInput(found->id, juce::ump::PacketProtocol::MIDI_2_0);
     if (!input_.isAlive()) return false;
+    connectedId_ = found->id;
+    connectOutputIfWanted();
 
     connectedSourceIdentifier_ = found->sourceIdentifier;
     connectedSourceProtocol_.store(found->sourceProtocol, std::memory_order_release);
@@ -108,6 +110,7 @@ void Midi2DeviceManager::disconnectInput()
     const bool wasConnected = input_.isAlive() || connectedSourceIdentifier_.isNotEmpty();
     if (input_.isAlive()) input_.removeConsumer(*this);
     input_ = {};
+    output_ = {};
     connectedSourceIdentifier_.clear();
     connectedSourceProtocol_.store(midi::SourceProtocol::Unknown, std::memory_order_release);
 
@@ -118,8 +121,15 @@ void Midi2DeviceManager::consume(juce::ump::Iterator begin, juce::ump::Iterator 
 {
     const auto sourceProtocol = connectedSourceProtocol_.load(std::memory_order_acquire);
 
+    const bool sysEx = sysExEnabled_.load(std::memory_order_acquire);
     for (auto iterator = begin; iterator != end; ++iterator) {
         const auto& packet = *iterator;
+        if (sysEx && packet.size() == 2 && midi::SysEx7Assembler::isSysEx7(packet.data()[0])) {
+            if (auto message = sysExAssembler_.feed(packet.data()[0], packet.data()[1])) {
+                const std::lock_guard<std::mutex> lock(sysExMutex_);
+                if (sysExQueue_.size() < 64) sysExQueue_.push_back(std::move(*message));
+            }
+        }
         auto decoded = midi::decodeUmpEvent(packet.data(), packet.size(), timestampSeconds);
         if (!decoded.has_value()) continue;
 
@@ -143,6 +153,50 @@ void Midi2DeviceManager::consume(juce::ump::Iterator begin, juce::ump::Iterator 
     triggerAsyncUpdate();
 }
 
+void Midi2DeviceManager::setSysExEnabled(bool enabled)
+{
+    sysExEnabled_.store(enabled, std::memory_order_release);
+    if (enabled) {
+        connectOutputIfWanted();
+    } else {
+        output_ = {};
+        const std::lock_guard<std::mutex> lock(sysExMutex_);
+        sysExQueue_.clear();
+    }
+}
+
+void Midi2DeviceManager::connectOutputIfWanted()
+{
+    if (!sysExEnabled() || output_.isAlive() || !input_.isAlive() || !session_.has_value() || !session_->isAlive()) return;
+    try {
+        output_ = session_->connectOutput(connectedId_);
+    } catch (...) {
+        output_ = {}; // an input-only device: MIDI-CI just gets no replies
+    }
+}
+
+bool Midi2DeviceManager::sendSysEx(std::uint8_t group, const std::uint8_t* bytes, std::size_t size)
+{
+    if (!output_.isAlive()) return false;
+    const auto words = midi::toSysEx7Packets(group, bytes, size);
+    juce::ump::Packets packets;
+    for (std::size_t i = 0; i + 1 < words.size(); i += 2)
+        packets.add(juce::ump::PacketX2{words[i], words[i + 1]});
+    return output_.send(packets.begin(), packets.end());
+}
+
+void Midi2DeviceManager::drainSysEx()
+{
+    std::vector<midi::SysExMessage> ready;
+    {
+        const std::lock_guard<std::mutex> lock(sysExMutex_);
+        ready.swap(sysExQueue_);
+    }
+    if (!sysExEnabled()) return;
+    for (const auto& m : ready)
+        listeners_.call([&m](Listener& listener) { listener.midiSysExReceived(m); });
+}
+
 void Midi2DeviceManager::endpointsChanged()
 {
     endpointRefreshRequested_.store(true, std::memory_order_release);
@@ -153,6 +207,7 @@ void Midi2DeviceManager::handleAsyncUpdate()
 {
     if (endpointRefreshRequested_.exchange(false, std::memory_order_acq_rel)) refreshEndpointCache();
     drainEvents();
+    drainSysEx();
 }
 
 void Midi2DeviceManager::refreshEndpointCache()

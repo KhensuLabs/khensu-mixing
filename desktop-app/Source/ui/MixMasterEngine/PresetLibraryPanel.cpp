@@ -42,10 +42,10 @@ struct PresetLibraryPanel::RowComponent final : public juce::Component {
 
         auto inner = b.reduced(8, 4);
         inner.removeFromRight(applyButton.getWidth() + deleteButton.getWidth() + 12);
-        g.setFont(KhensuTheme::bodyFont(11.0f).boldened());
+        g.setFont(KhensuTheme::bodyFont(type::caption).boldened());
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(row.name, inner.removeFromTop(inner.getHeight() / 2), juce::Justification::centredLeft, true);
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(preset_store::describe(row) + (row.savedAt.isNotEmpty() ? "  -  " + row.savedAt.substring(0, 10) : juce::String()),
                    inner, juce::Justification::centredLeft, true);
@@ -77,14 +77,14 @@ PresetLibraryPanel::PresetLibraryPanel(IAppController& c) : PanelCard(c, "Preset
                        "shared with the Copilot plugin: one saved here is in its preset menu, and one saved there "
                        "is listed here."));
 
-    nameEditor_.setFont(KhensuTheme::bodyFont(11.0f));
+    nameEditor_.setFont(KhensuTheme::bodyFont(type::caption));
     nameEditor_.setTextToShowWhenEmpty(TRANS("Preset name..."), KhensuTheme::textTertiary);
     addAndMakeVisible(nameEditor_);
 
     saveButton_.onClick = [this] { saveCurrentChain(); };
     addAndMakeVisible(saveButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setText(TRANS("Saves the rack's settings and the last applied chain."), juce::dontSendNotification);
     addAndMakeVisible(statusLabel_);
 

@@ -21,17 +21,17 @@ ExplainerPopup::ExplainerPopup(const juce::String& title, const juce::String& ca
     applyThemeColours();
     // Category Label
     categoryLabel.setText(category.toUpperCase(), juce::dontSendNotification);
-    categoryLabel.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::bold));
+    categoryLabel.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
     addAndMakeVisible(categoryLabel);
 
     // Title Label
     titleLabel.setText(title, juce::dontSendNotification);
-    titleLabel.setFont(khensu::KhensuTheme::uiFont(18.0f, juce::Font::bold));
+    titleLabel.setFont(khensu::KhensuTheme::uiFont(khensu::type::title, juce::Font::bold));
     addAndMakeVisible(titleLabel);
 
     // Description Label
     descLabel.setText(description, juce::dontSendNotification);
-    descLabel.setFont(khensu::KhensuTheme::uiFont(13.0f, juce::Font::plain));
+    descLabel.setFont(khensu::KhensuTheme::uiFont(khensu::type::body, juce::Font::plain));
     descLabel.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(descLabel);
 

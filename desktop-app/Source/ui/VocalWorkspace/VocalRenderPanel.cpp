@@ -33,7 +33,7 @@ VocalRenderPanel::VocalRenderPanel(IAppController& c) : PanelCard(c, "Vocal DSP 
     };
     addAndMakeVisible(autoRenderToggle_);
 
-    statusLabel_.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    statusLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     addAndMakeVisible(statusLabel_);
 
     renderNowButton_.setVisible(false);

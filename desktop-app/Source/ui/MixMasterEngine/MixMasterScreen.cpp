@@ -55,16 +55,17 @@ MixMasterScreen::MixMasterScreen(IAppController& ctrl)
     addChildComponent(suggestionPanel);
 
     // The secondary views.
-    // CON-2: the loudness views share one view.
-    loudnessGroup_.addMember("gain_staging", TRANS("Gain staging"), gainStagingPanel);
-    loudnessGroup_.addMember("streaming", TRANS("Streaming"), streamingPanel_);
-    addChildComponent(loudnessGroup_);
+    // The Loudness view: gain staging (its home, ENH-8) over the compact
+    // streaming audition, whose platform table is the Analysis screen's.
+    addChildComponent(gainStagingPanel);
+    addChildComponent(streamingPanel_);
 
     // The interactive EQ curve.
     eqCurvePanel.onBandChanged([this](int index, const EqBand& band) {
         // Keep the live band list in sync so "Apply EQ" renders the user's
         // actual drag, not just the recommendation's suggested starting point.
         if (index >= 0 && index < (int)currentEqBands_.size()) currentEqBands_[(size_t)index] = band;
+        eqPreview_.chainChanged(); // STU-9: heard while dragging
         if (auto* fm = controller.analysis().getFeedbackManager()) {
             // Logs the override parameter whenever an engineer adjusts EQ nodes
             fm->recordOverride("eq_adjustment", "eq_band_" + std::to_string(index) + "_gain_db", 0.0f, band.gain_db);
@@ -75,6 +76,9 @@ MixMasterScreen::MixMasterScreen(IAppController& ctrl)
     applyEqButton_.setTooltip(TRANS("Render the current EQ curve (including any bands you've dragged) "
                                     "onto the source file and load it as the A/B \"B\" side."));
     applyEqButton_.onClick = [this]() {
+        // STU-9: the render is the real thing; the new version must not be
+        // heard through the preview's EQ a second time.
+        eqPreview_.setPreviewing(false);
         applyEqButton_.setEnabled(false);
         applyEqButton_.setButtonText(TRANS("Applying..."));
         controller.renders().applyEqBands(currentEqBands_, [this](bool success, juce::String message) {
@@ -84,6 +88,7 @@ MixMasterScreen::MixMasterScreen(IAppController& ctrl)
         });
     };
     addChildComponent(applyEqButton_);
+    addChildComponent(eqPreview_);
 
     // CON-5: the version views share one view (re-parented into the group).
     versionsGroup_.addMember("what_changed", TRANS("What changed"), whatChangedPanel_);
@@ -100,8 +105,10 @@ MixMasterScreen::MixMasterScreen(IAppController& ctrl)
     toolsGroup_.addMember("listening_room", TRANS("Listening room"), listeningRoomPanel_);
     addChildComponent(toolsGroup_);
 
-    viewTabs_.addTab(TRANS("Loudness"), TRANS("Gain staging and what streaming playback does to the track"));
-    viewTabs_.addTab(TRANS("EQ curve"), TRANS("The suggested EQ moves over the spectrum; drag a band, then Apply EQ"));
+    viewTabs_.addTab(TRANS("Loudness"), TRANS("Gain staging, and the mix auditioned at a platform's playback gain"));
+    // ENH-8: the editor. The analysed tonal EQ curve is the Analysis screen's.
+    viewTabs_.addTab(TRANS("EQ editor"),
+                     TRANS("Edit the suggested EQ moves over the spectrum: drag a band, then Apply EQ"));
     viewTabs_.addTab(TRANS("Versions"), TRANS("What changed, the render tree, snapshots and the timeline"));
     viewTabs_.addTab(TRANS("Dynamics"), TRANS("The gain X-ray: what the processing does to the dynamics"));
     viewTabs_.addTab(TRANS("Presets & tools"), TRANS("The preset library, humanize, stem rebalance and the listening room"));
@@ -221,7 +228,12 @@ void MixMasterScreen::resized()
 
 void MixMasterScreen::layoutView(juce::Rectangle<int> area)
 {
-    loudnessGroup_.setBounds(area);
+    {
+        auto loud = area;
+        streamingPanel_.setBounds(loud.removeFromBottom(StreamingImpactPanel::kPreferredHeight));
+        loud.removeFromBottom(KhensuTheme::cardGap);
+        gainStagingPanel.setBounds(loud);
+    }
     versionsGroup_.setBounds(area);
     compressionXrayPanel_.setBounds(area);
     toolsGroup_.setBounds(area);
@@ -229,6 +241,8 @@ void MixMasterScreen::layoutView(juce::Rectangle<int> area)
     auto eq = area;
     auto eqRow = eq.removeFromTop(KhensuTheme::buttonH);
     applyEqButton_.setBounds(eqRow.removeFromRight(120));
+    eqRow.removeFromRight(KhensuTheme::sp2);
+    eqPreview_.setBounds(eqRow);
     eq.removeFromTop(KhensuTheme::sp1);
     eqCurvePanel.setBounds(eq);
 }
@@ -240,9 +254,11 @@ void MixMasterScreen::showView(int view)
     view_ = view;
     viewTabs_.setSelected(view);
     const bool active = controller.hasActiveSession();
-    loudnessGroup_.setVisible(active && view == ViewLoudness);
+    gainStagingPanel.setVisible(active && view == ViewLoudness);
+    streamingPanel_.setVisible(active && view == ViewLoudness);
     eqCurvePanel.setVisible(active && view == ViewEq);
     applyEqButton_.setVisible(active && view == ViewEq);
+    eqPreview_.setVisible(active && view == ViewEq);
     versionsGroup_.setVisible(active && view == ViewVersions);
     compressionXrayPanel_.setVisible(active && view == ViewDynamics);
     toolsGroup_.setVisible(active && view == ViewTools);
@@ -257,9 +273,9 @@ void MixMasterScreen::showView(int view)
 void MixMasterScreen::jumpToCard(int tabIdx)
 {
     switch (tabIdx) {
-    case 0: // streaming
+    case 0: // streaming (the audition, under gain staging)
+    case 8: // gain staging (ENH-8: its home; the Copilot links here)
         showView(ViewLoudness);
-        loudnessGroup_.selectMember("streaming");
         break;
     case 1: showView(ViewEq); break;
     case 2: // timeline
@@ -329,6 +345,7 @@ void MixMasterScreen::pushDataToPanels(const AnalysisResult& r)
         }
     }
     currentEqBands_ = eqBands;
+    eqPreview_.chainChanged();
     eqCurvePanel.setBands(eqBands);
     eqCurvePanel.setSpectrumSampleRate(r.sample_rate);
     eqCurvePanel.setSpectrumUnderlayer(r.spectral.fft_mid_magnitudes);

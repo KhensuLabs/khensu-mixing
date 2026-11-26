@@ -216,7 +216,7 @@ TEST_CASE("State v3 round-trips the view, program, preset and snapshot byte-for-
 
     std::unique_ptr<juce::XmlElement> xml(juce::AudioProcessor::getXmlFromBinary(first.getData(), (int)first.getSize()));
     REQUIRE(xml != nullptr);
-    CHECK(xml->getIntAttribute("khensuStateVersion") == 3);
+    CHECK(xml->getIntAttribute("khensuStateVersion") == KhensuCopilotProcessor::kStateVersion);
     CHECK(xml->getIntAttribute("khensuViewCompact") == 1);
     CHECK(xml->getIntAttribute("khensuViewSize") == 2);
     CHECK(xml->getIntAttribute("khensuViewTab") == 3);
@@ -278,7 +278,7 @@ TEST_CASE("A v2 state loads with the new parameters at their defaults (state v3 
     CHECK(v3->getIntAttribute("khensuStateVersion") == KhensuCopilotProcessor::kStateVersion);
     juce::ValueTree migrated("KhensuCopilotState");
     KhensuCopilotProcessor::migrateState(migrated, 2);
-    CHECK(static_cast<int>(migrated.getProperty("khensuStateVersion")) == 3);
+    CHECK(static_cast<int>(migrated.getProperty("khensuStateVersion")) == KhensuCopilotProcessor::kStateVersion);
 }
 
 TEST_CASE("The mapper's parameter ranges match the plugin's layout (OVH-8)", "[plugin][ovh8][mapper]")

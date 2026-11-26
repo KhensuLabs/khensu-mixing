@@ -109,6 +109,10 @@ router.include_router(analysis_cache_router)
 from khensu_services.analysis.router_genre_examples import router as genre_examples_router  # noqa: E402
 router.include_router(genre_examples_router)
 
+# REFS-1: the reference folder scan (songs / samples / packs sorted by genre).
+from khensu_services.analysis.router_reference_scan import router as reference_scan_router  # noqa: E402
+router.include_router(reference_scan_router)
+
 # CE-DAW-4: fixes written back as DAW automation (.mid CC lanes + REAPER envelopes).
 from khensu_services.copilot.router_automation_export import router as automation_export_router  # noqa: E402
 router.include_router(automation_export_router)

@@ -135,7 +135,8 @@ class RenderJobManager final : public juce::ChangeBroadcaster, private juce::Tim
                           const std::vector<ipc::HttpServiceBridge::EffectSpec>& chain, const juce::String& sessionId,
                           const juce::String& sourceRecommendationId, Callback onDone, bool genreRelative = false,
                           bool genreActionAllowed = false, const juce::String& abstainedReason = {},
-                          const juce::String& targetStem = {}, const juce::String& decisionHash = {});
+                          const juce::String& targetStem = {}, const juce::String& decisionHash = {},
+                          const juce::String& keyStem = {});
 
     /// The chain from the most recent startChainRender() call, regardless of
     /// which panel/flow submitted it (chat apply, "Fix This", EQ apply, ...) -

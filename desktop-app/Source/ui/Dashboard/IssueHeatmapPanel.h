@@ -33,7 +33,6 @@ class IssueHeatmapPanel final : public PanelCard {
     std::vector<juce::Point<float>> stereoCorrelation_; // x = sec, y = -1..1
     std::vector<float> lufsCurve_;
     float lufsHopSec_ = 1.0f;
-    float span_ = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(IssueHeatmapPanel)
 };

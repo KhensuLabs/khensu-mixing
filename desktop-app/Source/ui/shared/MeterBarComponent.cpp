@@ -68,7 +68,7 @@ void MeterBarComponent::paint(juce::Graphics& g)
     auto b = getLocalBounds();
     auto labelArea = b.removeFromTop(16);
     g.setColour(KhensuTheme::textSecondary);
-    g.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::plain));
+    g.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::plain));
     g.drawText(label_, labelArea, juce::Justification::centredLeft, true);
 
     auto track = b.reduced(0, 2).toFloat();

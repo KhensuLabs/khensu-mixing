@@ -34,6 +34,10 @@ TaxonomyEnergyPanel::TaxonomyEnergyPanel(IAppController& c) : PanelCard(c, "Stem
     addAndMakeVisible(analyzeButton_);
     run_.onRetry([this] { runAnalysis(); });
     run_.setIdle(TRANS("Requires separated stems (auto-runs once they exist)."));
+    chart_.setTitle(TRANS("Stem energy balance"));
+    chart_.setHorizontal(true);
+    chart_.setBaseline(0.0);
+    addChildComponent(chart_);
 }
 
 void TaxonomyEnergyPanel::setProvisionalEstimate(float low, float mid, float high)
@@ -60,6 +64,7 @@ void TaxonomyEnergyPanel::setProvisionalEstimate(float low, float mid, float hig
     add("drums", "Low-mid/body", mid * 0.5f / total);
     add("vocals", "Mid (vocal/synth)", mid * 0.5f / total);
     add("atmosphere_fx", "High (air/cymbals)", high / total);
+    rebuildChart();
     // Status text only: a scan may be in flight, so the run state stays as is.
     run_.label().setText(TRANS("Estimated from full mix - refining when stems separate..."), juce::dontSendNotification);
     repaint();
@@ -107,73 +112,52 @@ void TaxonomyEnergyPanel::runAnalysis()
                     self.buckets_.push_back(std::move(b));
                 }
             }
+            self.rebuildChart();
             return TRANS("Energy balance mapped.");
         },
         std::move(options));
 }
 
-void TaxonomyEnergyPanel::paint(juce::Graphics& g)
+void TaxonomyEnergyPanel::rebuildChart()
 {
-    PanelCard::paint(g);
-    if (run_.hasError() || buckets_.empty()) return;
-
-    auto b = bodyArea();
-    b.removeFromTop(28); // controls row
-
-    const int rowH = juce::jmax(14, b.getHeight() / (int)buckets_.size());
-    const int labelW = 96;
-    float maxShare = 1.0f;
+    const bool show = !run_.hasError() && !buckets_.empty();
+    chart_.setVisible(show);
+    if (!show) return;
+    // VIS-1 / VIS-4: one data colour; an estimate is dimmed by its
+    // confidence and a missing bucket says so in words, the genre target is
+    // a tick across the bar (named in the readout).
+    std::vector<ui::chart::Bar> bars;
+    double top = 0.0;
     bool haveTargets = false;
+    juce::StringArray parts;
     for (const auto& bk : buckets_) {
-        maxShare = juce::jmax(maxShare, bk.sharePct);
+        ui::chart::Bar b;
+        b.label = bk.rollup ? bk.label + " (" + TRANS("sum") + ")" : bk.label;
+        b.values = {bk.present ? static_cast<double>(bk.sharePct) / 100.0 : std::nan("")};
+        if (!bk.present) b.note = TRANS("not detected");
+        b.alpha = bk.present ? 0.45f + 0.55f * bk.confidence : 1.0f;
+        if (bk.rollup) b.colour = KhensuTheme::vizCategory(1);
         if (bk.targetPct >= 0.0f) {
-            maxShare = juce::jmax(maxShare, bk.targetPct);
+            b.target = static_cast<double>(bk.targetPct) / 100.0;
             haveTargets = true;
+            top = std::max(top, *b.target);
         }
+        top = std::max(top, static_cast<double>(bk.sharePct) / 100.0);
+        bars.push_back(b);
+        parts.add(bk.label + " " + (bk.present ? juce::String(bk.sharePct, 1) + " %" : TRANS("not detected")) +
+                  (bk.targetPct >= 0.0f ? " (" + TRANS("target") + " " + juce::String(bk.targetPct, 1) + " %)" : juce::String()));
     }
-
-    for (const auto& bk : buckets_) {
-        auto row = b.removeFromTop(rowH);
-        const juce::Colour base = bk.rollup ? KhensuTheme::accentBlue : KhensuTheme::accentTeal;
-        const bool grey = !bk.present;
-        const float alpha = grey ? 0.25f : (0.45f + 0.55f * bk.confidence);
-
-        g.setFont(KhensuTheme::labelFont(9.5f));
-        g.setColour(grey ? KhensuTheme::textTertiary : KhensuTheme::textSecondary);
-        g.drawText(bk.label, row.removeFromLeft(labelW).reduced(0, 1), juce::Justification::centredLeft, false);
-
-        auto barArea = row.reduced(2, rowH > 20 ? 4 : 2);
-        g.setColour(KhensuTheme::bgSurface.brighter(0.05f));
-        g.fillRoundedRectangle(barArea.toFloat(), 3.0f);
-
-        if (!grey) {
-            const float frac = juce::jlimit(0.0f, 1.0f, bk.sharePct / maxShare);
-            auto fill = barArea.toFloat().withWidth(barArea.toFloat().getWidth() * frac);
-            g.setColour(base.withAlpha(alpha));
-            g.fillRoundedRectangle(fill, 3.0f);
-        }
-
-        // §8: genre target as a vertical tick on the bar; the bar over/under
-        // the tick shows whether this bucket is hot or light for the genre.
-        if (bk.targetPct >= 0.0f) {
-            const float tx = barArea.getX() + juce::jlimit(0.0f, 1.0f, bk.targetPct / maxShare) * barArea.getWidth();
-            g.setColour(KhensuTheme::accentAmber.withAlpha(0.9f));
-            g.drawLine(tx, (float)barArea.getY() - 1.0f, tx, (float)barArea.getBottom() + 1.0f, 1.6f);
-        }
-
-        g.setFont(KhensuTheme::monoFont(9.0f));
-        g.setColour(grey ? KhensuTheme::textTertiary.withAlpha(0.6f) : KhensuTheme::textPrimary);
-        g.drawText(grey ? juce::String("not detected") : juce::String(bk.sharePct, 1) + "%", barArea.reduced(6, 0),
-                   juce::Justification::centredRight, false);
-    }
-
-    if (haveTargets) {
-        g.setFont(KhensuTheme::labelFont(8.0f));
-        g.setColour(KhensuTheme::accentAmber.withAlpha(0.85f));
-        g.drawText("| = genre target", bodyArea().removeFromBottom(12).reduced(4, 0), juce::Justification::centredRight,
-                   false);
-    }
+    chart_.x = ui::chart::scales::percent(std::min(1.0, std::ceil((top + 0.05) * 10.0) / 10.0));
+    chart_.setXRange(chart_.x.lo, chart_.x.hi);
+    chart_.setBars(std::move(bars), {{TRANS("Energy share"), KhensuTheme::vizCategory(0)}});
+    chart_.setLegend(haveTargets ? std::vector<ui::chart::LegendItem>{{TRANS("Genre target"), KhensuTheme::textPrimary,
+                                                                       ui::chart::LegendItem::Kind::Line}}
+                                 : std::vector<ui::chart::LegendItem>{});
+    chart_.setSummary((provisional_ ? TRANS("Energy balance, estimated from the full mix") : TRANS("Stem energy balance")) +
+                      ": " + parts.joinIntoString(", ") + ".");
 }
+
+void TaxonomyEnergyPanel::paint(juce::Graphics& g) { PanelCard::paint(g); }
 
 void TaxonomyEnergyPanel::resized()
 {
@@ -187,6 +171,8 @@ void TaxonomyEnergyPanel::resized()
     auto errArea = bodyArea();
     errArea.removeFromTop(28);
     run_.errorState().setBounds(errArea);
+    chart_.setBounds(errArea);
+    chart_.setVisible(!run_.hasError() && !buckets_.empty());
 }
 
 } // namespace khensu

@@ -6,7 +6,7 @@ namespace khensu {
 AppNoticeBar::AppNoticeBar()
 {
     applyThemeColours();
-    message_.setFont(KhensuTheme::uiFont(12.0f));
+    message_.setFont(KhensuTheme::uiFont(type::secondary));
     message_.setJustificationType(juce::Justification::centredLeft);
     message_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(message_);
@@ -77,6 +77,7 @@ void AppNoticeBar::showFront()
     } else {
         const auto& n = queue_.front();
         message_.setText(n.text, juce::dontSendNotification);
+        message_.setTooltip(n.text); // a long notice is cut to one line; hover shows all of it (UXR-7)
         setTitle(n.text);
         actionButton_.setButtonText(n.actionLabel);
         actionButton_.setTooltip(n.actionLabel);

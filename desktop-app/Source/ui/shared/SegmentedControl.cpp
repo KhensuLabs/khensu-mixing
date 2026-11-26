@@ -72,43 +72,52 @@ bool SegmentedControl::keyPressed(const juce::KeyPress& key)
 
 void SegmentedControl::paint(juce::Graphics& g)
 {
-    auto b = getLocalBounds().toFloat();
-    constexpr float radius = 5.0f;
+    auto b = getLocalBounds().toFloat().reduced(0.5f);
+    // LG-8: full pill capsule for segmented controls.
+    const float radius = b.getHeight() * 0.5f;
 
-    // Container background
-    KhensuLookAndFeel::drawGlassPanel(g, getLocalBounds(), GlassPanelVariant::Raised);
+    // Frosted capsule track.
+    g.setColour(KhensuTheme::bgSurface.withAlpha(0.62f));
+    g.fillRoundedRectangle(b, radius);
+    juce::ColourGradient trackRim(KhensuTheme::borderActive.brighter(0.2f), b.getTopLeft(), KhensuTheme::borderSubtle,
+                                  b.getBottomRight(), false);
+    g.setGradientFill(trackRim);
+    g.drawRoundedRectangle(b, radius, 1.0f);
 
     if (segments_.empty()) return;
     float segW = b.getWidth() / (float)segments_.size();
 
     for (int i = 0; i < (int)segments_.size(); ++i) {
-        auto segRect = b.withX(b.getX() + i * segW).withWidth(segW).reduced(1.0f);
+        auto segRect = b.withX(b.getX() + i * segW).withWidth(segW).reduced(2.0f);
+        const float segR = segRect.getHeight() * 0.5f;
         bool active = (i == selected_);
 
-        // Active segment fill - stronger tinted pill + brighter rim so the
-        // selected mode is unmistakable, not just a faint dim.
+        // Active liquid-glass pill + teal specular rim.
         if (active) {
-            g.setColour(KhensuTheme::accentTeal.withAlpha(0.24f));
-            g.fillRoundedRectangle(segRect, radius);
-            g.setColour(KhensuTheme::accentTeal.withAlpha(0.7f));
-            g.drawRoundedRectangle(segRect, radius, 1.5f);
+            juce::ColourGradient pillFill(KhensuTheme::accentTeal.withAlpha(0.30f), segRect.getCentreX(),
+                                          segRect.getY(), KhensuTheme::accentTeal.withAlpha(0.16f),
+                                          segRect.getCentreX(), segRect.getBottom(), false);
+            g.setGradientFill(pillFill);
+            g.fillRoundedRectangle(segRect, segR);
+            juce::ColourGradient pillRim(juce::Colours::white.interpolatedWith(KhensuTheme::accentTeal, 0.45f).withAlpha(0.75f), // theme-exempt(specular glint is white light in every theme)
+                                         segRect.getTopLeft(), KhensuTheme::accentTeal.withAlpha(0.40f),
+                                         segRect.getBottomRight(), false);
+            g.setGradientFill(pillRim);
+            g.drawRoundedRectangle(segRect, segR, 1.2f);
         }
 
         // Divider between segments (skip around the active pill's edges).
         if (i > 0 && i != selected_ && i != selected_ + 1) {
             g.setColour(KhensuTheme::borderSubtle);
-            g.drawVerticalLine(juce::roundToInt(b.getX() + i * segW), b.getY() + 4.0f, b.getBottom() - 4.0f);
+            g.drawVerticalLine(juce::roundToInt(b.getX() + i * segW), b.getY() + 6.0f, b.getBottom() - 6.0f);
         }
 
-        // Label - bold when selected.
-        g.setFont(active ? KhensuTheme::labelFont(11.0f).boldened() : KhensuTheme::labelFont(11.0f));
-        const juce::Colour labelColour = active ? KhensuTheme::accentTeal : KhensuTheme::textSecondary;
+        g.setFont(active ? KhensuTheme::labelFont(type::caption).boldened() : KhensuTheme::labelFont(type::caption));
+        const juce::Colour labelColour = active ? KhensuTheme::textPrimary : KhensuTheme::textSecondary;
         g.setColour(isEnabled() ? labelColour : KhensuTheme::textTertiary);
         g.drawText(segments_[i], segRect.toNearestInt(), juce::Justification::centred, true);
     }
 
-    // Keyboard-focus ring around the whole control (the selected pill already
-    // shows which segment the arrow keys will move from).
     if (hasKeyboardFocus(false)) {
         g.setColour(KhensuTheme::focusRing.withAlpha(0.9f));
         g.drawRoundedRectangle(b.reduced(0.5f), radius, 1.6f);

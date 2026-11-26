@@ -99,17 +99,17 @@ NlCommandOverlay::NlCommandOverlay(IAppController& controller, const juce::Strin
     applyThemeColours();
     addAndMakeVisible(card_);
     titleLabel_.setText(TRANS("Mix instruction"), juce::dontSendNotification);
-    titleLabel_.setFont(KhensuTheme::uiFont(15.0f, juce::Font::bold));
+    titleLabel_.setFont(KhensuTheme::uiFont(type::subtitle, juce::Font::bold));
     instructionLabel_.setText(text_.isNotEmpty() ? "\"" + text_ + "\""
                                                  : TRANS("Hold the mic button and say what to change."),
                               juce::dontSendNotification);
-    instructionLabel_.setFont(KhensuTheme::bodyFont(14.0f));
+    instructionLabel_.setFont(KhensuTheme::bodyFont(type::large));
     instructionLabel_.setMinimumHorizontalScale(0.6f);
-    statusLabel_.setFont(KhensuTheme::labelFont(11.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     preview_.setMultiLine(true);
     preview_.setReadOnly(true);
     preview_.setScrollbarsShown(true);
-    preview_.setFont(KhensuTheme::monoFont(11.0f));
+    preview_.setFont(KhensuTheme::monoFont(type::caption));
     preview_.setTitle(TRANS("What will be rendered"));
     confirmButton_.setEnabled(false);
     confirmButton_.setTooltip(TRANS("Render this plan through the guarded render pipeline"));

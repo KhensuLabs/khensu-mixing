@@ -12,6 +12,7 @@
 #include "IAppController.h"
 #include "diagnostics/IDiagnosticsHost.h"
 #include "session/AnalysisService.h"
+#include "session/BounceWatcher.h"
 #include "session/BackgroundRunner.h"
 #include "session/CloudChatService.h"
 #include "session/PlaybackService.h"
@@ -67,6 +68,7 @@ class AppController final : public juce::Component,
                             public ICommandPaletteHost,
                             public ISessions,
                             public IShell,
+                            public juce::FileDragAndDropTarget,
                             private IDiagnosticsHost,
                             private juce::Timer {
   public:
@@ -88,6 +90,15 @@ class AppController final : public juce::Component,
     void paint(juce::Graphics& g) override;
     void resized() override;
     bool keyPressed(const juce::KeyPress& key) override;
+
+    // ---- UXR-10: an audio file dropped on any screen opens it, as a drop on
+    // Intake does. A panel's own drop target (Intake's zone, Humanize, ...)
+    // is deeper in the tree and takes the drop first.
+    bool isInterestedInFileDrag(const juce::StringArray& files) override;
+    void fileDragEnter(const juce::StringArray& files, int x, int y) override;
+    void fileDragExit(const juce::StringArray& files) override;
+    void filesDropped(const juce::StringArray& files, int x, int y) override;
+    void paintOverChildren(juce::Graphics& g) override;
 
     // ---- IBackgroundWork (BackgroundRunner, drained first in ~AppController).
     void runInBackground(std::function<void()> job) override { runner_.run(std::move(job)); }
@@ -163,6 +174,7 @@ class AppController final : public juce::Component,
     void showMetricExplanation(int gauge) override;
     void showChainReasoning(const Recommendation& rec) override;
     void showMixMasterCard(int tabIdx) override;
+    void showExportStep(int step) override; // ENH-8
     void showMetricDiff(const juce::String& title, std::vector<MetricDiffTable::Row> rows, const juce::String& labelA,
                         const juce::String& labelB) override;
     void showAbxTrial(const juce::StringArray& blindReferencePaths = {}) override;
@@ -186,9 +198,22 @@ class AppController final : public juce::Component,
     void toggleReportMode() override;
     void runCollabCommand(CollabCommand command) override; // AppController_Collab.cpp
     void runCoreVerb(CoreVerb verb) override;
+    void toggleBounceWatch(bool folder) override
+    {
+        const auto s = bounceWatcher_.settings();
+        setBounceWatch(folder ? s.watchFile : !s.watchFile, folder ? !s.watchFolder : s.watchFolder);
+    }
     void browseForAudioFile() override { runCoreVerb(CoreVerb::OpenFile); }
     void fixTopIssue() override { runCoreVerb(CoreVerb::FixTopIssue); }
     void showIssue(const std::string& key) override;
+    bool revealCardForFinding(const std::string& findingKeyOrCode) override; // ENH-7
+    // STU-7: what Ctrl+K finds besides commands (AppController.cpp).
+    std::vector<SearchTarget> searchableCards() override;
+    void revealCard(const std::string& cardId) override;
+    std::vector<SearchTarget> searchableFindings() override;
+    void openFinding(const std::string& key) override { showIssue(key); }
+    std::vector<SearchTarget> searchableGenres() override;
+    void showGenre(const std::string& genreId) override;
     void toggleSessionHealthStrip() override;
     static bool textInputHasFocus();
     IAppController* commandAppController() override { return this; }
@@ -262,6 +287,7 @@ class AppController final : public juce::Component,
     SidebarComponent sidebar_;
     juce::Component contentContainer;
     std::unique_ptr<IntakeScreen> intakeScreen;
+    bool fileDragOver_ = false; ///< UXR-10: the drop overlay is showing
     std::unique_ptr<DashboardScreen> dashboardScreen;
     std::unique_ptr<VocalWorkspaceScreen> vocalWorkspaceScreen;
     std::unique_ptr<MixMasterScreen> mixMasterScreen;
@@ -322,6 +348,14 @@ class AppController final : public juce::Component,
     juce::String lastServiceError_;
     juce::int64 lastServiceErrorMs_ = 0;
     AppNoticeBar noticeBar_; // crash report saved, update out (AppController_Notices.cpp)
+    // ENH-1: a new bounce of the session's track becomes a version and is
+    // checked (AppController_Bounce.cpp). Stopped first in ~AppController.
+    BounceWatcher bounceWatcher_;
+    juce::String pendingBounceCheck_; ///< the bounce version whose check the notice waits for
+    void wireBounceWatcher();
+    void handleNewBounce(const juce::File& bounce, bool inPlace);
+    void onBounceChecked();
+    void setBounceWatch(bool watchFile, bool watchFolder);
     AnalysisPendingOverlay resultsOverlay_; // the results gate (analysis_.resultsGate())
     bool updateCheckStarted_ = false;
     void postCrashNoticeIfAny();
@@ -445,6 +479,13 @@ class AppController final : public juce::Component,
     void loadBundledReferenceData();
     void buildScreens();
     void buildChrome();
+    void onSmokeVBlank();
+
+    // LG-1..4: animated liquid smoke backdrop driver (throttled ~25 FPS,
+    // freezes automatically under reduced motion or when unfocused).
+    std::unique_ptr<juce::VBlankAttachment> smokeVBlank_;
+    double lastSmokeFrameMs_ = 0.0;
+    float smokeAudioEnergy_ = 0.0f;
 
     // Declared last - see ThemeListener's note on member ordering.
     ThemeListener themeListener_{[this] {

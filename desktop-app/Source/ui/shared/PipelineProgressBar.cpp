@@ -89,7 +89,7 @@ void PipelineProgressBar::drawSlot(juce::Graphics& g, juce::Rectangle<int> bound
     // A skipped stage's label is dimmed so it reads as "not run" rather than
     // "pending".
     g.setColour(state == SlotState::Skipped ? KhensuTheme::textTertiary : KhensuTheme::textSecondary);
-    g.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     g.drawText(slotLabels_[static_cast<size_t>(index)], bounds.removeFromLeft(90), juce::Justification::centredLeft);
 
     // Inner fill bar for Deep Analysis (index 1) and Stems (index 5) only.

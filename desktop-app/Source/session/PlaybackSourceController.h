@@ -28,6 +28,13 @@ class PlaybackSourceController final {
     std::optional<float> previewLufs;
     bool previewLufsUnavailable = false;
 
+    /// STU-8: a version pinned as the A side ("" = the session's original,
+    /// the default). B is matched to A's level, so A's level must be known:
+    /// a pinned A is held muted - with B - until it is measured.
+    juce::String referencePath;
+    std::optional<float> referenceLufs;
+    bool referenceLufsUnavailable = false;
+
     /// Forget everything session-scoped (user volume is an app preference).
     void resetForSession() noexcept
     {
@@ -35,7 +42,44 @@ class PlaybackSourceController final {
         showingProcessed = false;
         processedLufs.reset();
         processedLufsUnavailable = false;
+        clearReference();
         clearPreview();
+    }
+
+    void clearReference() noexcept
+    {
+        referencePath.clear();
+        referenceLufs.reset();
+        referenceLufsUnavailable = false;
+    }
+
+    /// STU-8: pins `path` as A ("" = back to the original). Returns true when
+    /// its level is unknown and must be measured.
+    bool assignReference(const juce::String& path, std::optional<float> cachedLufs) noexcept
+    {
+        clearReference();
+        referencePath = path;
+        referenceLufs = path.isNotEmpty() ? cachedLufs : std::nullopt;
+        return path.isNotEmpty() && !cachedLufs.has_value();
+    }
+
+    /// A pinned A whose level is still being measured.
+    bool awaitingReferenceLufs() const noexcept
+    {
+        return referencePath.isNotEmpty() && !referenceLufs.has_value() && !referenceLufsUnavailable;
+    }
+
+    /// The file playing as A: the pinned version, else the original.
+    juce::String aSidePath(const juce::String& originalPath) const
+    {
+        return referencePath.isNotEmpty() ? referencePath : originalPath;
+    }
+
+    /// A's level: the pinned version's measured level, else the original's
+    /// (the analysis).
+    std::optional<float> aSideLufs(std::optional<float> originalLufs) const noexcept
+    {
+        return referencePath.isNotEmpty() ? referenceLufs : originalLufs;
     }
 
     void clearPreview() noexcept
@@ -84,9 +128,10 @@ class PlaybackSourceController final {
         AbLevelOffset o;
         o.available = processedPath.isNotEmpty();
         if (!o.available) return o;
-        o.measuring = awaitingProcessedLufs();
-        if (processedLufs.has_value() && originalLufs.has_value()) {
-            o.bMinusADb = *processedLufs - *originalLufs;
+        o.measuring = awaitingProcessedLufs() || awaitingReferenceLufs();
+        const auto aLufs = aSideLufs(originalLufs);
+        if (processedLufs.has_value() && aLufs.has_value()) {
+            o.bMinusADb = *processedLufs - *aLufs;
             o.matched = true;
         }
         return o;
@@ -105,11 +150,18 @@ class PlaybackSourceController final {
     /// B is held MUTED until it is measured (AUDIT-038): the old genre-target
     /// guess could play an unmatched render several dB loud for seconds, which
     /// is exactly the "louder sounds better" bias matched A/B exists to remove.
-    float gainFor(const GainContext& ctx) const noexcept
+    float gainFor(const GainContext& context) const noexcept
     {
+        // STU-8: a pinned A replaces the original as the level both sides
+        // are matched to.
+        GainContext ctx = context;
+        ctx.originalLufs = aSideLufs(context.originalLufs);
+        ctx.originalPath = aSidePath(context.originalPath);
         float scale = 1.0f;
         const bool playingB = processedPath.isNotEmpty() && ctx.loadedPath == processedPath;
         if (playingB && awaitingProcessedLufs()) return 0.0f;
+        const bool playingPinnedA = referencePath.isNotEmpty() && ctx.loadedPath == referencePath;
+        if ((playingB || playingPinnedA) && awaitingReferenceLufs()) return 0.0f;
         const bool playingPreview = previewPath.isNotEmpty() && ctx.loadedPath == previewPath;
         if (playingPreview) {
             if (!previewLufs.has_value() && !previewLufsUnavailable) return 0.0f; // muted until measured

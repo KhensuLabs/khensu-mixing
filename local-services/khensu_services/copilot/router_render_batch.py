@@ -12,7 +12,7 @@ from khensu_services.common.jobs import JobStore, get_job_or_404, job_begin, job
 from khensu_services.common.executors import long_job_executor as _long_executor
 from khensu_services.copilot.router_plugin_matching import EffectSpec
 from khensu_services.copilot.response_models import BatchJobStartResponse, BatchJobStatusResponse, CopilotJobCancelResponse
-from khensu_services.copilot.router_render import PostRenderGuardrailError, RENDER_STATE_BLOCKED, RENDER_STATE_VALIDATED, RenderBlocked, RenderCancelled, RenderGraph, _cancel_reply, _chain_render_fn, _decision_hash_field, _effect_dicts, _file_identity, _genre_action_block, _graph_dict, _log_applied_event, _require_audio_decode_budget, _require_valid_parameters, render_through_pipeline
+from khensu_services.copilot.router_render import PostRenderGuardrailError, RENDER_STATE_BLOCKED, RENDER_STATE_VALIDATED, RenderBlocked, RenderCancelled, RenderGraph, _cancel_reply, _chain_render_fn, _decision_hash_field, _effect_dicts, _file_identity, _genre_action_block, _graph_dict, _log_applied_event, _require_audio_decode_budget, _require_valid_parameters, render_through_pipeline, resolve_key_stem, warnings_kw
 
 _log = logging.getLogger(__name__)
 router = APIRouter()
@@ -59,6 +59,9 @@ class ApplyChainBatchRequest(RequestModel):
     # Which stem the chain targets; every file is attribution-checked against
     # its own stem mapping exactly like the single-file routes (CPL-01).
     target_stem: str = "mix"
+    # ENH-6: as ApplyChainRequest.key_stem, resolved per file through that
+    # file's stem mapping (file_stem_paths, else stem_paths).
+    key_stem: str = Field(default="", max_length=64)
 
     @field_validator("suffix")
     @classmethod
@@ -143,8 +146,9 @@ def _run_batch_files(job_id: str, job: dict, req: ApplyChainBatchRequest,
             attribution = validate_stem_attribution(src, req.target_stem, file_stems)
             if not attribution["ok"]:
                 raise RenderBlocked(attribution)
+            key_path, key_warnings = resolve_key_stem(req.key_stem, file_stems)
             result, guardrail, _validation = render_through_pipeline(
-                src, out_path, _chain_render_fn(src, effect_list, graph, req.normalize),
+                src, out_path, _chain_render_fn(src, effect_list, graph, req.normalize, key_path),
                 effects=None if graph else effect_list, graph=graph, should_cancel=_cancelled)
             _log_applied_event("chain_applied", req.session_id, "",
                                out_path, result.get("applied", []),
@@ -152,7 +156,8 @@ def _run_batch_files(job_id: str, job: dict, req: ApplyChainBatchRequest,
             entry.update(status="success", render_state=RENDER_STATE_VALIDATED,
                          applied_effects=result.get("applied", []),
                          skipped_effects=result.get("skipped", []),
-                         guardrail=guardrail)
+                         guardrail=guardrail,
+                         **warnings_kw(key_warnings + list(result.get("warnings") or [])))
         except RenderCancelled:
             return
         except RenderBlocked as blocked:
@@ -215,6 +220,12 @@ async def apply_chain_batch_start(req: ApplyChainBatchRequest) -> dict:
     if len(files) > _BATCH_MAX_FILES:
         invalid_input(f"Batch too large: {len(files)} files (max {_BATCH_MAX_FILES})")
     await _require_audio_decode_budget(*files, allow_probe_errors=True)
+    if req.key_stem:
+        # Every key a file would read is a render input too (ENH-6); an
+        # unknown or missing one falls back per file with a warning.
+        key_paths = {resolve_key_stem(req.key_stem, req.file_stem_paths.get(f, req.stem_paths))[0]
+                     for f in files}
+        await _require_audio_decode_budget(*sorted(k for k in key_paths if k), allow_probe_errors=True)
     if req.stem_paths and req.file_stem_paths:
         unknown_files = sorted(set(req.file_stem_paths) - set(files))
         if unknown_files:

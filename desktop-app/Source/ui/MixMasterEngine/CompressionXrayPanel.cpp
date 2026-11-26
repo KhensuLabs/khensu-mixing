@@ -35,7 +35,7 @@ CompressionXrayPanel::CompressionXrayPanel(IAppController& c) : PanelCard(c, "Co
     run_.onRetry([this] { runXray(); });
     run_.setIdle(TRANS("Apply a render first (chat, macros, mastering agent)."));
 
-    eventsLabel_.setFont(KhensuTheme::labelFont(9.5f));
+    eventsLabel_.setFont(KhensuTheme::labelFont(type::caption));
     eventsLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(eventsLabel_);
 }
@@ -164,7 +164,7 @@ void CompressionXrayPanel::paint(juce::Graphics& g)
         g.strokePath(bpath, juce::PathStrokeType(1.0f));
     }
 
-    g.setFont(KhensuTheme::labelFont(8.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText("0 dB", (int)plot.getX(), (int)plot.getY() - 2, 36, 10, juce::Justification::left);
     g.drawText("-" + juce::String(juce::roundToInt(maxDb)) + " dB", (int)plot.getX(), (int)plot.getBottom() - 10, 44, 10,

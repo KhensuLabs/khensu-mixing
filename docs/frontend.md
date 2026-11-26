@@ -23,28 +23,39 @@ Covers `desktop-app/` and `plugin-copilot/` — the two JUCE-based C++ UIs. See
 
 ```text
 desktop-app/Source/ui/
-├── SessionIntake/       # File drop, genre/creative-target selection, multi-file queue
-├── Dashboard/           # 51 analysis panels (spectrograms, EQ curves, hook dashboard, …)
-├── MixMasterEngine/     # Recommendations, "Fix This", Mastering Agent, render tree
-├── VocalWorkspace/      # Stem separation, vocal DSP macros, de-essing, lyric intelligibility
-├── ExportDelivery/      # Platform masters, compliance sheet, album assembly
-├── ReferenceLibrary/    # Reference matching, 3D reference cloud
-├── AiDetection/         # AI-generation forensic scan UI
-├── Copilot/             # Chat, mixer chain, Mastering Agent, Plugin Host Chain, waveform/spectrogram editor
-├── Assistant/           # The Issues screen (the issue queue) and the milestone gates
-├── SystemBrain/         # Feature encyclopedia UI (reads resources/system_brain/)
-├── Settings/            # Themes, online-feature toggles, LLM provider keys
-└── shared/              # Reusable widgets, KhensuTheme/KhensuLookAndFeel
+├── SessionIntake/       # Intake: file drop, genre/target, recent sessions, trends, recurring issues
+├── Issues/              # Issues: the issue queue (ui/shared/IssueQueuePanel) and the milestone headline
+├── Dashboard/           # Analysis: ~50 cards, the verdict, the hero spectrum, the views
+├── MixMasterEngine/     # Mix / Master: Loudness, EQ editor, Versions, Dynamics, Presets & tools, Live
+├── VocalWorkspace/      # Vocal: stems, takes, vocal macros, pitch, de-essing, lyric intelligibility
+├── ExportDelivery/      # Export: Finish (Master Assistant), Export, Delivery, Album
+├── Copilot/             # Copilot: chat, client feedback, taste, mastering link, auto-mix, chains, hosted plugins
+├── ProvenanceSource/    # Provenance & Source: AI-generation evidence and source checks
+├── ReferenceLibrary/    # References: library, folder scan, ranking, fit a chain
+├── SystemBrain/         # Help: the feature encyclopedia (reads resources/system_brain/)
+├── Settings/            # Settings: display, privacy, AI providers, models, audio/MIDI, data & diagnostics
+└── shared/              # Reusable widgets, KhensuTheme/KhensuLookAndFeel, ChartKit helpers
 ```
 
-11 screens, 90+ panels (51 in `Dashboard/` alone). New panels are
-named `<Thing>Panel.h`/`.cpp` and live under the screen they belong to; widgets
+11 screens, 90+ panels (~50 in `Dashboard/`). Each directory is named for
+its screen's sidebar label (UXR-11). New panels are named
+`<Thing>Panel.h`/`.cpp` and live under the screen they belong to; widgets
 reused across screens live in `ui/shared/`.
 
-The sidebar groups them (UX-2): **Workflow** - Intake, Issues (`Assistant/`),
-Analysis (`Dashboard/`), Mix / Master, Vocal, Export; **Tools** - Copilot, AI
-Detection, References; **System** - Help (`SystemBrain/`) and Settings, pinned
-to the bottom. A screen's title is its sidebar label (see "Screen header"
+**One home per feature (ENH-8).** A feature has one screen; other screens link
+to it with `ui/shared/FeatureHomeLink.h` (a compact card: headline, one line,
+an optional readout, one button) instead of a second copy. Mastering lives in
+Export > Finish; streaming normalisation in Analysis (Mix / Master keeps a
+compact playback card); stem energy and masking in Analysis > Stems; gain
+staging in Mix / Master > Loudness; the analysed EQ curve in Analysis (Mix /
+Master has the EQ editor); snapshots in Mix / Master > Versions. Links go
+through `IShell::showExportStep`, `showMixMasterCard`,
+`revealCardForFinding` and `feature_home::showAnalysisCard`.
+
+The sidebar groups them (UX-2): **Workflow** - Intake, Issues (`Issues/`),
+Analysis (`Dashboard/`), Mix / Master, Vocal, Export; **Tools** - Copilot,
+Provenance & Source (`ProvenanceSource/`), References; **System** - Help
+(`SystemBrain/`) and Settings, pinned to the bottom. A screen's title is its sidebar label (see "Screen header"
 below). Each row has a 1.5 px line icon drawn as a `juce::Path`
 (`ui/shared/NavIcons.h`, 24-unit grid, stroked in the row's colour); the active
 row has a teal edge bar and a teal icon. Above the rows, the session block shows
@@ -100,13 +111,58 @@ footer (UX2-4).
   `IIssues::fixTopIssue` fixes). The weighting choice lives in
   `IAnalysisHub::setScoreWeightProfile`, so the saved readiness is the shown one.
 - **Studio look (UI-3 / UI-4).** Graphite surfaces and one accent (teal);
-  severity colours only for severity; type 28 / 17 / 13 / 11 px
-  (`kFontMetric`, `kFontH1`, `kFontBody`, `kFontLabel`); every number in
-  `KhensuTheme::numericFont()` (tabular figures). The rollup strip is neutral
+  severity colours only for severity; every number in
+  `KhensuTheme::numericFont()` (tabular figures).
+- **One type scale (UXR-8).** `shared-core/include/khensu/ui/TypeScale.h`
+  (`khensu::type`, shared by the app, the plugin and the shared-core
+  widgets): caption 11 (the floor), secondary 12, body 13, large 14,
+  subtitle 15, title 17, heading 20, headline 24, display 28, hero 40.
+  `KhensuTheme`'s `kFont*` constants, `StudioStyle.h`'s sizes and the
+  helpers' defaults alias it, and `KhensuTheme::uiFont` / `Palette::uiFont`
+  floor any size at 11; button text keeps its 12 px floor. Pass a token,
+  never a number: `check_doc_drift.py`'s `check_font_sizes` fails on a
+  literal font height under 11 anywhere and on any literal outside the theme
+  files (desktop, plugin and shared-core sources; `font-exempt(<reason>)` on
+  the line is the escape hatch). A size held in a local variable is not
+  traced.
+- **Empty states (UXR-6).** A card with nothing to show draws
+  `ui/shared/KhensuEmptyState` (`paintInto` / `PanelCard::drawEmptyState`,
+  or a member): a headline and an optional body (up to 3 lines; the glyph
+  row drops in a host shorter than ~100 px), whose message is also its
+  accessible title. In-row and strip text that a panel-sized state cannot fit
+  stays as text. Notices that only inform go to the notice bar
+  (`AppNoticeBar`, full text in its tooltip), not a pop-up (UXR-7). So does
+  a decision with one non-destructive action (`ui/shared/DecisionNotices.h`:
+  the engine gave up - Restart Service; the session's file is missing -
+  Locate File...; import a session bundle - Import), with a stable id so a
+  repeat replaces it; dismissing is the old Cancel. Destructive and
+  multi-choice decisions, forms and long detail views stay dialogs. The rollup strip is neutral
   figures with a severity dot only when out of target.
-- **Motion (UI-7).** `ui/shared/ValueAnimator.h`: `ValueAnimator` eases a
+- **Motion (UI-7, VIS-7).** `ui/shared/ValueAnimator.h`: `ValueAnimator` eases a
   value to a new target over 200 ms (the verdict's score), `motion::fade`
   fades a component in or out. No full-height playhead in the backdrop.
+  `ui/shared/ReducedMotion.h` (`ui::motion::reduced()`, `setReduced()`,
+  `followSystem()`; `ui.reduced_motion` in settings.json, else Windows'
+  "Show animations") makes every one of them jump to the end: the animator,
+  `motion::fade`, the hero's morph and A/B glide, the screen fade, the
+  shimmer, the spectrogram zoom and the orbit's auto-rotate. A new
+  animation checks it.
+- **Undo toast (UXR-9).** `ui/shared/UndoToast.h`: `UndoToast::show(host,
+  message, onUndo)` - bottom centre for 6 s, paused while hovered, announced
+  to screen readers; a new one replaces the last. Mark done / Dismiss in the
+  issue queue (Undo reopens through `issues()`) and the Analysis card layout
+  (move, hide, reset, preset, advanced cards) use it.
+- **Drop anywhere (UXR-10).** `AppController` is the window's file drop
+  target (`ui/shared/AppFileDrop.h`, an overlay while dragging); a dropped
+  audio file opens through Intake's path. A panel with its own drop target
+  still takes the drop first.
+- **Genre in use (BUG-1).** `ui/shared/GenreInUse.h` is the one answer to
+  "which genre were the findings judged against": the stated genre, else the
+  detected blend (two or more known genres, final result), else generic.
+  `resolve()`/`label()` word it for the strip and sidebar ("Glitch Hop
+  (detected, not confirmed)"), `entry()` gives the gauges, tiles and LUFS
+  window the same target, and `AnalysisController` names a detected genre
+  in the findings ("detected Glitch Hop").
 - **First five seconds (UI-10, UX2-1).** Client Summary is the default mode:
   one calm progress line (`IntakeProgressHud` compact). The Analysis screen
   reads top to bottom: the verdict, the hero spectrum (`HeroSpectrumView`, the
@@ -140,6 +196,8 @@ shared by the shortcuts and the palette (labels carry the shortcut and are
 |---|---|
 | `Ctrl+O` / `Ctrl+R` | Open an audio file / analyse again |
 | `F` / `B` | Fix the top issue / switch A/B |
+| `Shift+F` | Fix all safe (ENH-2) |
+| `Ctrl+Z` / `Ctrl+Shift+Z`, `Ctrl+Y` | Undo / redo (BUG-3) |
 | `Space` (and `Ctrl+Space`) | Play / pause |
 | `Ctrl+E` / `Ctrl+,` | Export / Settings |
 | `N` | Next unresolved issue |
@@ -207,10 +265,61 @@ transport in place (WF-2).
   With the engine not running yet the gate opens on the complete native
   result, and the in-place re-run (`upgradeInFlight()`) replaces it without
   closing the gate (FN2-2b, `architecture.md`).
+- **Fix all safe (ENH-2).** `session/FixAllSafe`: a finding qualifies when
+  it is a Fix top issue candidate, its fix is not advice-only and has no
+  denoise stage, and `finding_evidence.json` says its Fix cleared it on at
+  least 70 % of at least 10 tracks (`whyNotSafe` gives the reason when not).
+  `mergeChains` merges the chains in stage order (high-pass, EQ, dynamics,
+  colour, width, gain, limiter): one high-pass at the highest cutoff, the
+  gains summed, one limiter at the lowest ceiling. One `renderVersion`, one
+  fix check; each issue is marked done through `issues()`
+  (`IssueService` keeps fix renders in a multimap, so one render can fix
+  several issues). The headless `--fix` uses the same rules.
+- **Bounce watching (ENH-1).** `session/BounceWatcher` polls every 2 s (a
+  JUCE timer, so it builds on macOS): the session's own file (on by default,
+  `bounce_watch_file`) and, off by default (`bounce_watch_folder`), a newer
+  numbered bounce in its folder (`song_v2`, `song 3`, `song-take4`,
+  `song (2)`; the app's own renders never count). A bounce is taken once it
+  is non-empty, unchanged for 3 s and readable; one saved over the session
+  file is copied to `<name>_bounce_<stamp>.wav` first. It is registered as a
+  version (the fix check runs) and a notice reports resolved / new / still
+  open with **What changed** (`AppController_Bounce.cpp`). Known limit: an
+  in-place bounce changes the original file too, so the A side and
+  WhatChanged's "before" are the new audio; only the findings check compares
+  against the old analysis.
+- **Re-render queue (AUTO-3).** `RenderService` remembers the chain behind
+  each version (`versionChains_`). A new version made from an earlier
+  version that already has versions stacked on it offers to replay them in
+  order (`startReplay` / `cancelReplay`, one step at a time, each a version,
+  progress in a notice). Not offered for "Start from original"; a fix just
+  re-made (Gentler) is skipped; versions with no recorded chain (restored
+  from autosave) are counted, not replayed.
 - **Intake (UX-12).** Before a file: drop zone, trends, recent sessions.
   After a drop: what was detected, Confirm genre, Change target..., Create
   Session; Advanced holds the genre source, reference, toggles, stage retry,
   Cancel intake and Target Overrides (`IntakeScreen::updateDisclosure`).
+  Before a file, `RecurringIssuesPanel` (AUTO-5) reads `/agent/sessions` and
+  `/agent/findings` on the long pool - one file per mix, up to 10 tracks,
+  cached per file until it changes - and lists the findings that recur, with
+  count, last seen and trend; a row opens the newest session with it. The
+  trend chart reads 24 sessions, drops unmeasured rows and scales 0-1
+  scores to 0-100 (`TrendRows.h`).
+- **Analysis views (ENH-7).** One row: Essentials (default), All cards and
+  More views... (Loudness, Spectrum, Spatial, Song & structure, Song
+  insights, Stems, Quality, Advanced), remembered in the `dashboard_view`
+  preference. `ui/Dashboard/FindingCardMap.h` maps every engine finding code
+  (IssueCodes.h) to its card; `DashboardScreen::revealCardForFinding` widens
+  the view only when it must (without changing the remembered one), selects
+  the grouped card's tab, scrolls and flashes a 1.4 s focus ring. The hero's
+  markers and chips, "Start here" and the issue rows' "Show its card in
+  Analysis" use it (`IShell::revealCardForFinding`); a finding with no card
+  opens on Issues. The hero's Top findings are one chip per kind with a
+  count (BUG-4).
+- **Provenance & Source runs itself (AUTO-1).** On show and 1.5 s after a new
+  final analysis, the screen asks for the Dashboard's fast source scan
+  (same request, so the service answers from `_scan_cache` or joins the
+  running scan), unless results are pending or the engine is down; up to 5
+  retries. **Re-scan** runs the deep (learned) scan.
 
 ## Data visualisation (VIZ, 2026-11-24)
 
@@ -221,6 +330,50 @@ transport in place (WF-2).
   which follows the theme) and draws its data through `px()` / `py()`; it
   never computes its own ticks or tooltip. The plugin uses the same kit and
   the same module drawings (`ModuleViz.h`).
+- **ChartKit everywhere (VIS-1).** `ChartKitPlots.h` adds `LineChart`,
+  `BarChart`, `StackedAreaChart` and `RadarChart` on `ChartView`; the kit has
+  category and inverted axes, a secondary y axis, units on the axes,
+  `setPlayhead`, `onClickAt`, a `paintHoverMark` hook and grid control. The
+  desktop helper `ui/shared/ChartKitDesktop.h` gives the themed chart types,
+  `playFrom` (set the position, then play), click-to-play and a playhead
+  follower. Tonal balance, the loudness arc and curve, stem and taxonomy
+  energy, the radars (heaviness, sonic fingerprint), the depth ladder, pitch
+  accuracy, mono compatibility, harmonic content and the dynamics strips are
+  ChartKit charts; the timeline, gain staging, trend, translation and metric
+  diff keep their layout on ChartKit's axes, readout, ranges and fonts. The
+  issue heatmap (`MultiLaneHeatmap`) is a ChartKit chart: one row per lane
+  (spectrum in magma, finding density on the sequential map, the loudness and
+  correlation curves, a findings lane per domain), a hover readout per row,
+  click to play and the playhead.
+- **One scale (VIS-3).** `shared-core/.../ui/ChartScales.h`: the frequency
+  axis (from `VizFrequencyAxis.h`: 20 Hz - 20 kHz, one label set; heat maps
+  are placed by their band edges), and the standard ranges - spectrum,
+  relative dB, LUFS, gain reduction, true peak - plus time, percent and
+  category axes and `autoFit`. The detailed spectrogram still measures
+  30 Hz - 16 kHz; outside that it draws dark and the hover says "not
+  measured".
+- **One spectrogram map, one diverging map (VIS-2).** `ui/shared/VizMaps.h`:
+  magma for every spectrogram (detailed, lane, Live, mid/side) and one
+  diverging blue - grey - orange map (`kDivergingWarm` is orange, not
+  severity red) for phase, reference delta, the hero's over / under and the
+  render tree's differences, with `paintDivergingBar` colour bars.
+- **Words beside colour (VIS-4).** Verdicts are written ("in target",
+  "better / worse", "low / medium / high", "clips / OK", "sharp / flat");
+  severity colours mark severity only.
+- **The hero (VIS-5).** A dB y axis; drawn in order problem bands, genre
+  spread and target fan, the tilt line (1.4 px), the track (2.4 px) on top;
+  each problem band labelled on itself ("Low end +6.0 dB").
+- **Stopped meters (VIS-6, BUG-5).** Stopped, `StudioMeters` and both
+  vectorscopes show the analysed song greyed ("Stopped - analysed values"):
+  the loudest 3 s short-term reading, the middle 8 s looped in the scope. The
+  card is one row when wide and two when narrow; the correlation meter drops
+  its scale, then its caption, rather than overlap; loudness ticks stay 30 px
+  apart (`VizMapsTest` checks five sizes).
+- **Screen-reader summaries (VIS-8).** Every `ChartView` is an image whose
+  accessible description is a summary built from its data; `ChartSummary`
+  covers the hero, the timeline, the heat spectrum, the metric diff, gain
+  staging, the trend, translation, streaming normalisation, What changed and
+  the issue heatmap.
 - **One data palette** (`shared-core/.../ui/VizPalette.h`, `KhensuTheme::viz*`):
   categorical (identity, fixed slot order - stems are vocals, drums, bass,
   other), sequential (magnitude) and diverging (polarity, through a neutral
@@ -256,6 +409,86 @@ transport in place (WF-2).
   compared with `tests/visual_baseline/` in verify_all (`app-loop`,
   `scripts/compare_screenshots.py`; `-UpdateVisualBaseline` after a deliberate
   change).
+
+## Studio feel (STU, 2026-11-25)
+
+- **Live spectrogram (STU-1).** `ui/shared/FrameFifo.h` is a fixed ring one
+  FFT frame long (`push`, `readFrame`, `advance` by a hop); nothing is
+  allocated or moved per hop, and the log-band bin edges are worked out once
+  per sample rate.
+- **Springs (STU-11).** `ValueAnimator` takes `Curve::Spring`: a critically
+  damped spring (`motion::Spring`, settles to 99.9 % at the given time, keeps
+  its velocity when retargeted); `Ease` stays the default. Reduced motion
+  jumps to the target.
+- **Genre constellation and waterfall (STU-12).** The Sonic Fingerprint orbit
+  draws every catalog genre coloured by family (`ui/shared/GenreConstellation.h`:
+  eight families from `GenreEntry::parent`, nearest-point hover, the render
+  trajectory from `renders().renderTree()`), with **My genre**, **Render
+  trajectory** and **Reset view** moving the camera's look-at and zoom on
+  springs (`Camera3D` has a target). The 3D waterfall is coloured with the
+  spectrogram map and has 6 dB contours (`ui/shared/ContourLines.h`,
+  marching squares).
+- **PSR lane (STU-3).** `SongTimelineView` has a PSR lane on a 0-20 dB axis
+  (`khensu/analysis/PeakToLoudness.h`), squashed runs shaded and labelled.
+- **DAW markers (STU-4).** `khensu/session/DawMarkers.h` (no JUCE) writes plain
+  CSV, REAPER region / marker CSV and a format-0 MIDI file (480 PPQ, FF 06
+  markers, session tempo or 120). `ExportDelivery/DawMarkerExport.h` builds
+  the markers from the sections and `timeline_markers::build`, so they sit
+  where the Analysis timeline puts them; the action is on the Report card.
+- **MIDI-CI (STU-13).** `juce_midi_ci` is in `KHENSU_JUCE_ROOT_MODULES`.
+  `midi/MidiCiResponder` is a `midi_ci::Device` with property exchange
+  (manufacturer 0x7D): a ResourceList with one read-only `X-Macro-<name>`
+  JSON property per mappable control; sets are 405, subscriptions refused.
+  `Midi2DeviceManager` reassembles SysEx7 UMP (`khensu/midi/UmpSysEx.h`) only
+  while it is enabled; the toggle is persisted with the macro mappings and is
+  off by default.
+- **Theme-reactive shared palette (STU-6).** `khensu::ui::Palette` holds the
+  current theme's tokens (Dark, High-Contrast, Light, mirroring
+  `KhensuTheme`); `Palette::setTheme` swaps them on the message thread, bumps
+  `Palette::version()` and calls listeners (`PaletteListener`, RAII, last
+  member). `KhensuTheme::setTheme` calls it first; the plugin's
+  `PluginLookAndFeel::setPalette` does too. ChartKit views and radars follow
+  it until given their own `setStyle()` / `setColours()`; `KhensuKnob`
+  re-tints through a listener. The audio thread never reads `Palette`.
+- **Ctrl+K content search (STU-7).** `ui/shared/PaletteSearch.h` ranks
+  commands, Analysis cards, open findings and genres (content kinds from two
+  letters, word-start or contiguous matches only, at most 5 each, grouped
+  with the best group first). `ICommandPaletteHost` supplies the lists and the
+  actions (`revealCard`, `openFinding`, `showGenre` - which opens References
+  on the genre and never changes the session's target).
+- **Pin as A / B (STU-8).** `IPlayback::setAbReferencePath` pins the A side
+  (empty = the original); B is `setAbProcessedPath`. A pinned A is measured
+  once and B is matched to it (both muted until measured). Pins are derived
+  from playback state (`MixMasterEngine/AbPins.h`), cleared by
+  `resetForSession`, and never change the accepted version or the fix check.
+
+- **Transport monitoring (STU-5).** `khensu/dsp/MonitorSolo.h` (shared with
+  the plugin; Mono, Side, Sub via a 120 Hz Linkwitz-Riley low-pass, band
+  solos, Dim -20 dB ramped). `PlaybackEngine`: decks -> AbMixer ->
+  LivePreviewStage -> FadeGate (meter tap) -> MonitorStage -> device, so the
+  meters read the program and offline paths never hear monitoring.
+  `IPlayback::setMonitorMode` / `setMonitorDim`; the badge text is
+  `ui/shared/MonitorStateText.h`.
+- **Live preview (STU-9).** `ChainStage::isCausalInPlace()` marks the stages
+  that run block-wise; `dsp::RealtimeChain` runs them exactly as the offline
+  render does (Gain, filters, shelves, Compressor, TransientShaper,
+  StereoWidener, MidSideProcessor, NoiseGate) and runs causal stand-ins,
+  each planned as "substituted" with a note (STU-18, the plugin's
+  `RealtimeStages.h`): Limiter -> sample-peak lookahead limiter;
+  BassMonoMaker -> LR4 `RealtimeBassMono` at the same crossover;
+  TapeSaturation -> `RealtimeSaturation` without oversampling; DynamicEQ ->
+  a self-keyed dynamic `RealtimeEqBand`; DeEsser -> a dynamic bell over
+  f/1.6..1.6f (8 ms); Exciter -> the same shaping scaled to a 0.5 s running
+  RMS. Stand-ins read the offline stage's clamped values through
+  `resolveChainStageParams()`. Only the multiband compressor and denoise are
+  skipped (render only). Output is loudness-matched to its input (~0.8 s, +/-18 dB,
+  carried between chains). `session/LivePreviewStage` publishes chains from
+  the message thread through an atomic slot, crossfades 30 ms and retires old
+  chains lock-free. A surface takes `ui/shared/LivePreviewToggle` and calls
+  `chainChanged()`; one owner at a time (`IPlayback::setLivePreviewChain`).
+  Wired to the EQ editor; `services/EqBandChain.h` is the one band -> chain
+  conversion for the preview and `applyEqBands`. Saving always goes through
+  `renderVersion` and the fix check.
 
 ## Design system — Aurora Glass
 
@@ -416,10 +649,13 @@ goes through the shared helpers.
   service (transport sync, parameter polls, its own deep-analysis calls) but
   never owns the service's lifecycle — see `architecture.md`.
 - Builds as VST3, CLAP and an ARA2 VST3 (AU on macOS).
-- Five editor tabs (`Ctrl+1`-`Ctrl+5`): Suggest (suggestions + Apply top
-  fix, Hooks / Brain), DSP (Chain, EQ curve), Plugins (Mixer chain and
-  **Hosted** - `HostedChainMiniPanel`), **Mix** (the multi-instance hub) and
-  Chat. The Hosted view
+- Six sections in one segmented row (`ui/PluginSegmentedTabs`, the
+  desktop's SegmentedControl look, `Ctrl+1`-`Ctrl+6`; VIS-9): Issues
+  (suggestions, Apply top fix / Apply all safe fixes, Hooks / Brain), DSP
+  (Chain, EQ curve), Plugins (Mixer chain and **Hosted** -
+  `HostedChainMiniPanel`), Mix Hub (the multi-instance hub), Chat and
+  Reference (added last, so saved tab indices keep their meaning). Labels are
+  `TRANS()`. The Hosted view
   adds third-party `.vst3`s via a file chooser (loaded through
   `findAllTypesForFile`) and lists each slot with bypass, wet mix and remove.
   Hosted instances are re-prepared on sample-rate/block-size changes, and the
@@ -441,7 +677,62 @@ goes through the shared helpers.
   double-click or Enter for an inline value editor, Alt/Option-click default;
   a popup only when the knob is too small to draw its value) and `StudioStyle.h` (type scale 28/17/13/11, tabular
   figures via `numberFont()`).
-- **Views and state (UI-8/UI-9, state v3).** Compact 560x380 or Small /
+- **Reference track and monitoring (ENH-10).** `reference/ReferenceTrack`
+  decodes and resamples a reference on `PluginWorkerPool` (never the audio
+  thread) and hands it over by an atomic pointer swap; it plays
+  loudness-matched (integrated or short-term, `reference/LoudnessStats`) with
+  a 15 ms crossfade, and never in an offline render. `monitor/MonitorSolo`:
+  Off / Mono / Side / Sub < 120 Hz (Linkwitz-Riley) / Low / Mid / High
+  (250 Hz / 4 kHz), 15 ms crossfade, not a parameter, not saved, bypassed
+  offline. Both run last in the chain, so meters, the Mix Hub and live
+  analysis see the track itself. `ui/ReferencePanel` compares loudness,
+  range, crest, peak and the 24-band tonal balance.
+- **Apply all safe fixes (ENH-10).** `FixBatch` applies every safe finding
+  that maps onto the built-in DSP as one undo step (the live fix holds
+  several findings; Amount scales them all) and lists the skipped ones with
+  the reason: needs judgement, would overwrite an earlier fix, or keys the
+  DSP cannot render.
+- **Mix Hub Unmask (ENH-10).** A request / status mailbox in `MixHub` lets one
+  instance ask another to cut a masked band: the target applies it on its
+  reaper timer as a bell (1-4 dB by how close the two levels are, Q from the
+  band, EQ band 6 down to 1 - saving and restoring the band's kind, channel
+  mode and dynamic switch); its own undo removes it, **Remove cut**
+  restores the band, and it says so when no band is free. In-process only.
+- **High contrast (VIS-9).** View > High contrast switches the editor to the
+  KhensuTheme High-Contrast values (`khensuUiPalette`, per instance) and
+  re-colours every open Copilot editor, and sets the shared `Palette` so the
+  shared-core widgets (meters, knob, EQ curve) follow it (STU-6).
+- **Processing parity (STU-10, state v5).** Six EQ bands, each with a shape
+  (`eqN_type`, unchanged 3-entry list) and a separate `eqN_kind` (Shape /
+  Notch / High-pass / Low-pass - a new parameter so hosts' normalised
+  automation of the old list does not shift), `eqN_mode` (stereo / mid /
+  side) and a self-keyed dynamic mode (`eqN_dyn_*`); then transient shaper,
+  saturation, bass mono and width after the compressor (`ts_*`, `sat_*`,
+  `bassmono_*`, `width_*`). The 71 new parameters are appended after
+  `fix_amount`; IDs in `mixerchain::kEqBandParamIds` / `DspParamIdsV5`. The
+  stages are `khensu/dsp/RealtimeStages.h` (header-only, allocate only in
+  `prepare()`, no latency); a stereo static band is bit-identical to v4.
+  v4 -> v5 is a no-op migration (new parameters at their defaults).
+  `RecommendationDspMapper` now maps transient, saturation, width (solved from
+  the finding's width evidence; a reading clamped at 1 is solved from the
+  "Mid/side balance" evidence as 1 - b, STU-16) and bass mono
+  (`sub_bass_too_wide` -> 120 Hz),
+  and the masking plan onto a dynamic band keyed on its own track. Still not
+  mapped: denoise, reverb, polarity / delay, and findings with no parameters.
+  The DSP section's "More stages" view holds bands 4-6, a band selector for
+  the per-band kind / channels / dynamic controls, and the new stages.
+  Loading a recipe (STU-17, `mixerchain::mapRecipeToDsp`, behind
+  `approximateDspParams`) pools every EQ move, ranks them by size (a dynamic
+  move by its range, a filter or notch as 6 dB) into bands 1-6, uses the
+  HPF / LPF for gain-less cuts, and maps dynamic / M-S moves, compressor,
+  limiter, de-esser, saturation (drive 100% = 18 dB), transient (100% =
+  12 dB), width and bass mono; the first plugin to set a stage wins. What
+  can't map (no stage, no readable settings, past six bands, stage already
+  set) is listed in the apply strip (`copilot::recipeBatch`), with Undo; a
+  recipe that maps nothing leaves the chain as it was.
+- **Views and state (UI-8/UI-9, state v4; v5 above).** State v4 adds
+  `khensuReferencePath`, `khensuReferenceMatch` and `khensuUiPalette` (no-op
+  migration from v3). Compact 560x380 or Small /
   Medium / Large (720x540 / 960x720 / 1280x960); the view, size and tab, the
   program and preset name, and the held A/B snapshot are root properties of the
   plugin state (`khensuView*`, `khensuProgram`, `khensuPresetName`,

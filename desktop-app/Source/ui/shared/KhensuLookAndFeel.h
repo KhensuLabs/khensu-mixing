@@ -61,6 +61,17 @@ class KhensuLookAndFeel final : public juce::LookAndFeel_V4 {
     static void drawGlassPanel(juce::Graphics& g, juce::Rectangle<int> bounds, GlassPanelVariant variant,
                                const juce::Image& appBackdrop, juce::Rectangle<int> backdropSource);
 
+    /// LG-9: soft interactive cursor-tracking specular sheen along a glass
+    /// surface and its curved rim. Call on hovered panels, nav pills, buttons.
+    static void drawCursorSheen(juce::Graphics& g, juce::Rectangle<float> bounds, float cornerRadius,
+                                juce::Point<float> cursorPos, float strength = 1.0f);
+
+    /// LG-10: frosted liquid-glass rail for full-height/full-width chrome
+    /// (sidebar, transport bar) refracting the live smoke backdrop.
+    static void drawFrostedRail(juce::Graphics& g, juce::Rectangle<int> bounds, juce::Rectangle<int> appBounds,
+                                juce::Rectangle<int> regionInAppSpace, bool topEdgeHighlight = false,
+                                bool rightEdgeHighlight = false);
+
     /// Pseudo-3D extruded bar (front/top/side faces via flat 2D paths - no
     /// OpenGL) for small heatmap/ridge strips like the loudness and dynamics
     /// section charts. `depth` is the isometric offset in pixels.

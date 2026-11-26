@@ -112,7 +112,7 @@ class AnalysisService final : public IAnalysisHub {
     /// ScoreWeightProfile genre id ("default" for the stock weights); empty
     /// means the session genre's profile.
     const ResultDerivedData& derivedResultData(const std::string& weightProfileId = {}) override;
-    /// Merges a masking analysis result (run on-demand from StemMaskingPanel)
+    /// Merges a masking analysis result (run on demand from the Stems card)
     /// into the current result and rebroadcasts it, so the recommendations
     /// regenerate with MaskingRecommender's output included.
     void setStemMaskingResult(const MaskingSummary& masking) override;

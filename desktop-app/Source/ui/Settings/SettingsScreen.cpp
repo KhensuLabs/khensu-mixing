@@ -2,6 +2,7 @@
 #include "SettingsScreen.h"
 #include "../shared/ScreenHeader.h"
 #include "../../IAppController.h"
+#include "../../midi/MacroControlRouter.h"
 #include "../shared/KhensuTheme.h"
 #include "../shared/ModelDetailsDialog.h"
 #include "../shared/ServiceErrorHint.h"
@@ -12,6 +13,10 @@
 #include <khensu/common/AppPaths.h>
 #include <khensu/recommendations/MonitoringReach.h>
 #include "../shared/MonitoringText.h"
+#include "DisplayPrefs.h"
+#include "ServiceDiagnosticsText.h"
+#include "../shared/ReducedMotion.h"
+#include "../shared/LiquidSmokeBackdrop.h"
 #include <khensu/ipc/HttpServiceBridge.h>
 #include <khensu/ipc/generated/ApiSchema.h>
 
@@ -128,12 +133,27 @@ void SettingsScreen::applyThemeColours()
     consentStatusLabel_.setColour(juce::Label::textColourId, KhensuTheme::textTertiary);
     accelSectionLabel_.setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
     monitoringSectionLabel_.setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
-    for (auto* sec : {&privacySection_, &aiSection_, &modelsSection_, &audioSection_, &dataSection_, &advancedSection_}) {
+    for (auto* sec : {&displaySection_, &privacySection_, &aiSection_, &modelsSection_, &audioSection_, &dataSection_,
+                      &advancedSection_}) {
         sec->title.setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
         sec->description.setColour(juce::Label::textColourId, KhensuTheme::textTertiary);
     }
     monitoringNote_.setColour(juce::Label::textColourId, KhensuTheme::textTertiary);
     accelStatus_.setColour(juce::Label::textColourId, KhensuTheme::textTertiary);
+    // BUG-6 / AUTO-4.
+    themeLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
+    reduceMotionToggle_.setColour(juce::ToggleButton::textColourId, KhensuTheme::textPrimary);
+    ambientBackdropToggle_.setColour(juce::ToggleButton::textColourId, KhensuTheme::textPrimary);
+    displayNote_.setColour(juce::Label::textColourId, KhensuTheme::textTertiary);
+    for (auto* l : {&cacheStatusLabel_, &registryStatusLabel_, &genreExamplesLabel_})
+        l->setColour(juce::Label::textColourId, KhensuTheme::textTertiary);
+    serviceDiagTitle_.setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
+    serviceDiagRefreshButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::bgOverlay);
+    serviceDiagRefreshButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
+    serviceDiagText_.setColour(juce::TextEditor::textColourId, KhensuTheme::textSecondary);
+    serviceDiagText_.setColour(juce::TextEditor::backgroundColourId, KhensuTheme::bgSurface);
+    serviceDiagText_.setColour(juce::TextEditor::outlineColourId, KhensuTheme::borderSubtle);
+    serviceDiagText_.applyColourToAllText(KhensuTheme::textSecondary);
 }
 
 void SettingsScreen::refreshAccelStatus()
@@ -209,6 +229,7 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
     viewport_.setScrollBarsShown(true, false);
     viewport_.setTitle(TRANS("Settings"));
     addAndMakeVisible(viewport_);
+    setupSection(displaySection_, TRANS("Display"), TRANS("How Khensu looks: the theme, and how much it moves."));
     setupSection(privacySection_, TRANS("Privacy & online"),
                  TRANS("What may leave this computer. Audio processing always stays local."));
     setupSection(aiSection_, TRANS("AI providers"), TRANS("Which model the copilot uses, its key, and what it may see."));
@@ -216,8 +237,43 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
                  TRANS("The optional models installed, and the analysis engine."));
     setupSection(audioSection_, TRANS("Audio & MIDI"),
                  TRANS("What you listen on, monitor calibration and MIDI / OSC control."));
-    setupSection(dataSection_, TRANS("Data"), TRANS("Backups, the feedback outbox, diagnostics and caches."));
+    setupSection(dataSection_, TRANS("Data"),
+                 TRANS("Backups, the feedback outbox, caches, what the engine holds, and diagnostics."));
     setupSection(advancedSection_, TRANS("Advanced"), TRANS("Rendering engine and where ML models run."));
+    // BUG-6: Display. The ids follow KhensuTheme::Theme (Dark, HighContrast, Light) + 1.
+    themeLabel_.setFont(KhensuTheme::labelFont(type::caption));
+    content_.addAndMakeVisible(themeLabel_);
+    themeCombo_.addItem(TRANS("Dark"), 1);
+    themeCombo_.addItem(TRANS("High contrast"), 2);
+    themeCombo_.addItem(TRANS("Light"), 3);
+    themeCombo_.setTitle(TRANS("Theme"));
+    themeCombo_.setTooltip(TRANS("Applies at once and is kept for the next launch. Ctrl+K's Cycle theme changes it too."));
+    themeCombo_.onChange = [this] {
+        const int id = themeCombo_.getSelectedId();
+        if (id < 1 || id > 3) return;
+        const auto theme = static_cast<KhensuTheme::Theme>(id - 1);
+        if (theme != KhensuTheme::currentTheme()) KhensuTheme::setTheme(theme); // themeChanged() saves it
+    };
+    content_.addAndMakeVisible(themeCombo_);
+    reduceMotionToggle_.setTooltip(TRANS("Nothing moves on its own: transitions, morphs and sliding notices jump "
+                                         "to their end. Until you choose, it follows Windows' Show animations."));
+    reduceMotionToggle_.onClick = [this] {
+        ui::motion::setReduced(reduceMotionToggle_.getToggleState()); // saved by ReducedMotion
+    };
+    content_.addAndMakeVisible(reduceMotionToggle_);
+    ambientBackdropToggle_.setTooltip(TRANS("Slowly drifting dark liquid smoke behind glass panels. Pauses "
+                                            "automatically when Reduce motion is on or the window is inactive."));
+    ambientBackdropToggle_.onClick = [this] {
+        settings_.ambientBackdrop = ambientBackdropToggle_.getToggleState();
+        LiquidSmokeBackdrop::setAmbientMotionEnabled(settings_.ambientBackdrop);
+        writeToDisk();
+    };
+    content_.addAndMakeVisible(ambientBackdropToggle_);
+    displayNote_.setFont(KhensuTheme::labelFont(type::caption));
+    displayNote_.setText(TRANS("High contrast uses a black background and brighter accents."),
+                         juce::dontSendNotification);
+    content_.addAndMakeVisible(displayNote_);
+
     for (auto* t : {&master_, &acoustid_, &llm_, &downloads_, &hub_, &updateCheck_, &lanListening_, &referenceIndex_}) {
         t->onClick = [this] {
             writeToDisk();
@@ -225,12 +281,12 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
         };
         content_.addAndMakeVisible(t);
     }
-    keyLabel_.setFont(KhensuTheme::labelFont(11.0f));
+    keyLabel_.setFont(KhensuTheme::labelFont(type::caption));
     content_.addAndMakeVisible(keyLabel_);
     keyField_.onFocusLost = [this] { writeToDisk(); };
     keyField_.onReturnKey = [this] { writeToDisk(); };
     content_.addAndMakeVisible(keyField_);
-    restartNote_.setFont(KhensuTheme::labelFont(10.0f));
+    restartNote_.setFont(KhensuTheme::labelFont(type::caption));
     restartNote_.setText(TRANS("Model-download changes take effect after a restart."), juce::dontSendNotification);
     content_.addAndMakeVisible(restartNote_);
 
@@ -256,7 +312,7 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
 
     // Per-provider LLM API key (audit F1). Masked; the field follows the
     // selected provider and each provider's key is stored in its own slot.
-    llmKeyLabel_.setFont(KhensuTheme::labelFont(11.0f));
+    llmKeyLabel_.setFont(KhensuTheme::labelFont(type::caption));
     content_.addAndMakeVisible(llmKeyLabel_);
     llmKeyField_.setPasswordCharacter((juce::juce_wchar)0x2022); // bullet mask
     llmKeyField_.onFocusLost = [this] {
@@ -268,7 +324,7 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
         writeToDisk();
     };
     content_.addAndMakeVisible(llmKeyField_);
-    llmKeyNote_.setFont(KhensuTheme::labelFont(10.0f));
+    llmKeyNote_.setFont(KhensuTheme::labelFont(type::caption));
     llmKeyNote_.setText(TRANS("Stored locally in the OS credential store when available; settings.json keeps only "
                         "a reference. Leave blank to use an environment variable instead."),
                         juce::dontSendNotification);
@@ -280,7 +336,7 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
         writeToDisk();
     };
     content_.addAndMakeVisible(shareContextToggle_);
-    consentStatusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    consentStatusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     content_.addAndMakeVisible(consentStatusLabel_);
     revokeConsentButton_.onClick = [this] {
         controller_.cloudChat().revokeCloudChatConsent();
@@ -300,7 +356,7 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
     };
     content_.addAndMakeVisible(autoUpdate_);
 
-    settingsFallbackNote_.setFont(KhensuTheme::labelFont(10.0f));
+    settingsFallbackNote_.setFont(KhensuTheme::labelFont(type::caption));
     settingsFallbackNote_.setJustificationType(juce::Justification::centredLeft);
     content_.addAndMakeVisible(settingsFallbackNote_);
 
@@ -330,16 +386,37 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
     forgetGenreExamplesButton_.onClick = [this] { forgetGenreExamples(); };
     content_.addAndMakeVisible(forgetGenreExamplesButton_);
 
+    // AUTO-4: what the service holds, filled by refreshServiceDiagnostics().
+    for (auto* l : {&cacheStatusLabel_, &registryStatusLabel_, &genreExamplesLabel_}) {
+        l->setFont(KhensuTheme::labelFont(type::caption));
+        l->setText(TRANS("Checking..."), juce::dontSendNotification);
+        content_.addAndMakeVisible(l);
+    }
+    serviceDiagTitle_.setFont(KhensuTheme::uiFont(type::body, juce::Font::bold));
+    content_.addAndMakeVisible(serviceDiagTitle_);
+    serviceDiagRefreshButton_.setTooltip(TRANS("Ask the analysis engine again for its memory, job queues, "
+                                               "security events, cache and model registry."));
+    serviceDiagRefreshButton_.onClick = [this] { refreshServiceDiagnostics(); };
+    content_.addAndMakeVisible(serviceDiagRefreshButton_);
+    serviceDiagText_.setMultiLine(true, false);
+    serviceDiagText_.setReadOnly(true);
+    serviceDiagText_.setScrollbarsShown(true);
+    serviceDiagText_.setCaretVisible(false);
+    serviceDiagText_.setFont(KhensuTheme::monoFont(type::caption));
+    serviceDiagText_.setTitle(TRANS("Service diagnostics"));
+    serviceDiagText_.setTooltip(TRANS("The engine's memory, job queues and security events. Nothing is sent anywhere."));
+    content_.addAndMakeVisible(serviceDiagText_);
+
     watermarkButton_.setEnabled(false); // enabled once status resolves
     watermarkButton_.onClick = [this] { startWatermarkPrecache(); };
     content_.addAndMakeVisible(watermarkButton_);
-    watermarkStatus_.setFont(KhensuTheme::labelFont(10.0f));
+    watermarkStatus_.setFont(KhensuTheme::labelFont(type::caption));
     watermarkStatus_.setText(TRANS("Watermark models: checking..."), juce::dontSendNotification);
     content_.addAndMakeVisible(watermarkStatus_);
 
-    midiSectionLabel_.setFont(KhensuTheme::uiFont(13.0f, juce::Font::bold));
+    midiSectionLabel_.setFont(KhensuTheme::uiFont(type::body, juce::Font::bold));
     content_.addAndMakeVisible(midiSectionLabel_);
-    midiBackendLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    midiBackendLabel_.setFont(KhensuTheme::labelFont(type::caption));
     content_.addAndMakeVisible(midiBackendLabel_);
     midiInputCombo_.setTextWhenNothingSelected(TRANS("No MIDI input selected"));
     midiInputCombo_.onChange = [this] {
@@ -366,12 +443,22 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
     macroMappingButton_.setTooltip(TRANS("Map MIDI controls or OSC addresses to the vocal macros (learn mode)."));
     macroMappingButton_.onClick = [this] { controller_.shell().showMacroMappingWindow(); };
     content_.addAndMakeVisible(macroMappingButton_);
-    midiEventLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    midiCiToggle_.setTooltip(TRANS("Answer MIDI-CI discovery and Property Exchange on the connected MIDI port, so a "
+                                   "MIDI 2.0 tool can read the mappable controls, their values and mappings (read-only). "
+                                   "MIDI 1.0 control mapping works the same either way."));
+    midiCiToggle_.setToggleState(controller_.shell().macroRouter().midiCiEnabled(), juce::dontSendNotification);
+    midiCiToggle_.onClick = [this] {
+        auto& router = controller_.shell().macroRouter();
+        router.setMidiCiEnabled(midiCiToggle_.getToggleState());
+        router.save();
+    };
+    content_.addAndMakeVisible(midiCiToggle_);
+    midiEventLabel_.setFont(KhensuTheme::labelFont(type::caption));
     midiEventLabel_.setText(TRANS("No MIDI messages received."), juce::dontSendNotification);
     content_.addAndMakeVisible(midiEventLabel_);
 
 #if JUCE_WINDOWS
-    renderingSectionLabel_.setFont(KhensuTheme::uiFont(13.0f, juce::Font::bold));
+    renderingSectionLabel_.setFont(KhensuTheme::uiFont(type::body, juce::Font::bold));
     content_.addAndMakeVisible(renderingSectionLabel_);
     gpuRenderingToggle_.onClick = [this] {
         settings_.useGpuRendering = gpuRenderingToggle_.getToggleState();
@@ -379,7 +466,7 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
         applyRenderingEnginePreference();
     };
     content_.addAndMakeVisible(gpuRenderingToggle_);
-    renderingNote_.setFont(KhensuTheme::labelFont(10.0f));
+    renderingNote_.setFont(KhensuTheme::labelFont(type::caption));
     renderingNote_.setText(TRANS("Turn off only if you see rendering glitches or artifacts - takes effect immediately."),
                            juce::dontSendNotification);
     content_.addAndMakeVisible(renderingNote_);
@@ -387,7 +474,7 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
 
     // CE-PLT-1: ML acceleration preference + live readout.
     // NEW-10: what the user listens on.
-    monitoringSectionLabel_.setFont(KhensuTheme::uiFont(13.0f, juce::Font::bold));
+    monitoringSectionLabel_.setFont(KhensuTheme::uiFont(type::body, juce::Font::bold));
     content_.addAndMakeVisible(monitoringSectionLabel_);
     for (int i = 0; i < (int)std::size(monitoring::kProfiles); ++i)
         monitoringCombo_.addItem(monitoring_text::label(monitoring::kProfiles[i].id), i + 1);
@@ -401,7 +488,7 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
         writeToDisk();
     };
     content_.addAndMakeVisible(monitoringCombo_);
-    monitoringNote_.setFont(KhensuTheme::labelFont(10.0f));
+    monitoringNote_.setFont(KhensuTheme::labelFont(type::caption));
     monitoringNote_.setText(TRANS("Typical limits for each kind, not a measurement of your speakers."),
                             juce::dontSendNotification);
     content_.addAndMakeVisible(monitoringNote_);
@@ -410,7 +497,7 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
     componentsPanel_ = std::make_unique<ComponentsPanel>(controller_); // FEAT-10
     content_.addAndMakeVisible(*componentsPanel_);
 
-    accelSectionLabel_.setFont(KhensuTheme::uiFont(13.0f, juce::Font::bold));
+    accelSectionLabel_.setFont(KhensuTheme::uiFont(type::body, juce::Font::bold));
     content_.addAndMakeVisible(accelSectionLabel_);
     accelCombo_.addItem(TRANS("Auto (GPU when available)"), 1);
     accelCombo_.addItem(TRANS("CPU only"), 2);
@@ -424,11 +511,11 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
         refreshAccelStatus();
     };
     content_.addAndMakeVisible(accelCombo_);
-    accelStatus_.setFont(KhensuTheme::labelFont(10.0f));
+    accelStatus_.setFont(KhensuTheme::labelFont(type::caption));
     content_.addAndMakeVisible(accelStatus_);
 
     // Automatic daily backup (audit DATA-02).
-    backupSectionLabel_.setFont(KhensuTheme::uiFont(13.0f, juce::Font::bold));
+    backupSectionLabel_.setFont(KhensuTheme::uiFont(type::body, juce::Font::bold));
     content_.addAndMakeVisible(backupSectionLabel_);
     scheduledBackupToggle_.onClick = [this] {
         settings_.scheduledBackup = scheduledBackupToggle_.getToggleState();
@@ -436,7 +523,7 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
         if (settings_.scheduledBackup) controller_.sessions().runScheduledBackupIfDue();
     };
     content_.addAndMakeVisible(scheduledBackupToggle_);
-    backupNote_.setFont(KhensuTheme::labelFont(10.0f));
+    backupNote_.setFont(KhensuTheme::labelFont(type::caption));
     backupNote_.setText(TRANS("Keeps the newest 7 daily copies in the app data folder's backups directory."),
                         juce::dontSendNotification);
     content_.addAndMakeVisible(backupNote_);
@@ -456,7 +543,7 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
     content_.addAndMakeVisible(diagnosticsBundleButton_);
 
     // Undelivered-events diagnostics (audit ARCH-03).
-    outboxStatusLabel_.setFont(KhensuTheme::labelFont(11.0f));
+    outboxStatusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     outboxStatusLabel_.setText(TRANS("Event sync: checking..."), juce::dontSendNotification);
     content_.addAndMakeVisible(outboxStatusLabel_);
     outboxDetailsButton_.onClick = [this] {
@@ -503,6 +590,7 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
 
     controller_.shell().midi2DeviceManager().addListener(*this);
     loadFromDisk();
+    loadDisplayPrefs(); // BUG-6: the saved theme, applied at launch (this screen is built eagerly)
     refreshMidiControls();
     if (settings_.midiInputIdentifier.isNotEmpty() &&
         !controller_.shell().midi2DeviceManager().connectInput(settings_.midiInputIdentifier)) {
@@ -512,6 +600,7 @@ SettingsScreen::SettingsScreen(IAppController& c, std::string baseUrl, juce::Fil
     refreshWatermarkStatus();
     refreshAccelStatus();
     if (componentsPanel_ != nullptr) componentsPanel_->refresh();
+    refreshServiceDiagnostics();
 }
 
 SettingsScreen::~SettingsScreen()
@@ -542,6 +631,8 @@ void SettingsScreen::loadFromDisk()
 #endif
     scheduledBackupToggle_.setToggleState(settings_.scheduledBackup, juce::dontSendNotification);
     perfTracesToggle_.setToggleState(settings_.perfTraces, juce::dontSendNotification);
+    ambientBackdropToggle_.setToggleState(settings_.ambientBackdrop, juce::dontSendNotification);
+    LiquidSmokeBackdrop::setAmbientMotionEnabled(settings_.ambientBackdrop);
     accelCombo_.setSelectedId(settings_.accelMode == "cpu" ? 2 : (settings_.accelMode == "gpu" ? 3 : 1),
                               juce::dontSendNotification);
     for (int i = 0; i < (int)std::size(monitoring::kProfiles); ++i)
@@ -774,6 +865,7 @@ void SettingsScreen::writeToDisk()
         s.moonshotApiKey = mine.moonshotApiKey;
         s.midiInputIdentifier = mine.midiInputIdentifier;
         s.useGpuRendering = mine.useGpuRendering;
+        s.ambientBackdrop = mine.ambientBackdrop;
         s.scheduledBackup = mine.scheduledBackup;
         s.perfTraces = mine.perfTraces;
         s.accelMode = mine.accelMode;
@@ -924,6 +1016,7 @@ void SettingsScreen::clearAnalysisCache()
             if (removed.is_ok()) {
                 button.setButtonText(TRANS("Cache cleared") + " (" + juce::String(removed.value()) + ")");
                 button.setTooltip(juce::String(removed.value()) + " " + TRANS("cached results deleted. Click to clear again."));
+                self->refreshServiceDiagnostics(); // the size beside it
             } else {
                 button.setButtonText(TRANS("Clear failed - retry"));
                 button.setTooltip(serviceErrorLine(removed.error()));
@@ -942,12 +1035,95 @@ void SettingsScreen::forgetGenreExamples()
             if (self == nullptr) return;
             auto& button = self->forgetGenreExamplesButton_;
             button.setEnabled(true);
-            if (removed.is_ok())
+            if (removed.is_ok()) {
                 button.setButtonText(TRANS("Genre examples forgotten") + " (" + juce::String(removed.value()) + ")");
-            else {
+                self->refreshServiceDiagnostics(); // the counts beside it
+            } else {
                 button.setButtonText(TRANS("Forget failed - retry"));
                 button.setTooltip(serviceErrorLine(removed.error()));
             }
+        });
+    });
+}
+
+void SettingsScreen::loadDisplayPrefs()
+{
+    const auto prefs = display_prefs::load(configDir_);
+    reduceMotionToggle_.setToggleState(ui::motion::reduced(), juce::dontSendNotification);
+    if (prefs.theme.has_value() && *prefs.theme != KhensuTheme::currentTheme())
+        KhensuTheme::setTheme(*prefs.theme); // the listener re-syncs the combo
+    themeCombo_.setSelectedId(static_cast<int>(KhensuTheme::currentTheme()) + 1, juce::dontSendNotification);
+}
+
+void SettingsScreen::saveDisplayPrefs() const
+{
+    display_prefs::Prefs prefs;
+    prefs.theme = KhensuTheme::currentTheme();
+    display_prefs::save(configDir_, prefs);
+}
+
+void SettingsScreen::themeChanged()
+{
+    // Whatever changed the theme (this combo, Ctrl+K's cycle), it is the user's choice: keep it.
+    themeCombo_.setSelectedId(static_cast<int>(KhensuTheme::currentTheme()) + 1, juce::dontSendNotification);
+    saveDisplayPrefs();
+}
+
+void SettingsScreen::visibilityChanged()
+{
+    if (isShowing()) refreshServiceDiagnostics(); // AUTO-4: current numbers each time it opens
+}
+
+void SettingsScreen::refreshServiceDiagnostics()
+{
+    if (serviceDiagInFlight_) return;
+    serviceDiagInFlight_ = true;
+    serviceDiagRefreshButton_.setEnabled(false);
+    juce::Component::SafePointer<SettingsScreen> self(this);
+    controller_.runInBackground([self, baseUrl = baseUrl_] {
+        ipc::HttpServiceBridge bridge(baseUrl);
+        auto memory = bridge.diagnosticsMemory();
+        auto queues = bridge.diagnosticsQueues();
+        auto security = bridge.diagnosticsSecurityEvents();
+        auto cache = bridge.analysisCacheStats();
+        auto registry = bridge.modelRegistry();
+        auto genres = bridge.genreExamplesSummary();
+        juce::MessageManager::callAsync([self, memory, queues, security, cache, registry, genres] {
+            if (self == nullptr) return;
+            namespace sd = service_diagnostics;
+            self->serviceDiagInFlight_ = false;
+            self->serviceDiagRefreshButton_.setEnabled(true);
+            const auto unreachable = [](const ipc::BridgeError& e) { return serviceErrorLine(e); };
+
+            self->cacheStatusLabel_.setText(cache.is_ok() ? sd::cacheLine(cache.value())
+                                                          : TRANS("Analysis cache:") + " " + unreachable(cache.error()),
+                                            juce::dontSendNotification);
+            self->registryStatusLabel_.setText(registry.is_ok()
+                                                   ? sd::registryLine(registry.value())
+                                                   : TRANS("Model registry:") + " " + unreachable(registry.error()),
+                                               juce::dontSendNotification);
+            self->registryStatusLabel_.setTooltip(registry.is_ok() ? sd::registryTooltip(registry.value())
+                                                                   : juce::String());
+            self->genreExamplesLabel_.setText(genres.is_ok()
+                                                  ? sd::genreExamplesLine(genres.value())
+                                                  : TRANS("Genre examples:") + " " + unreachable(genres.error()),
+                                              juce::dontSendNotification);
+
+            juce::StringArray lines;
+            if (memory.is_ok())
+                lines.addArray(sd::memoryLines(memory.value()));
+            else
+                lines.add(TRANS("Memory:") + " " + unreachable(memory.error()));
+            if (queues.is_ok())
+                lines.addArray(sd::queueLines(queues.value()));
+            else
+                lines.add(TRANS("Job queues:") + " " + unreachable(queues.error()));
+            if (security.is_ok())
+                lines.addArray(sd::securityLines(security.value()));
+            else
+                lines.add(TRANS("Security events:") + " " + unreachable(security.error()));
+            lines.add(TRANS("Checked at") + " " + juce::Time::getCurrentTime().formatted("%H:%M:%S"));
+            self->serviceDiagText_.setText(lines.joinIntoString("\n"), false);
         });
     });
 }
@@ -965,9 +1141,9 @@ void SettingsScreen::paint(juce::Graphics& g)
 
 void SettingsScreen::setupProvenanceControls()
 {
-    provenanceSectionLabel_.setFont(KhensuTheme::uiFont(13.0f, juce::Font::bold));
+    provenanceSectionLabel_.setFont(KhensuTheme::uiFont(type::body, juce::Font::bold));
     for (auto* l : {&provenanceCertLabel_, &provenanceKeyLabel_, &provenanceNote_})
-        l->setFont(KhensuTheme::labelFont(10.0f));
+        l->setFont(KhensuTheme::labelFont(type::caption));
     provenanceNote_.setText(TRANS("Used to sign delivered files with C2PA content credentials. The key never leaves "
                                   "this machine; a self-signed certificate signs but shows as untrusted."),
                             juce::dontSendNotification);
@@ -1011,9 +1187,9 @@ void SettingsScreen::browseProvenanceFile(bool key)
 void SettingsScreen::setupSection(Section& sec, const juce::String& title, const juce::String& description)
 {
     sec.title.setText(title, juce::dontSendNotification);
-    sec.title.setFont(KhensuTheme::uiFont(15.0f, juce::Font::bold));
+    sec.title.setFont(KhensuTheme::uiFont(type::subtitle, juce::Font::bold));
     sec.description.setText(description, juce::dontSendNotification);
-    sec.description.setFont(KhensuTheme::labelFont(11.0f));
+    sec.description.setFont(KhensuTheme::labelFont(type::caption));
     content_.addAndMakeVisible(sec.title);
     content_.addAndMakeVisible(sec.description);
 }
@@ -1082,6 +1258,18 @@ int SettingsScreen::layoutContent(int width)
         sec.description.setBounds(juce::Rectangle<int>(left, b.getY(), w, 16));
         b.removeFromTop(16 + 10);
     };
+
+    section(displaySection_); // BUG-6
+    {
+        auto themeRow = b.removeFromTop(26);
+        themeLabel_.setBounds(themeRow.removeFromLeft(60));
+        themeCombo_.setBounds(themeRow.removeFromLeft(200));
+        b.removeFromTop(6);
+    }
+    row(reduceMotionToggle_);
+    row(ambientBackdropToggle_);
+    displayNote_.setBounds(b.removeFromTop(16));
+    b.removeFromTop(4);
 
     section(privacySection_);
     row(master_);
@@ -1180,6 +1368,8 @@ int SettingsScreen::layoutContent(int width)
     macroMappingButton_.setBounds(midiRow.removeFromLeft(170));
     b.removeFromTop(4);
     midiEventLabel_.setBounds(b.removeFromTop(22));
+    b.removeFromTop(4);
+    midiCiToggle_.setBounds(b.removeFromTop(24).removeFromLeft(juce::jmin(520, b.getWidth())));
 
     section(dataSection_);
     backupSectionLabel_.setBounds(b.removeFromTop(22));
@@ -1197,10 +1387,35 @@ int SettingsScreen::layoutContent(int width)
     perfTracesToggle_.setBounds(diagRow.removeFromLeft(240));
     diagRow.removeFromLeft(8);
     diagnosticsBundleButton_.setBounds(diagRow.removeFromLeft(220));
-    diagRow.removeFromLeft(8);
-    clearCacheButton_.setBounds(diagRow.removeFromLeft(180));
     b.removeFromTop(6);
-    forgetGenreExamplesButton_.setBounds(b.removeFromTop(24).removeFromLeft(220));
+    // AUTO-4: the cache's size and the model registry beside Clear cache...
+    {
+        auto cacheRow = b.removeFromTop(24);
+        clearCacheButton_.setBounds(cacheRow.removeFromLeft(220));
+        cacheRow.removeFromLeft(10);
+        cacheStatusLabel_.setBounds(cacheRow);
+        auto registryRow = b.removeFromTop(18);
+        registryRow.removeFromLeft(230);
+        registryStatusLabel_.setBounds(registryRow);
+        b.removeFromTop(6);
+    }
+    // ...and the genre examples beside Forget.
+    {
+        auto forgetRow = b.removeFromTop(24);
+        forgetGenreExamplesButton_.setBounds(forgetRow.removeFromLeft(220));
+        forgetRow.removeFromLeft(10);
+        genreExamplesLabel_.setBounds(forgetRow);
+        b.removeFromTop(10);
+    }
+    {
+        auto titleRow = b.removeFromTop(24);
+        serviceDiagTitle_.setBounds(titleRow.removeFromLeft(180));
+        titleRow.removeFromLeft(8);
+        serviceDiagRefreshButton_.setBounds(
+            titleRow.removeFromLeft(90).withSizeKeepingCentre(90, KhensuTheme::buttonHSmall));
+        b.removeFromTop(4);
+        serviceDiagText_.setBounds(b.removeFromTop(150).withWidth(juce::jmin(900, b.getWidth())));
+    }
 
     section(advancedSection_);
 #if JUCE_WINDOWS

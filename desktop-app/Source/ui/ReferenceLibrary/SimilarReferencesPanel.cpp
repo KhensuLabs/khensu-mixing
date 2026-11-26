@@ -45,12 +45,12 @@ SimilarReferencesPanel::SimilarReferencesPanel(IAppController& controller, std::
 {
     applyThemeColours();
     titleLabel_.setText(TRANS("Your references"), juce::dontSendNotification);
-    titleLabel_.setFont(KhensuTheme::labelFont(13.0f));
+    titleLabel_.setFont(KhensuTheme::labelFont(type::body));
     addAndMakeVisible(titleLabel_);
     addChildComponent(experimentalBadge_);
     experimentalBadge_.forFeature("similar_references");
 
-    statusLabel_.setFont(KhensuTheme::bodyFont(11.0f));
+    statusLabel_.setFont(KhensuTheme::bodyFont(type::caption));
     statusLabel_.setJustificationType(juce::Justification::topLeft);
     statusLabel_.setMinimumHorizontalScale(1.0f);
     statusLabel_.setText(TRANS("Add your reference tracks, then find the ones closest to this mix."),
@@ -91,7 +91,7 @@ SimilarReferencesPanel::SimilarReferencesPanel(IAppController& controller, std::
     addAndMakeVisible(describeButton_);
 
     // FEAT-5: the library itself, and the session's pick.
-    sessionRefLabel_.setFont(KhensuTheme::labelFont(11.0f));
+    sessionRefLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(sessionRefLabel_);
     libraryButton_.setTooltip(TRANS("List every reference in your library"));
     libraryButton_.onClick = [this] { showLibrary(); };
@@ -363,16 +363,31 @@ void SimilarReferencesPanel::showLibrary()
     setBusy(true, TRANS("Reading your library..."));
     juce::Component::SafePointer<SimilarReferencesPanel> self(this);
     const auto filter = currentFilter();
-    controller_.runInBackground([self, filter, baseUrl = baseUrl_] {
+    // UXR-4: not the short pool - while a track is analysed the Dashboard's
+    // follow-up scans fill it for minutes, and this sat queued behind them
+    // ("Reading your library..." that never ended). The long pool is free.
+    controller_.runLongInBackground([self, filter, baseUrl = baseUrl_] {
         auto result = ipc::HttpServiceBridge(baseUrl).embeddingsList(filter);
         juce::MessageManager::callAsync([self, result, filtered = filter.tag.isNotEmpty() || filter.genre.isNotEmpty()] {
             if (self == nullptr) return;
             // The library is per machine, not per session: no epoch check.
             self->setBusy(false, {});
             if (result.is_err()) {
+                // UXR-4: never sit on "Reading your library..." - say the
+                // engine is busy and ask again a little later (twice at most).
+                if (ipc::engineDidNotAnswer(result.error()) && self->libraryRetries_ < 2) {
+                    ++self->libraryRetries_;
+                    self->statusLabel_.setText(TRANS("The engine is busy - your library will appear when it answers."),
+                                               juce::dontSendNotification);
+                    juce::Timer::callAfterDelay(5000, [self] {
+                        if (self != nullptr && self->isShowing()) self->showLibrary();
+                    });
+                    return;
+                }
                 self->statusLabel_.setText(classifyServiceError(result.error()).message, juce::dontSendNotification);
                 return;
             }
+            self->libraryRetries_ = 0;
             const juce::var v = result.value();
             self->rows_.clear();
             if (auto* arr = v[af::EmbeddingIndexListResponse::entries].getArray())
@@ -382,7 +397,8 @@ void SimilarReferencesPanel::showLibrary()
             self->list_.updateContent();
             self->list_.deselectAllRows();
             const int n = (int)self->rows_.size();
-            self->statusLabel_.setText(n == 0 ? TRANS("Your library is empty - add reference tracks.")
+            self->statusLabel_.setText(n == 0 ? TRANS("Your library is empty - scan a reference folder above, or "
+                                                      "add reference tracks.")
                                               : juce::String(n) + " " + TRANS("references in your library. Find "
                                                                               "similar ranks them against this mix."),
                                        juce::dontSendNotification);
@@ -449,7 +465,7 @@ void SimilarReferencesPanel::paintListBoxItem(int row, juce::Graphics& g, int wi
     }
     g.setColour(r.exists ? (selected ? KhensuTheme::textPrimary : KhensuTheme::textSecondary)
                          : KhensuTheme::textTertiary);
-    g.setFont(KhensuTheme::bodyFont(12.0f));
+    g.setFont(KhensuTheme::bodyFont(type::secondary));
     juce::String meta = r.genre;
     if (!r.tags.isEmpty()) meta << (meta.isEmpty() ? "" : " - ") << r.tags.joinIntoString(", ");
     const int textW = width - pctW - 14;
@@ -457,11 +473,11 @@ void SimilarReferencesPanel::paintListBoxItem(int row, juce::Graphics& g, int wi
     g.drawText(r.label, 8, 0, textW - metaW, height, juce::Justification::centredLeft, true);
     if (metaW > 0) {
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::bodyFont(11.0f));
+        g.setFont(KhensuTheme::bodyFont(type::caption));
         g.drawText(meta, 8 + textW - metaW, 0, metaW, height, juce::Justification::centredRight, true);
     }
     if (!isMatch) return;
-    g.setFont(KhensuTheme::metricFont(11.0f));
+    g.setFont(KhensuTheme::metricFont(type::caption));
     g.drawText(juce::String(juce::roundToInt(sim * 100.0f)) + "%", width - pctW, 0, pctW - 4, height,
                juce::Justification::centredRight);
 }

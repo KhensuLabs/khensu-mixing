@@ -22,6 +22,7 @@
 // THREAD_CONTEXT(UIThread)
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <khensu/ui/KhensuPalette.h>
 
 namespace khensu::ui {
 
@@ -37,6 +38,11 @@ class KhensuKnobLookAndFeel final : public juce::LookAndFeel_V4 {
     void drawBubble(juce::Graphics&, juce::BubbleComponent&, const juce::Point<float>& tip,
                     const juce::Rectangle<float>& body) override;
     juce::Label* createSliderTextBox(juce::Slider&) override;
+    /// Re-reads the Palette colours this look-and-feel caches (STU-6).
+    void applyPalette();
+
+  private:
+    PaletteListener paletteListener_{[this] { applyPalette(); }};
 };
 
 class KhensuKnob : public juce::Slider {
@@ -116,6 +122,13 @@ class KhensuKnob : public juce::Slider {
     bool resetClick_ = false; ///< this press was an Alt-click reset: no drag follows
     Unit unit_ = Unit::None;
     std::unique_ptr<juce::TextEditor> valueEditor_;
+    void applyValueEditorColours();
+    // STU-6: a theme change re-tints the cached colours. Last member.
+    PaletteListener paletteListener_{[this] {
+        applyValueEditorColours();
+        sendLookAndFeelChange();
+        repaint();
+    }};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(KhensuKnob)
 };

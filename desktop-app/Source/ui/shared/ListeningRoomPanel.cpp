@@ -58,9 +58,9 @@ ListeningRoomPanel::ListeningRoomPanel(IAppController& c) : PanelCard(c, "Listen
     urlField_.setTitle(TRANS("Listening room link"));
     urlField_.setTooltip(TRANS("Open this link on a phone or laptop on the same network"));
     urlField_.setReadOnly(true);
-    urlField_.setFont(KhensuTheme::monoFont(11.0f));
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
-    votesLabel_.setFont(KhensuTheme::monoFont(11.0f));
+    urlField_.setFont(KhensuTheme::monoFont(type::caption));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
+    votesLabel_.setFont(KhensuTheme::monoFont(type::caption));
     votesLabel_.setJustificationType(juce::Justification::topLeft);
     statusLabel_.setText(TRANS("Start a room to let others vote blind between your versions."),
                          juce::dontSendNotification);

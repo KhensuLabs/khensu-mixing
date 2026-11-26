@@ -13,46 +13,54 @@ const juce::String kDynamicsExplainerBase =
     "values can feel unpolished for dense genres. "
     "Kick/snare regularity (0-1) measures timing consistency from deep analysis.";
 
-// Low crest factor (heavily compressed/limited) reads hot (red); high crest
-// (dynamic, untouched) reads cool (blue) - inverse of the loudness heat map,
-// since here "hot" means "aggressively squashed", not "loud".
-juce::Colour dynamicsHeatColourFor(float crestDb)
-{
-    constexpr float lo = 4.0f, hi = 20.0f;                                // matches crestMeter_'s musical range
-    const float t = juce::jlimit(0.0f, 1.0f, (crestDb - lo) / (hi - lo)); // 0=squashed, 1=dynamic
-    if (t < 0.5f) return KhensuTheme::accentRed.interpolatedWith(KhensuTheme::accentAmber, t / 0.5f);
-    return KhensuTheme::accentAmber.interpolatedWith(KhensuTheme::accentBlue, (t - 0.5f) / 0.5f);
-}
 } // anonymous namespace
 
-void SectionDynamicsHeatStrip::paint(juce::Graphics& g)
+// VIS-1 / VIS-4: both strips are ChartKit bar charts - crest in dB on the
+// value axis, one data colour, the values written; low crest (squashed) is
+// read from the number and the axis, not from a red-to-blue ramp.
+SectionDynamicsHeatStrip::SectionDynamicsHeatStrip()
 {
-    if (values_.empty()) return;
+    setTitle(TRANS("Crest factor per section"));
+    y.lo = 0.0;
+    y.hi = 24.0;
+    y.unit = "dB";
+    setBaseline(0.0);
+    setFixedMargins(34, 14, 6, 16);
+    valueText = [](size_t, size_t, double v) { return juce::String(v, 1); };
+}
 
-    g.setFont(KhensuTheme::labelFont(9.0f));
-    g.setColour(KhensuTheme::textTertiary);
-    g.drawText("SECTION COMPRESSION (3D)", getLocalBounds().withHeight(12), juce::Justification::centredLeft, false);
-
-    constexpr float kDepth = 5.0f;
-    auto b = getLocalBounds().withTrimmedTop(13).toFloat();
-    b.removeFromRight(kDepth);
-    b.removeFromTop(kDepth);
-    if (b.getHeight() < 4.0f) return;
-
-    const int n = (int)values_.size();
-    const float spacing = 3.0f;
-    const float cellW = (b.getWidth() - spacing * (n - 1)) / (float)n;
-
-    for (int i = 0; i < n; ++i) {
-        constexpr float lo = 4.0f, hi = 20.0f;
-        const float t = juce::jlimit(0.0f, 1.0f, (values_[i] - lo) / (hi - lo));
-        const float cx = b.getX() + (float)i * (cellW + spacing);
-        // Squashed sections read as short/heavy; dynamic sections stand tall.
-        const float ch = b.getHeight() * (0.2f + 0.8f * t);
-        const float cy = b.getBottom() - ch;
-
-        KhensuLookAndFeel::draw3DHeatBar(g, {cx, cy, cellW, ch}, dynamicsHeatColourFor(values_[i]), kDepth);
+void SectionDynamicsHeatStrip::setSections(const std::vector<float>& crestDbValues, const std::vector<juce::String>& labels)
+{
+    values_ = crestDbValues;
+    std::vector<ui::chart::Bar> bars;
+    juce::StringArray parts;
+    for (size_t i = 0; i < values_.size(); ++i) {
+        ui::chart::Bar b;
+        b.label = i < labels.size() && labels[i].isNotEmpty() ? labels[i] : juce::String(static_cast<int>(i) + 1);
+        b.values = {values_[i]};
+        bars.push_back(b);
+        parts.add(b.label + " " + juce::String(values_[i], 1) + " dB");
     }
+    setBars(std::move(bars), {{TRANS("Crest"), KhensuTheme::vizCategory(0)}});
+    setSummary(TRANS("Crest factor per section") + ": " + parts.joinIntoString(", ") + ".");
+}
+
+void SectionDynamicsHeatStrip::paintOverlay(juce::Graphics& g, juce::Rectangle<float> plot)
+{
+    g.setFont(font(0.9f));
+    g.setColour(style().muted);
+    g.drawText(TRANS("Crest factor per section"), juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(getWidth()), plot.getY()),
+               juce::Justification::centredLeft, false);
+}
+
+CrestHistogramStrip::CrestHistogramStrip()
+{
+    setTitle(TRANS("Crest factor distribution"));
+    setBaseline(0.0);
+    setFixedMargins(34, 14, 6, 16);
+    y.unit = "";
+    y.decimals = 0;
+    valueText = [](size_t, size_t, double v) { return juce::String(juce::roundToInt(v)); };
 }
 
 void CrestHistogramStrip::setSections(const std::vector<float>& crestDbValues)
@@ -70,39 +78,29 @@ void CrestHistogramStrip::setSections(const std::vector<float>& crestDbValues)
     }
     for (int c : counts_)
         maxCount_ = juce::jmax(maxCount_, c);
-    repaint();
+
+    std::vector<ui::chart::Bar> bars;
+    juce::StringArray parts;
+    for (int i = 0; i < kNumBins; ++i) {
+        const int lo = juce::roundToInt(kMinDb + binWidth * (float)i), hi = juce::roundToInt(kMinDb + binWidth * (float)(i + 1));
+        ui::chart::Bar b;
+        b.label = juce::String(lo) + "-" + juce::String(hi);
+        b.values = {static_cast<double>(counts_[(size_t)i])};
+        bars.push_back(b);
+        if (counts_[(size_t)i] > 0) parts.add(b.label + " dB: " + juce::String(counts_[(size_t)i]));
+    }
+    y.lo = 0.0;
+    y.hi = juce::jmax(1.0, static_cast<double>(maxCount_));
+    setBars(std::move(bars), {{TRANS("Sections"), KhensuTheme::vizCategory(0)}});
+    setSummary(TRANS("Sections per crest-factor range") + ": " + parts.joinIntoString(", ") + ".");
 }
 
-void CrestHistogramStrip::paint(juce::Graphics& g)
+void CrestHistogramStrip::paintOverlay(juce::Graphics& g, juce::Rectangle<float> plot)
 {
-    g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::plain));
-    g.setColour(KhensuTheme::textSecondary);
-    g.drawText("CREST FACTOR DISTRIBUTION", getLocalBounds().withHeight(12), juce::Justification::centredLeft, false);
-
-    if (!hasData_ || maxCount_ == 0) return;
-
-    auto b = getLocalBounds().withTrimmedTop(13).toFloat();
-    if (b.getHeight() < 4.0f) return;
-
-    constexpr float spacing = 2.0f;
-    const float binW = (b.getWidth() - spacing * (kNumBins - 1)) / (float)kNumBins;
-    constexpr float binWidthDb = (kMaxDb - kMinDb) / (float)kNumBins;
-
-    for (int i = 0; i < kNumBins; ++i) {
-        const float t = (float)counts_[(size_t)i] / (float)maxCount_;
-        const float bx = b.getX() + (float)i * (binW + spacing);
-        const float bh = b.getHeight() * juce::jmax(0.04f, t);
-        const float by = b.getBottom() - bh;
-
-        // Low crest (squashed) reads red, high crest (dynamic) reads blue -
-        // same colour convention as SectionDynamicsHeatStrip above.
-        const float binCentreDb = kMinDb + binWidthDb * ((float)i + 0.5f);
-        const float hueT = juce::jlimit(0.0f, 1.0f, (binCentreDb - kMinDb) / (kMaxDb - kMinDb));
-        const juce::Colour col = KhensuTheme::accentRed.interpolatedWith(KhensuTheme::accentBlue, hueT);
-
-        g.setColour(counts_[(size_t)i] > 0 ? col : col.withAlpha(0.15f));
-        g.fillRoundedRectangle(bx, by, binW, bh, 1.5f);
-    }
+    g.setFont(font(0.9f));
+    g.setColour(style().muted);
+    g.drawText(TRANS("Sections per crest range (dB)"), juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(getWidth()), plot.getY()),
+               juce::Justification::centredLeft, false);
 }
 
 // Every cached palette colour on this component, in one place (UI-01).
@@ -131,7 +129,7 @@ DynamicsPanel::DynamicsPanel(IAppController& c) : PanelCard(c, "Dynamics & Compr
     kickRegMeter_.setVisible(false);
     snareRegMeter_.setVisible(false);
 
-    peakToRms_.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::plain));
+    peakToRms_.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::plain));
     addAndMakeVisible(peakToRms_);
 
     addAndMakeVisible(dynamicsHeatStrip_);
@@ -168,10 +166,14 @@ void DynamicsPanel::setData(const AnalysisResult& r)
 
     if (r.section_analysis && !r.section_analysis->sections.empty()) {
         std::vector<float> crestVals;
+        std::vector<juce::String> crestLabels;
         for (const auto& sec : r.section_analysis->sections)
-            if (sec.crest_db > 0.001f) crestVals.push_back(sec.crest_db);
+            if (sec.crest_db > 0.001f) {
+                crestVals.push_back(sec.crest_db);
+                crestLabels.push_back(juce::String(sec.label));
+            }
         if (!crestVals.empty()) {
-            dynamicsHeatStrip_.setSections(crestVals);
+            dynamicsHeatStrip_.setSections(crestVals, crestLabels);
             dynamicsHeatStrip_.setVisible(true);
             crestHistogram_.setSections(crestVals);
             crestHistogram_.setVisible(true);
@@ -237,14 +239,14 @@ void DynamicsPanel::resized()
 
     if (dynamicsHeatStrip_.isVisible()) {
         b.removeFromTop(8);
-        dynamicsHeatStrip_.setBounds(b.removeFromTop(48));
+        dynamicsHeatStrip_.setBounds(b.removeFromTop(72));
     } else {
         dynamicsHeatStrip_.setBounds({});
     }
 
     if (crestHistogram_.isVisible()) {
         b.removeFromTop(6);
-        crestHistogram_.setBounds(b.removeFromTop(36));
+        crestHistogram_.setBounds(b.removeFromTop(64));
     } else {
         crestHistogram_.setBounds({});
     }

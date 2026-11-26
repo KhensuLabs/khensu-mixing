@@ -165,7 +165,6 @@ bool SuggestionListPanel::RecommendationRow::keyPressed(const juce::KeyPress& ke
 // Every cached palette colour on this component, in one place (UI-01).
 void SuggestionListPanel::applyThemeColours()
 {
-    emptyLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     footerLabel_.setColour(juce::Label::textColourId, KhensuTheme::textTertiary);
 }
 
@@ -193,10 +192,8 @@ SuggestionListPanel::SuggestionListPanel(IAppController& c) : PanelCard(c, TRANS
                                  });
                              });
 
-    emptyLabel_.setText(TRANS("No recommendations yet. Analyze the track on Intake."), juce::dontSendNotification);
-    emptyLabel_.setJustificationType(juce::Justification::centred);
-    emptyLabel_.setFont(KhensuTheme::bodyFont());
-    addAndMakeVisible(emptyLabel_);
+    emptyState_.setMessage(TRANS("No recommendations yet."), TRANS("Analyze the track on Intake."));
+    addAndMakeVisible(emptyState_);
 
     footerLabel_.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
     addChildComponent(footerLabel_);
@@ -250,7 +247,7 @@ void SuggestionListPanel::rebuild()
     headers_.clear();
 
     const bool hasRecs = !lastRecs_.empty();
-    emptyLabel_.setVisible(!hasRecs);
+    emptyState_.setVisible(!hasRecs);
     viewport_.setVisible(hasRecs);
 
     // CON-1: a finding's state comes from the one issue queue - done,
@@ -370,7 +367,7 @@ void SuggestionListPanel::resized()
         footerLabel_.setBounds(footer);
         b.removeFromBottom(KhensuTheme::sp1);
     }
-    emptyLabel_.setBounds(b);
+    emptyState_.setBounds(b);
     viewport_.setBounds(b);
     layoutRows();
 }

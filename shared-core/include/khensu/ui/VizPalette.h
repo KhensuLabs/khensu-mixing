@@ -6,7 +6,9 @@
 //                 cycled; a ninth series folds into "Other";
 //   sequential  - magnitude (heat maps): one hue, light -> dark;
 //   diverging   - polarity (a difference spectrum, "above / below the genre"):
-//                 blue <-> red through a neutral grey, never a hue at zero.
+//                 blue <-> orange through a neutral grey, never a hue at zero
+//                 (VIS-2: one diverging map; orange, not red, so it is safe
+//                 for red-green colour blindness and never reads as severity).
 // Severity keeps its own colours (red / amber / blue / green, KhensuTheme),
 // which are never reused for a series.
 // The categorical order is the one that clears every adjacent-pair colour-
@@ -40,7 +42,7 @@ inline constexpr std::array<std::uint32_t, 13> kSequential{
 
 /// Diverging poles and the neutral midpoint per mode.
 inline constexpr std::uint32_t kDivergingCool = 0xff2a78d6; ///< below / less (blue)
-inline constexpr std::uint32_t kDivergingWarm = 0xffd03b3b; ///< above / more (red)
+inline constexpr std::uint32_t kDivergingWarm = 0xffe5771e; ///< above / more (orange)
 inline constexpr std::uint32_t kNeutralDark = 0xff383835;
 inline constexpr std::uint32_t kNeutralLight = 0xffe0dfdb;
 
@@ -80,7 +82,7 @@ inline juce::Colour spectrogram(float t)
     return juce::Colour(kSpectrogram[i]).interpolatedWith(juce::Colour(kSpectrogram[j]), x - static_cast<float>(i));
 }
 
-/// Diverging colour for t in [-1, 1]: -1 cool, 0 neutral, +1 warm.
+/// Diverging colour for t in [-1, 1]: -1 cool (blue), 0 neutral, +1 warm (orange).
 inline juce::Colour diverging(float t, Mode mode = Mode::Dark)
 {
     t = std::isfinite(t) ? juce::jlimit(-1.0f, 1.0f, t) : 0.0f;

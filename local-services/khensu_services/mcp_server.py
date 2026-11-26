@@ -4,7 +4,10 @@
 A stdio Model Context Protocol server that lets an MCP client (Claude
 Desktop, Claude Code, any other MCP host) drive the running Khensu service:
 analyse a mix, list sessions, read findings, explain a moment, fit and render
-a chain, A/B two renders and run the verified auto-mix agent.
+a chain, A/B two renders, run the verified auto-mix agent, fix a file's
+findings in one guarded render, master it (the mastering agent, in a style),
+render platform masters and the delivery package, master an album (WAV / cue
+/ DDP) and separate stems.
 
 It is a thin client: every tool calls the local service over HTTP
 (``http://127.0.0.1:47239`` by default, ``KHENSU_SERVICE_URL`` to override)
@@ -223,6 +226,136 @@ def tool_agent_status(client: KhensuClient, job_id: str) -> Any:
     return _wrap(lambda: client.get(f"/agent/mix/{job_id}"), "Auto-mix agent")
 
 
+def _job_outcome(status: Any, job_id: str) -> Any:
+    if isinstance(status, dict):
+        status = {**status, "job_id": job_id}
+    return status
+
+
+def _default_output(file_path: str, suffix: str) -> str:
+    base, _ext = os.path.splitext(file_path)
+    return f"{base}{suffix}.wav"
+
+
+def tool_fix(client: KhensuClient, file_path: str, output_path: str = "", top: bool = False,
+             include_denoise: bool = False, include_loudness: bool = False,
+             target_lufs: float = -14.0) -> Any:
+    """Fix a file's findings in one render: every open finding with a one-click fix (advice-only
+    findings and denoise skipped unless include_denoise; top=True only the most severe), rendered
+    through the guarded pipeline, then the output is measured again (resolved / remaining / new)."""
+    from khensu_services.cli import compare_findings, select_fixes
+    out = output_path or _default_output(file_path, "_fix")
+
+    def run():
+        body = {"file_path": file_path, "target_lufs": target_lufs, "include_loudness": include_loudness}
+        before = client.post("/agent/findings", body)
+        plan = select_fixes(before.get("findings", []), top=top, include_denoise=include_denoise)
+        result: dict[str, Any] = {"ok": True, "file_path": file_path, "output_path": "",
+                                  "fixed": plan["selected"], "skipped": plan["skipped"], "chain": plan["chain"]}
+        if not plan["chain"]:
+            result["note"] = "Nothing to fix: no open finding has a safe one-click fix."
+            return result
+        job = client.post("/copilot/apply_chain/start", {
+            "file_path": file_path, "output_path": out, "effects": plan["chain"]})
+        status = client.wait_job(f"/copilot/apply_chain/status/{job['job_id']}", timeout_sec=900)
+        render = status.get("result") or {}
+        if status.get("status") != "completed" or render.get("status") != "success":
+            return {"ok": False, "status": status.get("status"), "error": status.get("error"),
+                    "render": render, "chain": plan["chain"]}
+        after = client.post("/agent/findings", {**body, "file_path": out})
+        result.update(output_path=out, guardrail=render.get("guardrail"),
+                      comparison=compare_findings(before.get("findings", []), after.get("findings", [])),
+                      metrics_before=before.get("metrics"), metrics_after=after.get("metrics"))
+        return result
+    return _wrap(run, "Fix")
+
+
+def tool_master(client: KhensuClient, file_path: str, genre_id: str = "", style: str = "balanced",
+                strength: float = 0.5, max_iterations: int = 5) -> Any:
+    """Run the mastering agent (render, measure, critique) toward a genre in a style
+    (warm | balanced | open | loud, strength 0..1). Returns the best candidate that passed the
+    safety guardrail (best_safe_output_path) - audition it against the mix before using it."""
+    def run():
+        job = client.post("/mastering_agent/start", {
+            "file_path": file_path, "genre_id": genre_id, "genre_action_allowed": bool(genre_id),
+            "max_iterations": max_iterations, "style": style, "strength": strength})
+        return _job_outcome(client.wait_job(f"/mastering_agent/status/{job['job_id']}", timeout_sec=1800),
+                            job["job_id"])
+    return _wrap(run, "Mastering agent")
+
+
+def tool_platform_masters(client: KhensuClient, file_path: str, platforms: list[str] | None = None,
+                          output_dir: str = "", match_loudness: bool = False) -> Any:
+    """Render platform masters (Spotify, Apple, club, YouTube, ...), each true-peak safe for its
+    platform and through the post-render guardrail. match_loudness also normalises each to the
+    platform's loudness target."""
+    def run():
+        job = client.post("/platform_masters/start", {
+            "file_path": file_path, "output_dir": output_dir, "platforms": list(platforms or []),
+            "match_loudness": match_loudness})
+        return _job_outcome(client.wait_job(f"/platform_masters/status/{job['job_id']}", timeout_sec=1800),
+                            job["job_id"])
+    return _wrap(run, "Platform masters")
+
+
+def tool_delivery_package(client: KhensuClient, file_path: str, profile_id: str = "streaming_distributor",
+                          output_dir: str = "", name: str = "", stems_dir: str = "",
+                          ddp: bool | None = None, title: str = "", performer: str = "",
+                          isrc: str = "") -> Any:
+    """Build a distributor delivery package: the master at the profile's spec, optional DDP,
+    stems from a separation folder, and a manifest with hashes and per-file checks."""
+    def run():
+        body: dict[str, Any] = {"file_path": file_path, "profile_id": profile_id, "output_dir": output_dir,
+                                "name": name, "stems_dir": stems_dir, "title": title,
+                                "performer": performer, "isrc": isrc}
+        if ddp is not None:
+            body["ddp"] = ddp
+        job = client.post("/delivery/package", body)
+        return _job_outcome(client.wait_job(f"/delivery/package/status/{job['job_id']}", timeout_sec=1800),
+                            job["job_id"])
+    return _wrap(run, "Delivery package")
+
+
+def tool_album_master(client: KhensuClient, track_paths: list[str], render: bool = True,
+                      output_dir: str = "", name: str = "album", title: str = "", performer: str = "",
+                      catalog: str = "", gap_sec: float = 2.0, apply_consistency: bool = False,
+                      wav: bool = True, cue: bool = True, ddp: bool = True) -> Any:
+    """Album master for tracks in order: loudness consistency (album-mode trims), the CD plan
+    (index points, ISRC / CD-Text checks) and, with render=True, the WAV / cue / DDP 2.0 export.
+    apply_consistency uses the trims as each track's gain."""
+    def run():
+        consistency = client.post("/analyze/album/consistency", {"track_paths": list(track_paths)})
+        gains = [float(t.get("gain_db") or 0.0) for t in consistency.get("tracks", [])]
+        tracks = [{"path": p, "title": os.path.splitext(os.path.basename(p))[0][:80], "gap_sec": gap_sec,
+                   "gain_db": gains[i] if apply_consistency and i < len(gains) else 0.0}
+                  for i, p in enumerate(track_paths)]
+        spec = {"tracks": tracks, "title": title, "performer": performer, "catalog": catalog}
+        out: dict[str, Any] = {"consistency": consistency, "plan": client.post("/album/master/plan", spec)}
+        if render:
+            job = client.post("/album/master/start", {**spec, "output_dir": output_dir, "name": name,
+                                                      "wav": wav, "cue": cue, "ddp": ddp})
+            out["master"] = _job_outcome(
+                client.wait_job(f"/album/master/status/{job['job_id']}", timeout_sec=3600), job["job_id"])
+        return out
+    return _wrap(run, "Album master")
+
+
+def tool_separate(client: KhensuClient, file_path: str, method: str = "hpss", output_dir: str = "") -> Any:
+    """Separate a mix into vocals / drums / bass / other stems (method hpss | demucs | roformer |
+    auto; the learned methods fall back when their model is not installed - see method_used)."""
+    if method not in ("hpss", "demucs", "roformer", "auto"):
+        return {"ok": False, "error": "method must be hpss, demucs, roformer or auto"}
+
+    def run():
+        body: dict[str, Any] = {"file_path": file_path, "method": method}
+        if output_dir:
+            body["output_dir"] = output_dir
+        job = client.post("/separate/start", body)
+        return _job_outcome(client.wait_job(f"/separate/status/{job['job_id']}", timeout_sec=3600),
+                            job["job_id"])
+    return _wrap(run, "Stem separation")
+
+
 TOOLS: dict[str, Callable[..., Any]] = {
     "analyze": tool_analyze,
     "list_sessions": tool_list_sessions,
@@ -233,6 +366,12 @@ TOOLS: dict[str, Callable[..., Any]] = {
     "ab_compare": tool_ab_compare,
     "agent_mix": tool_agent_mix,
     "agent_status": tool_agent_status,
+    "fix": tool_fix,
+    "master": tool_master,
+    "platform_masters": tool_platform_masters,
+    "delivery_package": tool_delivery_package,
+    "album_master": tool_album_master,
+    "separate_stems": tool_separate,
 }
 
 
@@ -294,6 +433,40 @@ def build_server(client: KhensuClient | None = None):
     @server.tool(name="agent_status", description=tool_agent_status.__doc__)
     def agent_status(job_id: str) -> Any:
         return tool_agent_status(client, job_id)
+
+    @server.tool(name="fix", description=tool_fix.__doc__)
+    def fix(file_path: str, output_path: str = "", top: bool = False, include_denoise: bool = False,
+            include_loudness: bool = False, target_lufs: float = -14.0) -> Any:
+        return tool_fix(client, file_path, output_path, top, include_denoise, include_loudness, target_lufs)
+
+    @server.tool(name="master", description=tool_master.__doc__)
+    def master(file_path: str, genre_id: str = "", style: str = "balanced", strength: float = 0.5,
+               max_iterations: int = 5) -> Any:
+        return tool_master(client, file_path, genre_id, style, strength, max_iterations)
+
+    @server.tool(name="platform_masters", description=tool_platform_masters.__doc__)
+    def platform_masters(file_path: str, platforms: list[str] | None = None, output_dir: str = "",
+                         match_loudness: bool = False) -> Any:
+        return tool_platform_masters(client, file_path, platforms, output_dir, match_loudness)
+
+    @server.tool(name="delivery_package", description=tool_delivery_package.__doc__)
+    def delivery_package(file_path: str, profile_id: str = "streaming_distributor", output_dir: str = "",
+                         name: str = "", stems_dir: str = "", ddp: bool | None = None, title: str = "",
+                         performer: str = "", isrc: str = "") -> Any:
+        return tool_delivery_package(client, file_path, profile_id, output_dir, name, stems_dir, ddp,
+                                     title, performer, isrc)
+
+    @server.tool(name="album_master", description=tool_album_master.__doc__)
+    def album_master(track_paths: list[str], render: bool = True, output_dir: str = "", name: str = "album",
+                     title: str = "", performer: str = "", catalog: str = "", gap_sec: float = 2.0,
+                     apply_consistency: bool = False, wav: bool = True, cue: bool = True,
+                     ddp: bool = True) -> Any:
+        return tool_album_master(client, track_paths, render, output_dir, name, title, performer, catalog,
+                                 gap_sec, apply_consistency, wav, cue, ddp)
+
+    @server.tool(name="separate_stems", description=tool_separate.__doc__)
+    def separate_stems(file_path: str, method: str = "hpss", output_dir: str = "") -> Any:
+        return tool_separate(client, file_path, method, output_dir)
 
     return server
 

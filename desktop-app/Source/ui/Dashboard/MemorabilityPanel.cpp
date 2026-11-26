@@ -13,7 +13,7 @@ void MemorabilityTrendComponent::setHistory(std::vector<float> scoresOldestFirst
 
 void MemorabilityTrendComponent::paint(juce::Graphics& g)
 {
-    g.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::plain));
+    g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     g.setColour(KhensuTheme::textSecondary);
 
     if (scores_.size() < 2) {

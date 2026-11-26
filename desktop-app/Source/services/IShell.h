@@ -54,6 +54,11 @@ class IShell {
     /// recommendation id, or the code for a check-only finding) - a marker
     /// clicked on the Analysis screen's spectrum.
     virtual void showIssue(const std::string& key) = 0;
+    /// ENH-7: the Analysis screen scrolled to the card that shows this
+    /// finding (its code, or a recommendation id), with the view widened and
+    /// a card group's tab selected as needed, the card flashed. False when
+    /// no card shows it (the screen is then not switched).
+    virtual bool revealCardForFinding(const std::string& findingKeyOrCode) = 0;
 
     virtual ReportMode getReportMode() const noexcept = 0;
     virtual void setReportMode(ReportMode mode) = 0;
@@ -66,6 +71,9 @@ class IShell {
     /// Alternatives -> How to Verify) for one recommendation.
     virtual void showChainReasoning(const Recommendation& rec) = 0;
     virtual void showMixMasterCard(int tabIdx) = 0;
+    /// ENH-8: the Export screen at one step (0 Finish - the Master Assistant,
+    /// 1 Export, 2 Delivery, 3 Album), for the links to a feature's home.
+    virtual void showExportStep(int step) = 0;
     /// VIZ-P2: explains a measurement tile (hero_spectrum::GaugeIndex:
     /// loudness, true peak, LRA, crest, width).
     virtual void showMetricExplanation(int gauge) = 0;

@@ -9,7 +9,7 @@ endif()
 
 juce_add_gui_app(KhensuDesktop
     PRODUCT_NAME "Khensu Mixing"
-    VERSION      "1.0.4"
+    VERSION      "1.0.5"
     BUNDLE_ID    "com.khensu.mixing.desktop"
     COMPANY_NAME "Khensu"
     # The app icon from its 4K master (Explorer, taskbar, window; the macOS .icns);
@@ -35,6 +35,7 @@ target_sources(KhensuDesktop PRIVATE
     Source/AppController.cpp
     Source/AppController_Session.cpp
     Source/AppController_Render.cpp
+    Source/AppController_Bounce.cpp  # ENH-1
     Source/AppController_Playback.cpp
     Source/AppController_Notices.cpp
     Source/AppController_Diagnostics.cpp
@@ -47,6 +48,7 @@ target_sources(KhensuDesktop PRIVATE
     Source/UpdateInstaller.cpp
     Source/diagnostics/DiagnosticsBundle.cpp  # CE-ENG-4
     Source/session/PlaybackEngine.cpp
+    Source/session/LivePreviewStage.cpp  # STU-9
     Source/session/DesktopPluginChain.cpp
     Source/session/SessionService.cpp
     Source/session/PlaybackService.cpp
@@ -54,6 +56,8 @@ target_sources(KhensuDesktop PRIVATE
     Source/session/RenderService.cpp
     Source/session/ReportBody.cpp
     Source/session/IssueService.cpp
+    Source/session/FixAllSafe.cpp  # ENH-2
+    Source/session/BounceWatcher.cpp  # ENH-1
     Source/session/StemService.cpp
     Source/session/MultitrackStemBuses.cpp
     Source/session/ProjectTracks.cpp
@@ -74,15 +78,17 @@ target_sources(KhensuDesktop PRIVATE
     Source/midi/Midi2DeviceManager.cpp
     Source/midi/MacroMappingEngine.cpp
     Source/midi/MacroControlRouter.cpp
+    Source/midi/MidiCiResponder.cpp  # STU-13
     Source/ui/Settings/SettingsScreen.cpp
     Source/ui/Settings/MacroMappingPanel.cpp
     Source/ui/Settings/LlmProviderPanel.cpp  # CE-AG-2
-    Source/ui/AiDetection/AiDetectionScreen.cpp
-    Source/ui/AiDetection/SourceSummaryView.cpp
+    Source/ui/ProvenanceSource/AiDetectionScreen.cpp
+    Source/ui/ProvenanceSource/SourceSummaryView.cpp
     Source/ui/shared/KhensuTheme.cpp
     Source/ui/shared/KhensuLookAndFeel.cpp
     Source/ui/shared/ModalCardHost.cpp
     Source/ui/shared/AppNoticeBar.cpp
+    Source/ui/shared/UndoToast.cpp  # UXR-9
     Source/ui/shared/AnalysisPendingOverlay.cpp
     Source/ui/shared/ExplainerPopup.cpp
     Source/ui/shared/ExplainerOverlay.cpp
@@ -97,6 +103,7 @@ target_sources(KhensuDesktop PRIVATE
     Source/ui/shared/AbxTrialOverlay.cpp
     Source/ui/shared/CommandPaletteOverlay.cpp
     Source/ui/shared/CommandPaletteController.cpp
+    Source/ui/shared/PaletteSearch.cpp  # STU-7
     Source/ui/shared/NlCommandOverlay.cpp  # CE-AG-4
     Source/ui/shared/VoiceRecorder.cpp  # CE-AG-4 push-to-talk
     Source/ui/shared/CloudChatConsentController.cpp
@@ -107,15 +114,16 @@ target_sources(KhensuDesktop PRIVATE
     Source/ui/shared/TargetRingGauge.cpp
     Source/ui/shared/LiveLufsMeterComponent.cpp
     Source/ui/shared/RadarChartComponent.cpp
-    Source/ui/shared/SpectrumComponent.cpp
     Source/ui/shared/HeatSpectrumComponent.cpp
     Source/ui/shared/SpectrogramImage.cpp
     Source/ui/shared/TimelineComponent.cpp
     Source/ui/shared/PlaybackTransportBar.cpp
     Source/ui/shared/TransportWaveform.cpp  # UX2-5
     Source/ui/shared/MeterBridge.cpp  # UI-5 desktop meter bridge
-    Source/ui/shared/GoniometerComponent.cpp
+    Source/ui/shared/LivePreviewToggle.cpp  # STU-9
     Source/ui/shared/SonicOrbitComponent.cpp
+    Source/ui/shared/ReducedMotion.cpp  # VIS-7
+    Source/ui/shared/VizMaps.cpp  # VIS-2 / VIS-6
     Source/ui/shared/MultiBandGoniometerComponent.cpp
     Source/ui/shared/ModelDownloadDialog.cpp
     Source/ui/shared/ModelDetailsDialog.cpp
@@ -153,6 +161,7 @@ target_sources(KhensuDesktop PRIVATE
     Source/ui/SessionIntake/TargetSetupPanel.cpp
     Source/ui/SessionIntake/RecentSessionsPanel.cpp
     Source/ui/SessionIntake/TrendLinePanel.cpp
+    Source/ui/SessionIntake/RecurringIssuesPanel.cpp  # AUTO-5
     Source/ui/SessionIntake/TargetOverrideEditor.cpp
     Source/ui/SessionIntake/MultitrackModel.cpp
     Source/ui/SessionIntake/MaskingMatrixComponent.cpp
@@ -213,7 +222,6 @@ target_sources(KhensuDesktop PRIVATE
     Source/ui/Dashboard/AiArtifactsPanel.cpp
     Source/ui/MixMasterEngine/HumanizePanel.cpp
     Source/ui/MixMasterEngine/WhatChangedPanel.cpp
-    Source/ui/VocalWorkspace/StemEnergyPanel.cpp
     Source/ui/VocalWorkspace/VocalRenderPanel.cpp
     Source/ui/Dashboard/ScoreCardPanel.cpp
     Source/ui/Dashboard/MixCraftPanel.cpp
@@ -228,7 +236,6 @@ target_sources(KhensuDesktop PRIVATE
     Source/ui/VocalWorkspace/VocalMacroPanel.cpp
     Source/ui/VocalWorkspace/VocalHookPanel.cpp
     Source/ui/VocalWorkspace/VocalQuickStatsPanel.cpp
-    Source/ui/VocalWorkspace/StemMaskingPanel.cpp
     Source/ui/VocalWorkspace/LyricIntelligibilityPanel.cpp
     Source/ui/VocalWorkspace/GainRiderPanel.cpp
     Source/ui/VocalWorkspace/PreflightPanel.cpp
@@ -278,12 +285,13 @@ target_sources(KhensuDesktop PRIVATE
     Source/ui/SystemBrain/FeatureDetailPanel.cpp
     Source/ui/Copilot/ChatConsolePanel.cpp
     Source/ui/Copilot/HarmonicContentBarChart.cpp
-    Source/ui/Copilot/GainStagingWaterfallChart.cpp
     Source/ui/Issues/IssuesScreen.cpp
     Source/ui/shared/Milestones.cpp
     Source/ui/ReferenceLibrary/ReferenceLibraryScreen.cpp
     Source/ui/ReferenceLibrary/ReferenceProfilesBar.cpp  # CE-COL-4
     Source/ui/ReferenceLibrary/SimilarReferencesPanel.cpp  # CE-AI-1
+    Source/ui/ReferenceLibrary/ReferenceScanPanel.cpp  # REFS-1
+    Source/ui/ReferenceLibrary/GenreFitChart.cpp  # UXR-4
 )
 
 target_link_libraries(KhensuDesktop PRIVATE

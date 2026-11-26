@@ -15,7 +15,7 @@ from khensu_services.common.executors import long_job_executor as _long_executor
 from khensu_services.copilot.mixer_chain_generator import generate_mixer_chain_response, MixerChainResponse
 from khensu_services.copilot.router_plugin_matching import EffectSpec
 from khensu_services.copilot.response_models import CopilotJobCancelResponse, JobStartResponse, MixerChainJobStatusResponse, RenderJobStatusResponse
-from khensu_services.copilot.router_render import MixerChainRequest, PostRenderGuardrailError, RENDER_STATE_BLOCKED, RENDER_STATE_VALIDATED, RenderBlocked, RenderCancelled, _cancel_reply, _decision_hash_field, _effect_dicts, _file_identity, _genre_action_block, _log_applied_event, _rejected_job_result, _require_audio_decode_budget, render_through_pipeline
+from khensu_services.copilot.router_render import MixerChainRequest, PostRenderGuardrailError, RENDER_STATE_BLOCKED, RENDER_STATE_VALIDATED, RenderBlocked, RenderCancelled, _cancel_reply, _decision_hash_field, _effect_dicts, _file_identity, _genre_action_block, _log_applied_event, _rejected_job_result, _require_audio_decode_budget, render_through_pipeline, resolve_key_stem, resolve_key_stem_checked, warnings_kw
 
 _log = logging.getLogger(__name__)
 router = APIRouter()
@@ -62,6 +62,8 @@ class SectionAwareChainRequest(RequestModel):
     abstained_reason: str = ""
     target_stem: str = "mix"
     stem_paths: dict[str, str] = Field(default_factory=dict)
+    # ENH-6: as ApplyChainRequest.key_stem.
+    key_stem: str = Field(default="", max_length=64)
 
     @model_validator(mode="after")
     def _require_ordered_non_overlapping_sections(self) -> "SectionAwareChainRequest":
@@ -93,18 +95,22 @@ def _run_section_chain_job(job_id: str, req: SectionAwareChainRequest) -> None:
     try:
         sections = _section_dicts(req)
         flat = [e for sec in sections for e in sec["effects"]]
+        key_path, key_warnings = resolve_key_stem(req.key_stem, req.stem_paths)
+        key_kw = {"key_path": key_path} if key_path else {}
         # validate -> quarantine -> render -> guardrail -> promote (S2). The
         # flattened section effects are validated exactly as at /start, so a
         # source swapped between admission and render is still checked.
         result, guardrail, _validation = render_through_pipeline(
             req.file_path, req.output_path,
-            lambda quarantine: apply_section_chains(req.file_path, quarantine, sections, req.crossfade_ms),
+            lambda quarantine: apply_section_chains(req.file_path, quarantine, sections, req.crossfade_ms,
+                                                    **key_kw),
             effects=flat, graph=None,
             should_cancel=lambda: job_cancel_requested(_section_chain_jobs, job_id))
         result["guardrail"] = guardrail
         result["output_path"] = req.output_path
         result["status"] = "success"
         result["render_state"] = RENDER_STATE_VALIDATED
+        result.update(warnings_kw(key_warnings + list(result.pop("warnings", None) or [])))
         _log_applied_event("section_chain_applied", req.session_id, req.source_recommendation_id,
                            req.output_path, [r["label"] for r in result.get("sections", [])], sections,
                            req.decision_hash)
@@ -138,6 +144,7 @@ async def apply_section_chain_start(req: SectionAwareChainRequest) -> dict:
     if not os.path.isfile(req.file_path):
         not_found(f"File not found: {req.file_path}")
     await _require_audio_decode_budget(req.file_path)
+    await resolve_key_stem_checked(req.key_stem, req.stem_paths)
     if not req.sections:
         invalid_input("At least one section is required")
 

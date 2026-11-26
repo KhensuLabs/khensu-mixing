@@ -103,7 +103,7 @@ void EmotionalArcPanel::paint(juce::Graphics& g)
         g.fillRect(juce::Rectangle<float>(x0, moodStripArea.getY(), x1 - x0, moodStripArea.getHeight() - 12.0f));
     }
 
-    g.setFont(KhensuTheme::labelFont(8.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     // NEW-9: the whole-track mood from the CLAP probe (experimental), when it ran.
     juce::String legend = TRANS("Energy 0-100, colour = mood per window - dashed = flat section");

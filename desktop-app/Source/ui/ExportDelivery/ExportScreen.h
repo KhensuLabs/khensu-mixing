@@ -22,7 +22,7 @@
 namespace khensu {
 class IAppController;
 
-class ExportTargetsAdvisoryPanel final : public PanelCard {
+class ExportTargetsAdvisoryPanel final : public PanelCard, private juce::Timer {
   public:
     explicit ExportTargetsAdvisoryPanel(IAppController& c) : PanelCard(c, "ADVISORY TARGETS")
     {
@@ -35,7 +35,7 @@ class ExportTargetsAdvisoryPanel final : public PanelCard {
         textBox_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
         textBox_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
         textBox_.setFont(
-            juce::Font(juce::FontOptions{juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain}));
+            KhensuTheme::monoFont(type::caption));
         addAndMakeVisible(textBox_);
 
         loadTargets();
@@ -44,8 +44,19 @@ class ExportTargetsAdvisoryPanel final : public PanelCard {
     void resized() override { textBox_.setBounds(bodyArea()); }
 
     void loadTargets(); // defined in ExportScreen.cpp (needs the complete AppController)
+    /// BUG-2: true while the panel shows the "waiting for the engine"
+    /// placeholder and watches for the engine to come up.
+    bool waitingForEngine() const noexcept { return waitingForEngine_; }
+    juce::String textForTesting() const { return textBox_.getText(); }
 
   private:
+    /// BUG-2: the engine was down when the targets were asked for. Watch its
+    /// status (the lifecycle's) and fetch again once it is Running, instead
+    /// of keeping the placeholder until the screen is rebuilt.
+    void timerCallback() override; // defined in ExportScreen.cpp
+    bool waitingForEngine_ = false;
+    bool loading_ = false;
+    int runningRetries_ = 0; ///< failures with the engine up: retried a few times, then left
     juce::TextEditor textBox_;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ExportTargetsAdvisoryPanel)
 };
@@ -117,7 +128,19 @@ class ExportScreen final : public juce::Component, private juce::Timer {
         SelectedTarget target;
         bool complianceTarget = false; ///< re-measure the written file afterwards
         bool gainKnown = false;        ///< false: normalising, but the loudness was unmeasurable
+        /// The exported file's integrated loudness and true peak, when known
+        /// (the extra formats' gains are planned from them).
+        std::optional<std::pair<float, float>> levels;
+        /// AUTO-2: the extra presets this press also writes, and their paths.
+        std::vector<export_presets::Preset> extras;
+        std::vector<juce::String> extraPaths;
     };
+    /// The export target a preset's loudness key names (see ExportPresets.h).
+    SelectedTarget targetForKey(const juce::String& key) const;
+    juce::String currentLoudnessKey() const;
+    void applyLoudnessKey(const juce::String& key);
+    /// Writes job.extras[index...] one after the other, then reports.
+    void writeExtras(ExportJob job, size_t index, juce::String status, int written);
     void startExport();
     void beginWrite(const ExportJob& job);
     void abortExport(const juce::String& message);

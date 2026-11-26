@@ -93,7 +93,7 @@ HostedChainPanel::HostedChainPanel(IAppController& c) : controller_(c)
         addAndMakeVisible(*b.button);
     }
 
-    statusLabel_.setFont(KhensuTheme::labelFont(11.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setText(TRANS("Add plugins to build a chain. Renders are latency-compensated."),
                          juce::dontSendNotification);
     addAndMakeVisible(statusLabel_);
@@ -128,11 +128,11 @@ void HostedChainPanel::paintListBoxItem(int row, juce::Graphics& g, int width, i
     const auto& slot = s[static_cast<size_t>(row)];
     if (selected) g.fillAll(KhensuTheme::accentTeal.withAlpha(0.18f));
     auto r = juce::Rectangle<int>(0, 0, width, height).reduced(8, 0);
-    g.setFont(KhensuTheme::bodyFont(12.0f));
+    g.setFont(KhensuTheme::bodyFont(type::secondary));
     g.setColour(slot.bypassed ? KhensuTheme::textTertiary : KhensuTheme::textPrimary);
     g.drawText(juce::String(row + 1) + ".  " + slot.name, r.removeFromLeft(width / 2), juce::Justification::centredLeft,
                true);
-    g.setFont(KhensuTheme::labelFont(10.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textSecondary);
     juce::String meta = slot.formatName + (slot.isInstrument ? "  instrument" : "  effect");
     if (slot.latencySamples > 0) meta << "  " << slot.latencySamples << " smp latency";

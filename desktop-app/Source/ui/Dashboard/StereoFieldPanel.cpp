@@ -16,7 +16,7 @@ const juce::String kStereoExplainerBase =
 
 void StereoFieldTimelineStrip::paint(juce::Graphics& g)
 {
-    g.setFont(khensu::KhensuTheme::uiFont(8.5f, juce::Font::plain));
+    g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     g.setColour(KhensuTheme::textSecondary);
     g.drawText("STEREO FIELD OVER TIME", getLocalBounds().withHeight(11), juce::Justification::centredLeft, false);
 
@@ -55,7 +55,7 @@ void StereoFieldTimelineStrip::paint(juce::Graphics& g)
     plot([](const AnalysisResult::StereoFieldPoint& p) { return p.correlation; }, KhensuTheme::accentTeal, -1.0f, 1.0f);
     plot([](const AnalysisResult::StereoFieldPoint& p) { return p.width; }, KhensuTheme::accentBlue, 0.0f, 1.0f);
 
-    g.setFont(khensu::KhensuTheme::uiFont(8.0f, juce::Font::plain));
+    g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     auto legend = getLocalBounds().withHeight(11).toFloat();
     g.setColour(KhensuTheme::accentTeal);
     g.drawText("- Correlation", legend, juce::Justification::topRight, false);

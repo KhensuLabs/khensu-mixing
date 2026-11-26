@@ -1,7 +1,11 @@
 // desktop-app/Source/ui/Copilot/HarmonicContentBarChart.h
+// VIS-1: a ChartKit bar chart - the energy a saturation stage added per
+// octave band, on a relative dB axis; added energy in the diverging palette's
+// warm pole, removed in its cool pole, every bar labelled +/- dB (VIS-4).
 #pragma once
 #include <JuceHeader.h>
 #include <vector>
+#include "../shared/ChartKitDesktop.h"
 
 namespace khensu {
 
@@ -14,9 +18,9 @@ namespace khensu {
 /// adding" without a test-tone reference.
 ///
 /// THREAD_CONTEXT(UIThread)
-class HarmonicContentBarChart final : public juce::Component {
+class HarmonicContentBarChart final : public ThemedBarChart {
   public:
-    HarmonicContentBarChart() = default;
+    HarmonicContentBarChart();
 
     void setReport(const juce::String& effectName, std::vector<float> bandsHz, std::vector<float> addedDb);
     void clear();

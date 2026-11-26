@@ -17,6 +17,15 @@ void PitchAccuracyPanel::applyThemeColours()
     scanButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
 }
 
+namespace {
+/// VIS-4: the tuning verdict in words beside the number.
+juce::String tuneWord(float cents)
+{
+    if (std::abs(cents) <= 15.0f) return TRANS("in tune");
+    return cents > 0.0f ? TRANS("sharp") : TRANS("flat");
+}
+} // namespace
+
 PitchAccuracyPanel::PitchAccuracyPanel(IAppController& c) : PanelCard(c, "Pitch Accuracy")
 {
     applyThemeColours();
@@ -32,6 +41,18 @@ PitchAccuracyPanel::PitchAccuracyPanel(IAppController& c) : PanelCard(c, "Pitch 
 
     scanButton_.onClick = [this] { runAnalysis(); };
     addAndMakeVisible(scanButton_);
+    chart_.setTitle(TRANS("Pitch accuracy per note"));
+    chart_.setHorizontal(true);
+    chart_.x.lo = -50.0;
+    chart_.x.hi = 50.0;
+    chart_.x.unit = TRANS("cents");
+    chart_.setXRange(-50.0, 50.0);
+    chart_.setBaseline(0.0);
+    chart_.valueText = [](size_t, size_t, double v) {
+        const auto c = static_cast<float>(v);
+        return (c >= 0.0f ? "+" : "") + juce::String(juce::roundToInt(c)) + " c " + tuneWord(c);
+    };
+    addChildComponent(chart_);
     run_.onRetry([this] { runAnalysis(); });
     run_.setIdle(TRANS("Analyze the vocal for per-note tuning accuracy."));
 }
@@ -67,6 +88,7 @@ void PitchAccuracyPanel::runAnalysis()
             self.meanAbsCents_ = (float)(double)v[af::PitchAccuracyResponse::mean_abs_cents];
             self.inTunePct_ = (float)(double)v[af::PitchAccuracyResponse::in_tune_pct];
             self.tuning_ = TuningReading::fromResponse(v);
+            self.rebuildChart();
 
             // No notes: the service's 100% in_tune_pct is a placeholder (and
             // the short-audio return carries no tuning grid) - show the verdict.
@@ -74,6 +96,29 @@ void PitchAccuracyPanel::runAnalysis()
             return v[af::PitchAccuracyResponse::verdict].toString() + "  -  " + juce::String(juce::roundToInt(self.inTunePct_)) +
                    TRANS("% in tune") + "  -  " + self.tuning_.gridText();
         });
+}
+
+void PitchAccuracyPanel::rebuildChart()
+{
+    // VIS-1: a ChartKit bar chart on a cents axis (-50 .. +50), one bar per
+    // note; flat in the diverging palette's cool pole, sharp in its warm
+    // pole, every bar labelled with its cents and the verdict in words.
+    std::vector<ui::chart::Bar> bars;
+    juce::StringArray parts;
+    for (const auto& n : notes_) {
+        ui::chart::Bar b;
+        b.label = n.name;
+        b.values = {n.centsDeviation};
+        b.colour = KhensuTheme::vizDiverging(juce::jlimit(-1.0f, 1.0f, n.centsDeviation / 50.0f) * 0.6f +
+                                             (n.centsDeviation >= 0.0f ? 0.4f : -0.4f));
+        bars.push_back(b);
+        parts.add(n.name + " " + (n.centsDeviation >= 0.0f ? "+" : "") + juce::String(juce::roundToInt(n.centsDeviation)) +
+                  " " + TRANS("cents") + " (" + tuneWord(n.centsDeviation) + ")");
+    }
+    chart_.setBars(std::move(bars), {{TRANS("Mean deviation"), KhensuTheme::vizDiverging(0.8f)}});
+    chart_.setSummary(notes_.empty() ? TRANS("Pitch accuracy: no notes measured.")
+                                     : TRANS("Pitch accuracy per note") + ", " + juce::String(juce::roundToInt(inTunePct_)) +
+                                           TRANS("% in tune") + ": " + parts.joinIntoString(", ") + ".");
 }
 
 void PitchAccuracyPanel::paint(juce::Graphics& g)
@@ -87,56 +132,9 @@ void PitchAccuracyPanel::paint(juce::Graphics& g)
     // own tuning sits away from the grid reads every note as "out".
     const auto warning = tuning_.warningText();
     if (warning.isNotEmpty()) {
-        g.setFont(KhensuTheme::labelFont(9.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::accentAmber);
         g.drawFittedText(warning, b.removeFromTop(14), juce::Justification::centredLeft, 1, 0.9f);
-    } else {
-        b.removeFromTop(14);
-    }
-
-    const int rowH = juce::jmax(12, juce::jmin(18, b.getHeight() / juce::jmax(1, (int)notes_.size())));
-    int maxRows = b.getHeight() / rowH;
-    // Say when the list is truncated instead of silently dropping notes (UIX-24).
-    const int total = (int)notes_.size();
-    const bool truncated = total > maxRows && maxRows > 0;
-    if (truncated) --maxRows; // the last row carries "+N more"
-
-    int i = 0;
-    for (const auto& n : notes_) {
-        if (i >= maxRows) break;
-        auto row = b.removeFromTop(rowH).reduced(0, 1);
-
-        g.setFont(KhensuTheme::monoFont(9.5f));
-        g.setColour(KhensuTheme::textSecondary);
-        g.drawText(n.name, row.removeFromLeft(36), juce::Justification::centredLeft, false);
-
-        // Diverging bar centred at 0 cents; +/-50 cents spans the full width.
-        auto barArea = row.removeFromLeft(row.getWidth() - 60);
-        const float centreX = (float)barArea.getCentreX();
-        g.setColour(KhensuTheme::borderSubtle);
-        g.fillRect((int)centreX, barArea.getY(), 1, barArea.getHeight());
-
-        const float norm = juce::jlimit(-1.0f, 1.0f, n.centsDeviation / 50.0f);
-        const float halfW = (float)barArea.getWidth() * 0.5f;
-        const auto colour = std::abs(n.centsDeviation) <= 15.0f   ? KhensuTheme::accentTeal
-                            : std::abs(n.centsDeviation) <= 30.0f ? KhensuTheme::accentAmber
-                                                                  : KhensuTheme::accentRed;
-        g.setColour(colour.withAlpha(0.75f));
-        const float barW = std::abs(norm) * halfW;
-        g.fillRect(norm >= 0.0f ? centreX : centreX - barW, (float)barArea.getY() + 1.0f, barW,
-                   (float)barArea.getHeight() - 2.0f);
-
-        g.setFont(KhensuTheme::labelFont(9.0f));
-        g.setColour(colour);
-        g.drawText((n.centsDeviation >= 0 ? "+" : "") + juce::String(juce::roundToInt(n.centsDeviation)) + juce::String(juce::CharPointer_UTF8("\xc2\xa2")), row,
-                   juce::Justification::centredRight, false);
-        ++i;
-    }
-    if (truncated) {
-        g.setFont(KhensuTheme::labelFont(9.0f));
-        g.setColour(KhensuTheme::textTertiary);
-        g.drawText(TRANS("+%n more").replace("%n", juce::String(total - maxRows)), b.removeFromTop(rowH),
-                   juce::Justification::centredLeft, false);
     }
 }
 
@@ -151,6 +149,8 @@ void PitchAccuracyPanel::resized()
     auto errArea = bodyArea();
     errArea.removeFromTop(28);
     run_.errorState().setBounds(errArea);
+    chart_.setBounds(errArea.withTrimmedTop(16)); // under the off-grid caveat row
+    chart_.setVisible(run_.showsResult() && !notes_.empty());
 }
 
 } // namespace khensu

@@ -209,9 +209,14 @@ async def embeddings_index(req: EmbeddingIndexRequest) -> dict[str, Any]:
             response_model_exclude_unset=True)
 async def embeddings_index_list(backend: Backend = "auto", tag: Optional[str] = None,
                                 genre: Optional[str] = None) -> dict[str, Any]:
-    info = _resolve(backend)
+    # UXR-4: listing is file I/O. It used to resolve the backend on the event
+    # loop (a cold huggingface_hub import took over a minute) and read the
+    # index on the DSP pool, where it queued behind the launch's analysis -
+    # the References screen sat on "Reading your library..." meanwhile.
+    from khensu_services.common.executors import run_io_blocking
+    info = await run_io_blocking(_resolve, backend)
     from khensu_services.analysis.embeddings import list_index
-    entries = await _run(list_index, info["backend"], tag, genre)
+    entries = await run_io_blocking(list_index, info["backend"], tag, genre)
     return {"backend": info, "entries": entries, "index_size": len(entries)}
 
 

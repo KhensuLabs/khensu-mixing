@@ -56,7 +56,7 @@ SourceTriagePanel::SourceTriagePanel(IAppController& c) : PanelCard(c, "Fix-at-S
     run_.onRetry([this] { runTriage(); });
     run_.setIdle(TRANS("Scan the source file for capture defects."));
 
-    verdictLabel_.setFont(KhensuTheme::labelFont(11.0f).boldened());
+    verdictLabel_.setFont(KhensuTheme::labelFont(type::caption).boldened());
     addAndMakeVisible(verdictLabel_);
 
     viewport_.setViewedComponent(&content_, false);
@@ -130,14 +130,14 @@ void SourceTriagePanel::FindingRow::paint(juce::Graphics& g)
 
     auto inner = b.reduced(8, 4);
     auto top = inner.removeFromTop(14);
-    g.setFont(KhensuTheme::bodyFont(11.0f).boldened());
+    g.setFont(KhensuTheme::bodyFont(type::caption).boldened());
     g.setColour(KhensuTheme::textPrimary);
     g.drawText(title, top.removeFromLeft(top.getWidth() - 74), juce::Justification::centredLeft, true);
-    g.setFont(KhensuTheme::labelFont(9.0f).boldened());
+    g.setFont(KhensuTheme::labelFont(type::caption).boldened());
     g.setColour(col);
     g.drawText(categoryLabel(category), top, juce::Justification::centredRight, false);
 
-    g.setFont(KhensuTheme::labelFont(9.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textSecondary);
     g.drawFittedText(detail, inner, juce::Justification::topLeft, 3);
 }

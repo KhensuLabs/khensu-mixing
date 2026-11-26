@@ -1,4 +1,7 @@
 #include "AppController.h"
+#include "ui/shared/ReducedMotion.h"
+#include "ui/shared/AppFileDrop.h"
+#include "ui/shared/DecisionNotices.h"
 #include <khensu/dsp/DemoSong.h>
 #include "BundledResources.h"
 #include "session/KeyedListeners.h"
@@ -15,6 +18,7 @@
 #include "BackgroundReadKey.h"
 #include "ui/shared/KhensuTheme.h"
 #include "ui/shared/KhensuLookAndFeel.h"
+#include "ui/shared/LiquidSmokeBackdrop.h"
 #include <cmath>
 #include <thread>
 #include <khensu/common/AppPaths.h>
@@ -37,10 +41,13 @@
 #include "ui/Copilot/CopilotScreen.h"
 #include "ui/Issues/IssuesScreen.h"
 #include "analysis/ResultDerivedData.h" // UX2-4: the sidebar's readiness
+#include "ui/shared/GenreInUse.h"        // BUG-1: the target the findings used
+#include "ui/Dashboard/FindingCardMap.h" // ENH-7
+#include "ui/shared/IssueQueuePanel.h"  // STU-7: a finding's title
 #include "ui/ReferenceLibrary/ReferenceLibraryScreen.h"
 #include "session/WorkspaceRecoveryState.h"
 #include "ui/Settings/SettingsScreen.h"
-#include "ui/AiDetection/AiDetectionScreen.h"
+#include "ui/ProvenanceSource/AiDetectionScreen.h"
 #include "midi/Midi2DeviceManager.h"
 #include "ui/shared/RenderPaths.h"
 #include "CrashReporter.h"
@@ -94,6 +101,15 @@ void AppController::applyThemeColours()
 AppController::AppController() : commandPaletteController_(*this, *this), playbackBar(*this)
 {
     applyThemeColours();
+    // LG-1..4: load ambient backdrop preference and start VBlank driver.
+    {
+        const auto s = OnlineSettings::load(juce::File(juce::String(AppPaths::dataDirectory())));
+        LiquidSmokeBackdrop::setAmbientMotionEnabled(s.ambientBackdrop);
+    }
+    playback_.addRealTimeMeterListener(this, [this](float lp, float rp, float, float, float, float) {
+        smokeAudioEnergy_ = juce::jlimit(0.0f, 1.0f, juce::jmax(lp, rp));
+    });
+    smokeVBlank_ = std::make_unique<juce::VBlankAttachment>(this, [this] { onSmokeVBlank(); });
     // Playback starts at the transport slider's level. Applied here, once every
     // member exists - never from PlaybackTransportBar's constructor, which runs
     // in the initializer list above (launch crash, 2026-11-06).
@@ -175,6 +191,43 @@ void AppController::wireServiceCallbacks()
         // the original's findings ("Did it work?"); back to the original
         // clears the check.
         analysis_.verifyRender(renders_.currentRenderPath());
+    };
+    // AUTO-3: an edit of an earlier version offers to re-run the fixes that
+    // were stacked on it; the queue's progress and its Cancel are a notice.
+    renders_.onReplayOffer = [this](const RenderService::ReplayOffer& offer) {
+        noticeBar_.withdraw("rerun-offer");
+        const int n = (int)offer.steps.size();
+        juce::String text = n == 1 ? TRANS("You changed an earlier version. Re-run the fix that was stacked on it?")
+                                   : TRANS("You changed an earlier version. Re-run the %n fixes that were stacked on it, in order?")
+                                         .replace("%n", juce::String(n));
+        if (offer.unknownSteps > 0)
+            text << " " << TRANS("(%u could not be re-run: how they were made is not recorded.)")
+                               .replace("%u", juce::String(offer.unknownSteps));
+        AppNoticeBar::Notice notice;
+        notice.id = "rerun-offer";
+        notice.text = text;
+        notice.actionLabel = n == 1 ? TRANS("Re-run 1 fix") : TRANS("Re-run %n fixes").replace("%n", juce::String(n));
+        juce::Component::SafePointer<AppController> self(this);
+        notice.onAction = [self, offer] {
+            if (self != nullptr) self->renders_.startReplay(offer);
+        };
+        noticeBar_.post(std::move(notice));
+    };
+    renders_.onReplayProgress = [this](int done, int total, const juce::String& status, bool finished, bool ok) {
+        noticeBar_.withdraw("rerun-progress");
+        AppNoticeBar::Notice notice;
+        notice.id = "rerun-progress";
+        notice.text = status;
+        if (!finished) {
+            notice.text << " (" << juce::String(done) << "/" << juce::String(total) << ")";
+            notice.actionLabel = TRANS("Cancel");
+            juce::Component::SafePointer<AppController> self(this);
+            notice.onAction = [self] {
+                if (self != nullptr) self->renders_.cancelReplay();
+            };
+        }
+        juce::ignoreUnused(ok);
+        noticeBar_.post(std::move(notice));
     };
     // OVH-9: while the engine is not Running, native-renderable fixes render
     // in-process (the service stays the renderer whenever it is up).
@@ -276,11 +329,15 @@ void AppController::writeServiceToken()
         // call would 401 with no explanation. Tell the user instead of
         // failing silently.
         juce::Logger::writeToLog("AppController: FAILED to write token.txt - service auth will fail");
-        juce::NativeMessageBox::showMessageBoxAsync(
-            juce::MessageBoxIconType::WarningIcon, "Service authentication unavailable",
-            "Could not write the local service token file:\n" + tokenFile.getFullPathName() +
-                "\n\nDeep analysis and copilot features will not work this run. "
-                "Check permissions on the application data folder.");
+        // UXR-7: the app's notice bar, not a modal - it informs, nothing to decide.
+        noticeBar_.post({"service-token-write",
+                         TRANS("Service authentication unavailable: could not write the local service token file "
+                               "(%p). Deep analysis and copilot features will not work this run - check "
+                               "permissions on the application data folder.")
+                             .replace("%p", tokenFile.getFullPathName()),
+                         {},
+                         {},
+                         {}});
     } else {
         // Best-effort (audit SEC-06): the bearer token is plaintext, so
         // another local account being able to read it would let it
@@ -306,12 +363,15 @@ void AppController::openStores()
         storageDegraded = store.degraded;
         sessions_.attachStore(std::move(store.manager));
         if (storageDegraded) {
-            juce::NativeMessageBox::showMessageBoxAsync(
-                juce::MessageBoxIconType::WarningIcon, TRANS("Session storage unavailable"),
-                TRANS("Could not open the session database, so Khensu is running in a temporary mode: sessions, "
-                      "feedback and settings changes made now will not be saved, and automatic backups are paused "
-                      "so they cannot overwrite a good backup with an empty one.") +
-                    "\n\n" + store.failure);
+            // UXR-7: the app's notice bar, not a modal - it informs, nothing to decide.
+            noticeBar_.post({"session-storage-degraded",
+                             TRANS("Session storage unavailable: Khensu is running in a temporary mode - sessions, "
+                                   "feedback and settings changes made now will not be saved, and automatic backups "
+                                   "are paused.") +
+                                 (store.failure.isNotEmpty() ? " (" + store.failure + ")" : juce::String()),
+                             {},
+                             {},
+                             {}});
         }
     }
 
@@ -453,13 +513,14 @@ void AppController::buildChrome()
 
     // Service-error banner (hidden until an error is surfaced).
     serviceErrorBanner_.setJustificationType(juce::Justification::centred);
-    serviceErrorBanner_.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::bold));
+    serviceErrorBanner_.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::bold));
     serviceErrorBanner_.setVisible(false);
     addChildComponent(serviceErrorBanner_);
 
     addChildComponent(noticeBar_);
     noticeBar_.onVisibilityChanged = [this] { resized(); };
     postCrashNoticeIfAny();
+    wireBounceWatcher(); // ENH-1: after the notice bar it posts to
 
     // Results gate: covers the result screens while an analysis runs.
     addChildComponent(resultsOverlay_);
@@ -483,10 +544,14 @@ void AppController::showMacroMappingWindow()
 AppController::~AppController()
 {
     stopTimer();
+    bounceWatcher_.stop(); // ENH-1: no poll reaches a half-destroyed controller
+    analysis_.removeVerificationListener(&bounceWatcher_);
     // Raise isShuttingDown() and drain every pool before anything else is
     // torn down, so a queued/running background job never touches a
     // half-destroyed AppController (BackgroundRunner::shutdown).
     runner_.shutdown();
+    smokeVBlank_.reset();
+    playback_.removeRealTimeMeterListener(this);
     issues().removeIssuesListener(&sessionStateStrip_);
     renders().removeRenderTreeListener(&sessionStateStrip_);
 
@@ -560,6 +625,20 @@ void AppController::timerCallback()
 
     // UI-7: the Dashboard backdrop no longer draws a playhead, so nothing
     // repaints there while playing (the transport and waveform show position).
+}
+
+void AppController::onSmokeVBlank()
+{
+    if (!isShowing() || !LiquidSmokeBackdrop::shouldAnimate()) return;
+    if (!juce::Process::isForegroundProcess()) return;
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    // ~25 FPS (40 ms) keeps CPU negligible while looking silky at slow smoke speeds.
+    if (lastSmokeFrameMs_ > 0.0 && (nowMs - lastSmokeFrameMs_) < 38.0) return;
+    const float dt = lastSmokeFrameMs_ > 0.0 ? static_cast<float>((nowMs - lastSmokeFrameMs_) / 1000.0) : 0.04f;
+    lastSmokeFrameMs_ = nowMs;
+    const float energy = playback_.isPlaying() ? smokeAudioEnergy_ : 0.0f;
+    LiquidSmokeBackdrop::instance().advance(dt, energy);
+    repaint();
 }
 
 void AppController::paint(juce::Graphics& g)
@@ -726,8 +805,21 @@ bool AppController::keyPressed(const juce::KeyPress& key)
             return true;
         }
     }
+    // ENH-2: Shift+F fixes every safe issue (outside text entry, as F does).
+    if (code == 'F' && key.getModifiers().isShiftDown() && !key.getModifiers().isCommandDown() &&
+        !key.getModifiers().isAltDown() && !key.getModifiers().isCtrlDown() && hasActiveSession() &&
+        !textInputHasFocus()) {
+        runCoreVerb(CoreVerb::FixAllSafe);
+        return true;
+    }
     if (key.getModifiers().isCommandDown()) {
-        if (key.getKeyCode() == 'Z') {
+        // BUG-3: Ctrl+Shift+Z is redo (as in the plugin); Ctrl+Y stays redo.
+        if (key.getKeyCode() == 'Z' && key.getModifiers().isShiftDown()) {
+            if (canRedo()) {
+                redo();
+                return true;
+            }
+        } else if (key.getKeyCode() == 'Z') {
             if (canUndo()) {
                 undo();
                 return true;
@@ -748,6 +840,60 @@ bool AppController::keyPressed(const juce::KeyPress& key)
         return true;
     }
     return juce::Component::keyPressed(key);
+}
+
+bool AppController::isInterestedInFileDrag(const juce::StringArray& files)
+{
+    return !app_file_drop::audioFiles(files).empty();
+}
+
+void AppController::fileDragEnter(const juce::StringArray&, int, int)
+{
+    fileDragOver_ = true;
+    repaint();
+}
+
+void AppController::fileDragExit(const juce::StringArray&)
+{
+    fileDragOver_ = false;
+    repaint();
+}
+
+void AppController::filesDropped(const juce::StringArray& files, int, int)
+{
+    fileDragOver_ = false;
+    repaint();
+    const auto audio = app_file_drop::audioFiles(files);
+    if (audio.empty() || intakeScreen == nullptr) return;
+    // The same path as a drop on Intake's zone: probe, intake scan, then the
+    // user confirms and creates the session there.
+    showScreen(ScreenType::Intake);
+    intakeScreen->dropFilesForDiagnostics(audio);
+}
+
+void AppController::paintOverChildren(juce::Graphics& g)
+{
+    if (!fileDragOver_) return;
+    const auto area = contentContainer.getBounds().toFloat().reduced(12.0f);
+    g.setColour(KhensuTheme::scrim);
+    g.fillRect(getLocalBounds());
+    g.setColour(KhensuTheme::accentTealDim);
+    g.fillRoundedRectangle(area, 12.0f);
+    g.setColour(KhensuTheme::accentTeal);
+    const float dash[] = {8.0f, 6.0f};
+    juce::Path outline;
+    outline.addRoundedRectangle(area, 12.0f);
+    juce::Path dashed;
+    juce::PathStrokeType(2.0f).createDashedStroke(dashed, outline, dash, 2);
+    g.fillPath(dashed); // a dashed stroke is a filled outline (CLAUDE.md gotcha)
+    g.setColour(KhensuTheme::textPrimary);
+    g.setFont(KhensuTheme::uiFont(KhensuTheme::kFontH1, juce::Font::bold));
+    g.drawText(TRANS("Drop to open this track"), area.toNearestInt().withTrimmedBottom(28),
+               juce::Justification::centred, true);
+    g.setColour(KhensuTheme::textSecondary);
+    g.setFont(KhensuTheme::bodyFont());
+    g.drawText(TRANS("WAV, AIFF, FLAC, MP3, M4A or OGG - it opens on Intake as a new session"),
+               area.toNearestInt().withTrimmedTop(28), juce::Justification::centred, true);
 }
 
 bool AppController::textInputHasFocus()
@@ -822,6 +968,72 @@ void AppController::showIssue(const std::string& key)
     if (issuesScreen) issuesScreen->selectIssue(key);
 }
 
+bool AppController::revealCardForFinding(const std::string& findingKeyOrCode)
+{
+    // ENH-7: only switch screens when a card shows the finding.
+    if (dashboardScreen == nullptr || finding_card::forFinding(findingKeyOrCode).empty()) return false;
+    showScreen(ScreenType::Dashboard);
+    return dashboardScreen->revealCardForFinding(findingKeyOrCode);
+}
+
+// ---- STU-7: what the command palette finds besides commands ------------------------
+
+std::vector<ICommandPaletteHost::SearchTarget> AppController::searchableCards()
+{
+    std::vector<SearchTarget> out;
+    if (dashboardScreen != nullptr)
+        for (auto& card : dashboardScreen->searchableCards())
+            out.push_back({card.title, card.keywords, card.id});
+    return out;
+}
+
+void AppController::revealCard(const std::string& cardId)
+{
+    showScreen(ScreenType::Dashboard);
+    // Without a session the screen opens; there is no card to reveal yet.
+    if (dashboardScreen != nullptr) juce::ignoreUnused(dashboardScreen->revealCard(cardId));
+}
+
+std::vector<ICommandPaletteHost::SearchTarget> AppController::searchableFindings()
+{
+    std::vector<SearchTarget> out;
+    if (!hasAnalysis()) return out;
+    for (const auto& issue : issues_.list()) {
+        if (issue.settled()) continue; // open findings only
+        const std::string key = issue.recId.empty() ? issue.code : issue.recId;
+        if (key.empty()) continue;
+        juce::String keywords = juce::String(issue.code).replaceCharacter('_', ' ');
+        keywords << " " << juce::String(issue.rec.stem_or_bus) << " " << juce::String(issue.rec.section) << " " << IssueQueuePanel::severityWord(issue.rec.severity)
+                 << " finding issue problem";
+        out.push_back({IssueQueuePanel::titleFor(issue), keywords, key});
+    }
+    return out;
+}
+
+std::vector<ICommandPaletteHost::SearchTarget> AppController::searchableGenres()
+{
+    std::vector<SearchTarget> out;
+    const auto& db = genreDatabase();
+    out.reserve(db.listAll().size());
+    for (const auto& g : db.listAll()) {
+        juce::String keywords = juce::String(g.id).replaceCharacter('-', ' ');
+        if (!g.parent.empty())
+            if (const auto parent = db.findById(g.parent)) keywords << " " << juce::String(parent->name);
+        keywords << " genre style target";
+        out.push_back({juce::String(g.name.empty() ? g.id : g.name), keywords, g.id});
+    }
+    return out;
+}
+
+void AppController::showGenre(const std::string& genreId)
+{
+    // Non-destructive: the genre's profile in the Reference Library, not a
+    // new target for the session. Shown first, so the screen's first-visit
+    // default pick does not replace this one.
+    showScreen(ScreenType::ReferenceLibrary);
+    if (referenceLibraryScreen != nullptr) referenceLibraryScreen->selectGenre(juce::String(genreId));
+}
+
 void AppController::runCoreVerb(CoreVerb verb)
 {
     switch (verb) {
@@ -841,6 +1053,12 @@ void AppController::runCoreVerb(CoreVerb verb)
         showScreen(ScreenType::Issues);
         if (issuesScreen) issuesScreen->fixTopIssue();
         if (coachCard_) coachCard_->markDone(CoachMarkCard::FixTopIssue); // UX-15
+        return;
+    case CoreVerb::FixAllSafe:
+        // ENH-2: one version from every validated fix, checked like any fix.
+        if (!hasAnalysis()) return;
+        showScreen(ScreenType::Issues);
+        if (issuesScreen) issuesScreen->fixAllSafe();
         return;
     case CoreVerb::ToggleAb:
         if (playback_.hasAbComparison()) {
@@ -1070,10 +1288,14 @@ void AppController::showScreen(ScreenType screen)
         // make sure they are the content area's before it starts.
         if (!contentContainer.getLocalBounds().isEmpty())
             selectedScreen->setBounds(contentContainer.getLocalBounds());
-        selectedScreen->setAlpha(0.0f);
         selectedScreen->setVisible(true);
         selectedScreen->toFront(false);
-        screenAnimator_.fadeIn(selectedScreen, 180);
+        if (ui::motion::reduced()) {
+            selectedScreen->setAlpha(1.0f); // VIS-7: no fade
+        } else {
+            selectedScreen->setAlpha(0.0f);
+            screenAnimator_.fadeIn(selectedScreen, 180);
+        }
         // Every interactive control gets a spoken name and tooltip, including
         // rows built since the screen was last shown (see AccessibilityCoverage).
         AccessibilityCoverage::apply(*selectedScreen);
@@ -1140,9 +1362,10 @@ void AppController::showKeyboardHelp()
                   "Tab / Shift+Tab  next / previous control;  Return or Space activates\n"
                   "Space or Ctrl+Space  play / pause\n"
                   "Ctrl+O  open an audio file;  Ctrl+R  analyse again\n"
-                  "F  fix the top issue;  B  switch A/B (original / fix)\n"
+                  "F  fix the top issue;  Shift+F  fix all safe issues;  B  switch A/B (original / fix)\n"
                   "Ctrl+E  export;  Ctrl+,  settings\n"
-                  "Ctrl+Z / Ctrl+Y  undo / redo: the focused editor, else the render history (vocal edits on Vocal)\n"
+                  "Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z  undo / redo: the focused editor, else the render history (vocal edits on Vocal)\n"
+                  "Drop an audio file on any screen  open it as a session\n"
                   "N  next unresolved issue\n"
                   "Esc  close a dialog or overlay\n"
                   "F1  this list"));
@@ -1178,6 +1401,12 @@ void AppController::showMixMasterCard(int tabIdx)
     if (mixMasterScreen != nullptr) {
         mixMasterScreen->jumpToCard(tabIdx);
     }
+}
+
+void AppController::showExportStep(int step)
+{
+    showScreen(ScreenType::Export);
+    if (exportScreen != nullptr) exportScreen->showStep(step);
 }
 
 void AppController::hideExplainer()
@@ -1316,15 +1545,17 @@ void AppController::refreshSessionStateStrip()
             else ++st.minor;
         }
         if (const auto* s = getActiveSession()) {
-            juce::String genre = juce::String(s->target.primary_genre);
-            if (auto entry = analysis_.genreDatabase().findById(s->target.primary_genre); entry && !entry->name.empty())
-                genre = juce::String(entry->name);
+            // BUG-1: the genre the findings were judged against - the stated
+            // one, the detected one (said so), or the generic target.
+            const auto genre = genre_in_use::resolve(s->target.primary_genre,
+                                                     hasAnalysis() ? &currentAnalysis() : nullptr,
+                                                     analysis_.genreDatabase());
             juce::StringArray parts;
-            if (genre.isNotEmpty()) parts.add(genre);
+            parts.add(genre_in_use::label(genre));
             if (!s->target.playback_intent.empty())
                 parts.add(juce::String(s->target.playback_intent).substring(0, 1).toUpperCase()
                           + juce::String(s->target.playback_intent).substring(1));
-            st.target = parts.isEmpty() ? TRANS("No genre set") : parts.joinIntoString(", ");
+            st.target = parts.joinIntoString(", ");
         }
         st.analysis = analysisState_ == SessionStateStrip::State::Analysis::None && hasAnalysis()
                           ? SessionStateStrip::State::Analysis::Ready
@@ -1338,10 +1569,12 @@ void AppController::updateSessionStatusLabel()
     refreshSessionStateStrip();
     if (hasActiveSession()) {
         auto* s = getActiveSession();
-        juce::String genre = s ? juce::String(s->target.primary_genre) : juce::String();
-        if (s != nullptr) // the genre's display name, not its id (UX2-4)
-            if (auto entry = analysis_.genreDatabase().findById(s->target.primary_genre); entry && !entry->name.empty())
-                genre = juce::String(entry->name);
+        // BUG-1: the genre's display name (UX2-4), the detected one said so.
+        juce::String genre;
+        if (s != nullptr)
+            genre = genre_in_use::label(genre_in_use::resolve(s->target.primary_genre,
+                                                              hasAnalysis() ? &currentAnalysis() : nullptr,
+                                                              analysis_.genreDatabase()));
         sidebar_.setSessionName(s ? juce::String(s->name) : juce::String(), genre);
         sidebar_.setAnalysisStatus(hasAnalysis() ? TRANS("Ready") : TRANS("Pending"), hasAnalysis());
         // UX2-4: the session block's readiness - the verdict's one number.
@@ -1393,21 +1626,17 @@ void AppController::showServiceGaveUpNotice(bool portTaken)
                   : TRANS("Check that Python 3 is installed and local-services dependencies "
                           "are set up, then try restarting it.");
     showServiceError(TRANS("Local analysis service failed to start after several attempts.") + " " + cause);
-    // A passive banner alone left the user with no way
-    // to act on "it gave up" short of knowing to open
-    // the command palette themselves (audit ARCH-06) -
-    // offer the exact same restart path that command
-    // does, right where the failure was announced.
+    // A passive banner alone left the user with no way to act on "it gave
+    // up" short of knowing to open the command palette (audit ARCH-06):
+    // offer the same restart path that command does. A notice, not a modal
+    // box - the decision is single-action and non-destructive - posted under
+    // the engine-state id, so the next status change withdraws it.
     juce::Component::SafePointer<AppController> self(this);
-    auto callback = juce::ModalCallbackFunction::create([self](int result) {
-        if (result != 1 || self == nullptr) return; // 1 = "Restart Service"
-        self->lifecycle_.resetGaveUpNotice();
-        self->lifecycle_.restartPythonService(); // off the message thread; resets the backoff
-    });
-    juce::AlertWindow::showOkCancelBox(
-        juce::AlertWindow::WarningIcon, TRANS("Analysis Service Unavailable"),
-        TRANS("The local analysis service failed to start after several attempts.") + "\n\n" + cause,
-        TRANS("Restart Service"), TRANS("Dismiss"), nullptr, callback);
+    decision_notices::postReplacing(noticeBar_, decision_notices::serviceGaveUp(cause, [self] {
+                                        if (self == nullptr) return;
+                                        self->lifecycle_.resetGaveUpNotice();
+                                        self->lifecycle_.restartPythonService(); // off the message thread; resets the backoff
+                                    }));
 }
 
 // ---- Results gate ----------------------------------------------------------

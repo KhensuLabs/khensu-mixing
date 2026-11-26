@@ -43,7 +43,7 @@ juce::Colour IssueTimelinePanel::severityColour(float severity)
 IssueTimelinePanel::IssueTimelinePanel(KhensuCopilotProcessor& processor) : processor_(processor)
 {
     titleLabel_.setText(TRANS("Issues on the timeline"), juce::dontSendNotification);
-    titleLabel_.setFont(khensu::ui::Palette::uiFont(13.0f, juce::Font::bold));
+    titleLabel_.setFont(khensu::ui::Palette::uiFont(khensu::type::body, juce::Font::bold));
     titleLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textPrimary);
     addAndMakeVisible(titleLabel_);
 
@@ -54,7 +54,7 @@ IssueTimelinePanel::IssueTimelinePanel(KhensuCopilotProcessor& processor) : proc
     liveToggle_.onClick = [this] { processor_.setLiveAnalysisEnabled(liveToggle_.getToggleState()); };
     addAndMakeVisible(liveToggle_);
 
-    sourceLabel_.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::plain));
+    sourceLabel_.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
     sourceLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
     sourceLabel_.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(sourceLabel_);
@@ -90,7 +90,7 @@ IssueTimelinePanel::IssueTimelinePanel(KhensuCopilotProcessor& processor) : proc
         addAndMakeVisible(*b);
     }
 
-    statusLabel_.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::plain));
+    statusLabel_.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
     statusLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
     addAndMakeVisible(statusLabel_);
 
@@ -321,7 +321,7 @@ void IssueTimelinePanel::paintListBoxItem(int row, juce::Graphics& g, int width,
     if (selected) g.fillAll(PluginLookAndFeel::accentTeal.withAlpha(0.18f));
     g.setColour(severityColour(issue.severity));
     g.fillRect(2, 4, 4, height - 8);
-    g.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::plain));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
     g.setColour(PluginLookAndFeel::textMuted);
     const auto when = formatTime(issue.startSec) + "-" + formatTime(issue.endSec);
     g.drawText(when, 10, 0, 92, height, juce::Justification::centredLeft, true);
@@ -392,7 +392,7 @@ void IssueTimelinePanel::Strip::paint(juce::Graphics& g)
     }
 
     // Time labels and the host playhead.
-    g.setFont(khensu::ui::Palette::uiFont(9.0f, juce::Font::plain));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
     g.setColour(PluginLookAndFeel::textMuted);
     const int labelY = getHeight() - 12;
     g.drawText(formatTime(start_), 4, labelY, 60, 12, juce::Justification::centredLeft, false);

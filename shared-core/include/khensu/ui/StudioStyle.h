@@ -11,10 +11,10 @@
 
 namespace khensu::ui::studio {
 
-inline constexpr float kDisplaySize = 28.0f; ///< measured values, the largest text
-inline constexpr float kTitleSize = 17.0f;
-inline constexpr float kBodySize = 13.0f;
-inline constexpr float kLabelSize = 11.0f;
+inline constexpr float kDisplaySize = type::display; ///< measured values, the largest text
+inline constexpr float kTitleSize = type::title;
+inline constexpr float kBodySize = type::body;
+inline constexpr float kLabelSize = type::caption;
 
 inline constexpr int kPad = 12;    ///< outer padding of a card / strip
 inline constexpr int kGap = 8;     ///< gap between controls

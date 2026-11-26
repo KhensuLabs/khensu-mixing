@@ -99,7 +99,7 @@ void ZoneMeterComponent::paint(juce::Graphics& g)
     // Zone labels below bar
     b.removeFromTop(2);
     auto labelArea = b.removeFromTop(labelH);
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     constexpr int kZoneLabelW = 48;
     for (const auto& zl : zoneLabels_) {
@@ -114,7 +114,7 @@ void ZoneMeterComponent::paint(juce::Graphics& g)
 
     // Caption (value label)
     if (caption_.isNotEmpty()) {
-        g.setFont(KhensuTheme::monoFont(10.0f));
+        g.setFont(KhensuTheme::monoFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(caption_, b, juce::Justification::centredLeft, true);
     }

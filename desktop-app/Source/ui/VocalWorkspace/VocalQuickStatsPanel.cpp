@@ -121,42 +121,42 @@ void VocalQuickStatsPanel::paint(juce::Graphics& g)
     auto genreRect = b; // remaining space
 
     // 1. BPM Column
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText("BPM", bpmRect.withHeight(12.0f), juce::Justification::centredLeft, false);
 
-    g.setFont(KhensuTheme::metricFont(16.0f));
+    g.setFont(KhensuTheme::metricFont(type::title));
     g.setColour(KhensuTheme::textPrimary);
     g.drawText(bpm_ > 0.0f ? juce::String(bpm_, 1) : juce::String(L"\x2013"),
                bpmRect.withTrimmedTop(14.0f).withHeight(22.0f), juce::Justification::centredLeft, false);
     if (bpmDetail_.isNotEmpty()) {
-        g.setFont(KhensuTheme::labelFont(8.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(bpmDetail_, bpmRect.withTrimmedLeft(30.0f).withHeight(12.0f), juce::Justification::centredLeft,
                    true);
     }
 
     // 2. Key Column
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText("KEY", keyRect.withHeight(12.0f), juce::Justification::centredLeft, false);
 
-    g.setFont(KhensuTheme::bodyFont(13.0f));
+    g.setFont(KhensuTheme::bodyFont(type::body));
     g.setColour(KhensuTheme::accentTeal);
     g.drawText(key_, keyRect.withTrimmedTop(14.0f).withHeight(22.0f), juce::Justification::centredLeft, false);
     if (keyDetail_.isNotEmpty()) {
-        g.setFont(KhensuTheme::labelFont(8.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(keyDetail_, keyRect.withTrimmedLeft(30.0f).withHeight(12.0f), juce::Justification::centredLeft,
                    true);
     }
 
     // 3. Genre Column
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText("GENRE", genreRect.withHeight(12.0f), juce::Justification::centredLeft, false);
 
-    g.setFont(KhensuTheme::bodyFont(11.0f));
+    g.setFont(KhensuTheme::bodyFont(type::caption));
     g.setColour(KhensuTheme::textSecondary);
     g.drawText(genre_, genreRect.withTrimmedTop(14.0f).withHeight(22.0f), juce::Justification::centredLeft, false);
 
@@ -173,16 +173,16 @@ void VocalQuickStatsPanel::paint(juce::Graphics& g)
             for (size_t i = 0; i < stats_.size(); ++i) {
                 const auto cell = juce::Rectangle<float>(ga.getX() + cw * (float)((int)i % kCols),
                                                          ga.getY() + ch * (float)((int)i / kCols), cw, ch);
-                g.setFont(KhensuTheme::labelFont(8.5f));
+                g.setFont(KhensuTheme::labelFont(type::caption));
                 g.setColour(KhensuTheme::textTertiary);
                 g.drawText(stats_[i].label, cell.withHeight(11.0f), juce::Justification::centredLeft, false);
-                g.setFont(KhensuTheme::monoFont(11.0f));
+                g.setFont(KhensuTheme::monoFont(type::caption));
                 const bool isClips = stats_[i].label == "CLIPS";
                 g.setColour(isClips && clippingCount_ > 0 ? KhensuTheme::accentRed : KhensuTheme::textPrimary);
                 g.drawText(stats_[i].value, cell.withTrimmedTop(11.0f), juce::Justification::centredLeft, false);
             }
         } else {
-            g.setFont(KhensuTheme::labelFont(9.0f));
+            g.setFont(KhensuTheme::labelFont(type::caption));
             g.setColour(KhensuTheme::textTertiary);
             g.drawText(statsFetchInFlight_ ? "Measuring levels..." : "Level stats pending...", ga,
                        juce::Justification::centredLeft, false);
@@ -192,7 +192,7 @@ void VocalQuickStatsPanel::paint(juce::Graphics& g)
     // Spectral presence bar (Low / Mid-vocal / High)
     if (!specArea_.isEmpty()) {
         auto sa = specArea_.toFloat();
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText("SPECTRAL BALANCE", sa.removeFromTop(12.0f), juce::Justification::centredLeft, false);
 
@@ -213,7 +213,7 @@ void VocalQuickStatsPanel::paint(juce::Graphics& g)
         // Vocal range label below bar
         float vocalStartX = bar.getX() + wLow;
         float vocalW = wMid;
-        g.setFont(KhensuTheme::labelFont(8.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::accentBlue.withAlpha(0.9f));
         g.drawText("VOCAL", juce::Rectangle<float>(vocalStartX, bar.getBottom() + 1.0f, vocalW, 10.0f),
                    juce::Justification::centred, false);

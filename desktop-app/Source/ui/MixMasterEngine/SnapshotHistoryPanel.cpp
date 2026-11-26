@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/MixMasterEngine/SnapshotHistoryPanel.cpp
 #include "SnapshotHistoryPanel.h"
+#include "../shared/KhensuEmptyState.h"
 #include "../shared/PanelRunState.h"
 #include "../shared/KhensuLookAndFeel.h"
 #include "../../IAppController.h"
@@ -44,16 +45,16 @@ struct SnapshotHistoryPanel::RowComp final : public juce::Component {
         auto textArea = b.removeFromLeft(b.getWidth() - buttonsW);
 
         auto top = textArea.removeFromTop(16);
-        g.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::bold));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
         g.setColour(KhensuTheme::accentTeal);
         g.drawText(data.when, top, juce::Justification::centredLeft, true);
 
-        g.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::bold));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::bold));
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(data.label, textArea.removeFromTop(18), juce::Justification::centredLeft, true);
 
         if (data.hasMetrics) {
-            g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::plain));
+            g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
             g.setColour(KhensuTheme::textSecondary);
             juce::String metrics = juce::String(data.lufsIntegrated, 1) + " LUFS   " +
                                    juce::String(data.truePeakDbtp, 1) + " dBTP   " +
@@ -74,30 +75,9 @@ struct SnapshotHistoryPanel::RowComp final : public juce::Component {
 
 void SnapshotHistoryPanel::EmptyStateComponent::paint(juce::Graphics& g)
 {
-    auto b = getLocalBounds();
-    const int iconSize = 40;
-    auto iconArea =
-        juce::Rectangle<int>(0, 0, iconSize, iconSize).withCentre({b.getCentreX(), b.getY() + b.getHeight() / 2 - 28});
-
-    // A simple "camera" glyph (snapshot metaphor): body + lens, drawn with
-    // primitives rather than an embedded image asset.
-    auto body = iconArea.toFloat().withTrimmedTop(iconSize * 0.28f);
-    g.setColour(KhensuTheme::textSecondary.withAlpha(0.35f));
-    g.drawRoundedRectangle(body, 4.0f, 1.5f);
-    auto bump =
-        juce::Rectangle<float>(body.getWidth() * 0.32f, iconSize * 0.16f).withCentre({body.getCentreX(), body.getY()});
-    g.drawRoundedRectangle(bump, 2.0f, 1.5f);
-    g.drawEllipse(body.reduced(body.getWidth() * 0.28f), 1.5f);
-
-    auto textArea = b.withTrimmedTop(b.getHeight() / 2);
-    g.setColour(KhensuTheme::textPrimary);
-    g.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::bold));
-    g.drawText("No snapshots yet", textArea.removeFromTop(20), juce::Justification::centred);
-
-    g.setColour(KhensuTheme::textSecondary);
-    g.setFont(khensu::KhensuTheme::uiFont(10.5f, juce::Font::plain));
-    g.drawText("Save one above to start a named revision history for this session.", textArea.removeFromTop(18),
-               juce::Justification::centred);
+    // UXR-6: the shared empty state, like every other card.
+    KhensuEmptyState::paintInto(g, getLocalBounds(), TRANS("No snapshots yet"),
+                                TRANS("Save one above to start a named revision history for this session."));
 }
 
 SnapshotHistoryPanel::SnapshotHistoryPanel(IAppController& c) : PanelCard(c, "Snapshot History")

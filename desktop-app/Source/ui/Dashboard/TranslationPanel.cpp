@@ -51,12 +51,12 @@ TranslationPanel::TranslationPanel(IAppController& c) : PanelCard(c, "Translatio
     addAndMakeVisible(reportToggle_);
 
     summaryHeaderLabel_.setText(TRANS("Mix Health Status"), juce::dontSendNotification);
-    summaryHeaderLabel_.setFont(khensu::KhensuTheme::uiFont(13.0f, juce::Font::bold));
+    summaryHeaderLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::body, juce::Font::bold));
     addChildComponent(summaryHeaderLabel_);
 
     summaryBodyLabel_.setText(TRANS("Load audio to generate a client translation summary report."),
                               juce::dontSendNotification);
-    summaryBodyLabel_.setFont(khensu::KhensuTheme::uiFont(11.5f, juce::Font::plain));
+    summaryBodyLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     summaryBodyLabel_.setJustificationType(juce::Justification::topLeft);
     addChildComponent(summaryBodyLabel_);
 
@@ -76,8 +76,12 @@ TranslationPanel::TranslationPanel(IAppController& c) : PanelCard(c, "Translatio
     hearOriginalButton_.onClick = [this] { restoreOriginal(); };
     addAndMakeVisible(hearOriginalButton_);
 
-    deviceNoteLabel_.setFont(KhensuTheme::labelFont(9.5f));
+    deviceNoteLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(deviceNoteLabel_);
+    // VIS-8: the risk matrix reads as one image with a text summary.
+    matrixSummary_.setTitle(TRANS("Environmental risk matrix"));
+    matrixSummary_.describe = [this] { return matrixSummary(); };
+    addAndMakeVisible(matrixSummary_);
 
     updateView();
 }
@@ -301,82 +305,126 @@ void TranslationPanel::updateView()
     repaint();
 }
 
+namespace {
+const char* const kEnvNames[5] = {NEEDS_TRANS("Studio"), NEEDS_TRANS("Earbuds"), NEEDS_TRANS("Phone"), NEEDS_TRANS("Car"),
+                                  NEEDS_TRANS("Club")};
+const char* const kBandNames[3] = {NEEDS_TRANS("Lows"), NEEDS_TRANS("Mids"), NEEDS_TRANS("Highs")};
+
+/// VIS-4: the risk in words beside the number.
+juce::String riskWord(float risk)
+{
+    return risk < 0.3f ? TRANS("low") : risk < 0.65f ? TRANS("medium") : TRANS("high");
+}
+} // namespace
+
+juce::Rectangle<int> TranslationPanel::matrixArea() const
+{
+    // Below what resized() lays out: the toggle row, the summary or the five
+    // meters, the audition row and its note.
+    auto b = bodyArea();
+    b.removeFromTop(24 + 6);
+    b.removeFromTop(clientMode_ ? 100 : 5 * 24);
+    b.removeFromTop(4 + 22 + 2 + 14);
+    b.removeFromTop(8);
+    return b;
+}
+
+juce::Rectangle<int> TranslationPanel::cellRect(int env, int band) const
+{
+    auto b = matrixArea();
+    b.removeFromTop(16 + 6 + 14 + 4); // title, gap, column headers, gap
+    const int labelWidth = 70;
+    const int colWidth = (b.getWidth() - labelWidth) / 3;
+    const int rowHeight = juce::jmin(16, b.getHeight() / kNumEnvs);
+    return {b.getX() + labelWidth + band * colWidth + 4, b.getY() + env * (rowHeight + 2) + 1, colWidth - 8, rowHeight - 2};
+}
+
+juce::String TranslationPanel::matrixSummary() const
+{
+    // VIS-8: the high-risk cells by name, then the rest by count.
+    juce::StringArray high;
+    for (int i = 0; i < kNumEnvs; ++i)
+        for (int j = 0; j < kNumBands; ++j)
+            if (riskMatrix_[i][j] >= 0.65f)
+                high.add(juce::translate(kEnvNames[i]) + " " + juce::translate(kBandNames[j]).toLowerCase() + " " +
+                         juce::String(riskMatrix_[i][j], 2));
+    return TRANS("Translation risk per playback environment and band, 0 to 1") + ": " +
+           (high.isEmpty() ? TRANS("no high-risk cells") : TRANS("high risk in") + " " + ui::chart::joinWords(high)) + ".";
+}
+
 void TranslationPanel::paint(juce::Graphics& g)
 {
     PanelCard::paint(g);
 
-    auto b = bodyArea();
-    b.removeFromTop(24 + 6); // spacing and toggle
+    auto b = matrixArea();
+    const auto style = desktopChartStyle();
 
-    if (clientMode_) {
-        b.removeFromTop(100);
-    } else {
-        b.removeFromTop(5 * 24);
-    }
-
-    b.removeFromTop(10); // spacing
-
-    // Draw Matrix Title
-    g.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::bold));
+    // Matrix title
+    g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel).boldened());
     g.setColour(KhensuTheme::textPrimary);
-    g.drawText("ENVIRONMENTAL RISK MATRIX", b.removeFromTop(16), juce::Justification::centredLeft, false);
+    g.drawText(TRANS("Environmental risk matrix"), b.removeFromTop(16), juce::Justification::centredLeft, false);
     b.removeFromTop(6);
 
-    // Draw column headers
-    int labelWidth = 70;
-    int colWidth = (b.getWidth() - labelWidth) / 3;
-
+    const int labelWidth = 70;
+    const int colWidth = (b.getWidth() - labelWidth) / 3;
     auto headerRow = b.removeFromTop(14);
-    g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::bold));
+    g.setFont(ui::Palette::uiFont(style.fontSize).boldened());
     g.setColour(KhensuTheme::textSecondary);
-
-    g.drawText("LOWS", headerRow.getX() + labelWidth + 4, headerRow.getY(), colWidth, headerRow.getHeight(),
-               juce::Justification::centred, false);
-    g.drawText("MIDS", headerRow.getX() + labelWidth + colWidth + 4, headerRow.getY(), colWidth, headerRow.getHeight(),
-               juce::Justification::centred, false);
-    g.drawText("HIGHS", headerRow.getX() + labelWidth + 2 * colWidth + 4, headerRow.getY(), colWidth,
-               headerRow.getHeight(), juce::Justification::centred, false);
-
+    for (int j = 0; j < kNumBands; ++j)
+        g.drawText(juce::translate(kBandNames[j]), headerRow.getX() + labelWidth + j * colWidth + 4, headerRow.getY(), colWidth,
+                   headerRow.getHeight(), juce::Justification::centred, false);
     b.removeFromTop(4);
 
-    // Environments names list
-    const char* envNames[kNumEnvs] = {"Studio", "Earbuds", "Phone", "Car", "Club"};
-
-    int rowHeight = juce::jmin(16, b.getHeight() / kNumEnvs);
+    const int rowHeight = juce::jmin(16, b.getHeight() / kNumEnvs);
     for (int i = 0; i < kNumEnvs; ++i) {
         auto row = b.removeFromTop(rowHeight);
-
-        // Draw environment row label
-        g.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::plain));
+        g.setFont(ui::Palette::uiFont(style.fontSize));
         g.setColour(KhensuTheme::textSecondary);
-        g.drawText(envNames[i], row.getX(), row.getY(), labelWidth, row.getHeight(), juce::Justification::centredLeft,
-                   true);
-
-        // Draw 3 cells
-        int cellX = row.getX() + labelWidth;
+        g.drawText(juce::translate(kEnvNames[i]), row.getX(), row.getY(), labelWidth, row.getHeight(),
+                   juce::Justification::centredLeft, true);
         for (int j = 0; j < kNumBands; ++j) {
-            auto cellRect = juce::Rectangle<int>(cellX + 4, row.getY() + 1, colWidth - 8, row.getHeight() - 2);
-
-            float risk = riskMatrix_[i][j];
-            juce::Colour cellCol = risk < 0.3f    ? KhensuTheme::accentGreen  // Green
-                                   : risk < 0.65f ? KhensuTheme::accentAmber  // Yellow/Orange
-                                                  : KhensuTheme::accentRed; // Red
-
-            g.setColour(cellCol.withAlpha(0.15f));
-            g.fillRoundedRectangle(cellRect.toFloat(), 3.0f);
-            g.setColour(cellCol.withAlpha(0.4f));
-            g.drawRoundedRectangle(cellRect.toFloat(), 3.0f, 1.0f);
-
-            // Print score inside cell
-            g.setFont(juce::Font(juce::FontOptions{"Consolas", 8.5f, juce::Font::plain}));
-            g.setColour(cellCol);
-            g.drawText(juce::String(risk, 2), cellRect, juce::Justification::centred, false);
-
-            cellX += colWidth;
+            const auto cell = cellRect(i, j);
+            const float risk = riskMatrix_[i][j];
+            // VIS-4: risk is a magnitude - the sequential palette, the number
+            // and its word written in the cell.
+            g.setColour(KhensuTheme::vizSequential(juce::jlimit(0.0f, 1.0f, risk)));
+            g.fillRoundedRectangle(cell.toFloat(), 3.0f);
+            const bool hovered = cell.contains(hoverPos_);
+            g.setColour(hovered ? KhensuTheme::textPrimary : style.axis);
+            g.drawRoundedRectangle(cell.toFloat(), 3.0f, 1.0f);
+            g.setFont(KhensuTheme::monoFont(type::caption));
+            if (KhensuTheme::vizSequential(juce::jlimit(0.0f, 1.0f, risk)).getPerceivedBrightness() < 0.5f)
+                g.setColour(KhensuTheme::textPrimary);
+            else
+                g.setColour(KhensuTheme::bgVoid);
+            g.drawText(juce::String(risk, 2) + (cell.getWidth() > 70 ? " " + riskWord(risk) : juce::String()), cell,
+                       juce::Justification::centred, false);
         }
-
         b.removeFromTop(2); // row spacing
     }
+
+    // VIS-1: the ChartKit readout for the cell under the pointer.
+    for (int i = 0; i < kNumEnvs; ++i)
+        for (int j = 0; j < kNumBands; ++j)
+            if (cellRect(i, j).contains(hoverPos_)) {
+                ui::chart::Readout r;
+                r.title = juce::translate(kEnvNames[i]) + ", " + juce::translate(kBandNames[j]).toLowerCase();
+                r.lines.push_back({TRANS("Risk") + " " + juce::String(riskMatrix_[i][j], 2) + " - " + riskWord(riskMatrix_[i][j]),
+                                   KhensuTheme::vizSequential(juce::jlimit(0.0f, 1.0f, riskMatrix_[i][j]))});
+                ui::chart::ChartView::paintReadout(g, r, hoverPos_.toFloat(), getLocalBounds().toFloat(), style);
+            }
+}
+
+void TranslationPanel::mouseMove(const juce::MouseEvent& e)
+{
+    hoverPos_ = e.getPosition();
+    repaint(matrixArea());
+}
+
+void TranslationPanel::mouseExit(const juce::MouseEvent&)
+{
+    hoverPos_ = {-1, -1};
+    repaint(matrixArea());
 }
 
 void TranslationPanel::resized()
@@ -412,6 +460,7 @@ void TranslationPanel::resized()
     }
     b.removeFromTop(2);
     deviceNoteLabel_.setBounds(b.removeFromTop(14));
+    matrixSummary_.setBounds(matrixArea());
 }
 
 } // namespace khensu

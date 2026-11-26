@@ -452,7 +452,7 @@ void EqCurveComponent::paint(juce::Graphics& g)
         g.setColour(khensu::ui::Palette::statusWarn);
         g.fillPath(tri);
         if (peak.prominence > 3.0f) {
-            g.setFont(khensu::ui::Palette::uiFont(9.0f));
+            g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption));
             g.drawText(juce::String((int)peak.hz) + "Hz", (int)(x - 20), (int)(y + 8), 40, 10,
                        juce::Justification::centred, false);
         }
@@ -479,7 +479,7 @@ void EqCurveComponent::paint(juce::Graphics& g)
         g.drawEllipse(bx - kHandleRadius, by - kHandleRadius, kHandleRadius * 2.0f, kHandleRadius * 2.0f, 2.0f);
 
         if (hovered || dragging) {
-            g.setFont(khensu::ui::Palette::uiFont(9.0f));
+            g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption));
             g.setColour(khensu::ui::Palette::textPrimary.withAlpha(0.9f));
             juce::String tip =
                 juce::String((int)b.hz) + "Hz  " + (b.gain_db >= 0.0f ? "+" : "") + juce::String(b.gain_db, 1) + "dB";
@@ -489,7 +489,7 @@ void EqCurveComponent::paint(juce::Graphics& g)
     }
 
     // --- Frequency axis labels ---
-    g.setFont(khensu::ui::Palette::uiFont(9.0f));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption));
     g.setColour(khensu::ui::Palette::textMuted.withAlpha(0.7f));
     for (auto [hz, label] : std::initializer_list<std::pair<float, const char*>>{{50.0f, "50"},
                                                                                  {100.0f, "100"},
@@ -522,7 +522,7 @@ void EqCurveComponent::paint(juce::Graphics& g)
         g.fillEllipse(ch);
         g.setColour(hovered ? c.brighter(0.4f) : c);
         g.drawEllipse(ch, hovered ? 2.0f : 1.5f);
-        g.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::bold));
+        g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::bold));
         g.drawText("!", ch, juce::Justification::centred, false);
     }
 
@@ -563,7 +563,7 @@ void EqCurveComponent::paint(juce::Graphics& g)
         const auto ch = annotationChipBounds(a);
         const juce::Colour c = severityColour(a.severity);
 
-        g.setFont(khensu::ui::Palette::uiFont(10.0f));
+        g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption));
         const int textW =
             juce::jmin((int)p.getWidth() - 12,
                        juce::jmax(120, juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), a.label) + 16));

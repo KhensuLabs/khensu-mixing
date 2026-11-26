@@ -40,7 +40,7 @@ ChatConsoleMiniPanel::ChatConsoleMiniPanel(KhensuCopilotProcessor& processor) : 
     personalityToggle_.setToggleState(true, juce::dontSendNotification); // Default: Engineer Mode
     addAndMakeVisible(personalityToggle_);
 
-    statusLabel_.setFont(khensu::ui::Palette::uiFont(11.0f));
+    statusLabel_.setFont(khensu::ui::Palette::uiFont(khensu::type::caption));
     statusLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
     addAndMakeVisible(statusLabel_);
 

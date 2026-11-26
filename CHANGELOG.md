@@ -3,7 +3,33 @@
 Notable changes, newest first. The service API version (`SERVICE_VERSION`)
 moves separately.
 
-## Unreleased
+## 1.0.5 - 2026-11-26 - studio feel, plugin parity and live preview
+
+- Hear before you render: the EQ editor's **Preview live** plays the chain
+  while you edit, level-matched; bass mono, saturation, dynamic EQ,
+  de-esser and exciter through close live stand-ins. Keep still renders
+  offline and runs the fix check.
+- The plugin's DSP grows to six EQ bands (bell / shelf / notch / filters, on
+  stereo, mid or side, optionally dynamic) plus transient shaper,
+  saturation, bass mono and width (state v5; older projects load
+  unchanged), so Apply all safe fixes skips far fewer findings. Loading a
+  generated recipe fills all six bands and the new stages and lists what it
+  could not load.
+- Monitoring on the desktop transport (mono, side, sub, dim), a peak to
+  loudness (PSR) lane on the timeline, DAW marker export (CSV, REAPER, MIDI)
+  of sections and findings, Ctrl+K search over cards, genres and findings,
+  Pin as A / B for any two versions, a 3D waterfall and genre constellation,
+  read-only MIDI-CI for control surfaces, and the theme reaching the shared
+  widgets and the plugin.
+- Masking fixes render keyed on the competing stem in the engine too; a
+  sub-too-wide finding now has a bass mono fix; the width fix works on
+  readings clamped at full width.
+- The enhancement program (reference folder scan, master styles, export
+  presets, smart batch, decision notices on the notice bar, the issue
+  heatmap on the shared chart toolkit, headless fix / master / deliver).
+- A liquid-glass look: an ambient smoke backdrop behind the glass panels
+  (Settings > Ambient background motion; pauses with Reduce motion).
+
 
 - The stem masking finding holds each stem pair to its own bar, measured on
   150 released tracks: kick and bass, or a vocal and the pads and keys,

@@ -3,6 +3,8 @@
 #include "../../IAppController.h"
 #include "KhensuLookAndFeel.h"
 #include "KhensuTheme.h"
+#include "ChartKitDesktop.h"
+#include <khensu/ui/KhensuPalette.h>
 
 namespace khensu {
 
@@ -11,7 +13,8 @@ TimelineComponent::TimelineComponent(IAppController* controller)
 {
     formatManager_.registerBasicFormats();
     thumbnail_.addChangeListener(this);
-    setMouseCursor(juce::MouseCursor::CrosshairCursor);
+    setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    setTitle(TRANS("Song timeline"));
     if (controller_ != nullptr) vblank_ = std::make_unique<juce::VBlankAttachment>(this, [this] { onVBlank(); });
 }
 
@@ -58,10 +61,12 @@ void TimelineComponent::setRecommendations(std::vector<Recommendation> recs)
 juce::Rectangle<int> TimelineComponent::playheadStrip(float sec) const
 {
     // Matches paint(): a 2 px line plus the 10 px triangular head in the
-    // waveform row (the lower half). Padded a pixel for antialiasing.
-    const int sectionH = getHeight() / 2;
+    // waveform row (the lower half, above the time axis). Padded a pixel
+    // for antialiasing.
+    const int contentH = getHeight() - kAxisH;
+    const int sectionH = contentH / 2;
     const int x = juce::roundToInt(xFor(sec));
-    return {x - 7, sectionH, 14, getHeight() - sectionH};
+    return {x - 7, sectionH, 14, contentH - sectionH};
 }
 
 void TimelineComponent::onVBlank()
@@ -102,26 +107,55 @@ float TimelineComponent::timeForX(float x) const
 
 juce::Colour TimelineComponent::lufsColour(float lufs) const noexcept
 {
-    // Map LUFS to a colour gradient:
-    //  >= -9  LUFS : red (too loud, likely clipping headroom lost)
-    //  -14    LUFS : amber (Spotify/streaming target)
-    //  -18    LUFS : green (good pre-master level)
-    //  <= -24 LUFS : blue (very quiet, may need gain)
-    if (lufs >= -9.0f) return KhensuTheme::accentRed;  // red
-    if (lufs >= -14.0f) return KhensuTheme::accentAmber; // amber
-    if (lufs >= -18.0f) return KhensuTheme::accentGreen; // green
-    if (lufs >= -24.0f) return KhensuTheme::accentTeal; // teal
-    return KhensuTheme::accentBlue;                     // blue (very quiet)
+    // VIS-4: loudness is a magnitude - the sequential palette over the
+    // standard loudness axis (-36 .. 0 LUFS), never the severity colours.
+    // The value is written beside it.
+    const auto axis = ui::chart::scales::lufs();
+    return KhensuTheme::vizSequential(static_cast<float>(axis.norm(lufs)));
+}
+
+ui::chart::Axis TimelineComponent::timeAxis() const
+{
+    return ui::chart::scales::time(total_);
+}
+
+juce::Rectangle<int> TimelineComponent::axisRow() const
+{
+    return getLocalBounds().removeFromBottom(kAxisH);
+}
+
+juce::String TimelineComponent::summary() const
+{
+    // VIS-8: "Song timeline, 3:12: 6 sections: Intro -22.4 LUFS, ...; 2 findings at a moment".
+    if (total_ <= 0.0f) return TRANS("Song timeline: no track yet.");
+    juce::String s = TRANS("Song timeline") + ", " + timeAxis().label(total_) + ": ";
+    juce::StringArray parts;
+    for (const auto& sec : sections_)
+        parts.add(sec.label + (sec.lufs_integrated != 0.0f ? " " + juce::String(sec.lufs_integrated, 1) + " LUFS" : juce::String()));
+    s << (parts.isEmpty() ? TRANS("no sections") : juce::String(parts.size()) + " " + TRANS("sections") + ": " + parts.joinIntoString(", "));
+    int timed = 0;
+    for (const auto& rec : recs_)
+        if (rec.time_range.has_value() || !rec.section.empty()) ++timed;
+    if (timed > 0) s << "; " << timed << " " << TRANS("findings at a moment");
+    if (!markers_.empty()) s << "; " << static_cast<int>(markers_.size()) << " " << TRANS("hooks");
+    return s + ".";
+}
+
+std::unique_ptr<juce::AccessibilityHandler> TimelineComponent::createAccessibilityHandler()
+{
+    return ui::chart::makeChartAccessibilityHandler(*this, [this] { return summary(); });
 }
 
 void TimelineComponent::paint(juce::Graphics& g)
 {
+    const auto style = desktopChartStyle();
     auto b = getLocalBounds();
+    const auto axisArea = b.removeFromBottom(kAxisH);
     const int sectionH = b.getHeight() / 2;
     auto sectionRow = b.removeFromTop(sectionH);
     // b is now the waveform / marker row
 
-    // --- Section stripes (LUFS-coloured) ---
+    // --- Section stripes (loudness in the sequential palette, the value written) ---
     for (size_t i = 0; i < sections_.size(); ++i) {
         const float x0 = xFor(sections_[i].start_sec);
         const float x1 = (i + 1 < sections_.size()) ? xFor(sections_[i + 1].start_sec) : (float)getWidth();
@@ -133,57 +167,58 @@ void TimelineComponent::paint(juce::Graphics& g)
         g.setColour(base);
         g.fillRect(r.reduced(1.0f, 2.0f));
 
-        // LUFS colour indicator: left edge stripe
         if (sections_[i].lufs_integrated != 0.0f) {
-            juce::Colour lufsCol = lufsColour(sections_[i].lufs_integrated);
-            g.setColour(lufsCol.withAlpha(0.65f));
+            g.setColour(lufsColour(sections_[i].lufs_integrated));
             g.fillRect(r.withWidth(3.0f).reduced(0.0f, 2.0f));
         }
 
         // Section label (top portion) + LUFS reading (bottom)
         g.setColour(KhensuTheme::textSecondary);
+        g.setFont(ui::Palette::uiFont(style.fontSize));
         if (sections_[i].lufs_integrated != 0.0f) {
             auto labelR = r.withHeight(r.getHeight() * 0.55f);
             auto lufsR = r.withTrimmedTop(r.getHeight() * 0.55f);
-            g.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::plain));
             g.drawText(sections_[i].label, labelR.toNearestInt(), juce::Justification::centred, true);
-            g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::plain));
-            g.setColour(lufsColour(sections_[i].lufs_integrated).withAlpha(0.95f));
-            g.drawText(juce::String(sections_[i].lufs_integrated, 1) + "L", lufsR.toNearestInt(),
+            g.setColour(KhensuTheme::textPrimary);
+            g.setFont(ui::Palette::uiFont(style.fontSize * 0.9f));
+            g.drawText(juce::String(sections_[i].lufs_integrated, 1) + " LUFS", lufsR.toNearestInt(),
                        juce::Justification::centred, true);
         } else {
-            g.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::plain));
             g.drawText(sections_[i].label, r.toNearestInt(), juce::Justification::centred, true);
         }
     }
 
-    // --- Waveform thumbnail (LUFS-tinted via Image Cache) ---
+    // --- Waveform thumbnail (via Image Cache) ---
     if (waveformCacheNeedsRepaint_ || waveformCache_.getWidth() != b.getWidth() ||
         waveformCache_.getHeight() != b.getHeight()) {
         recreateWaveformCache(b);
     }
     g.drawImageAt(waveformCache_, b.getX(), b.getY());
 
-    // --- Loudness mapping helpers ---
+    // --- Loudness mapping: the standard loudness axis (VIS-3) ---
+    const auto lufsAxis = ui::chart::scales::lufs();
     auto lufsToY = [&](float lufs) -> float {
-        // Map LUFS range [-36, -6] to [b.getBottom(), b.getY()]
-        float ratio = (lufs - (-36.0f)) / (30.0f);
-        ratio = juce::jlimit(0.0f, 1.0f, ratio);
+        const float ratio = juce::jlimit(0.0f, 1.0f, static_cast<float>(lufsAxis.norm(lufs)));
         return (float)b.getBottom() - ratio * (float)b.getHeight();
     };
 
-    // --- Shaded Target Envelope Corridor (e.g., -16 to -11 LUFS for streaming genre targets) ---
+    // --- Shaded target corridor (-16 to -11 LUFS, streaming genre targets) ---
     {
         float targetTop = lufsToY(-11.0f);
         float targetBottom = lufsToY(-16.0f);
-        g.setColour(khensu::KhensuTheme::textPrimary.withAlpha(0.05f));
+        g.setColour(KhensuTheme::vizSpreadInner);
         g.fillRect((float)b.getX(), targetTop, (float)b.getWidth(), targetBottom - targetTop);
-        g.setColour(khensu::KhensuTheme::textPrimary.withAlpha(0.15f));
+        g.setColour(style.axis);
         g.drawHorizontalLine(juce::roundToInt(targetTop), (float)b.getX(), (float)b.getRight());
         g.drawHorizontalLine(juce::roundToInt(targetBottom), (float)b.getX(), (float)b.getRight());
+        g.setColour(style.muted);
+        g.setFont(ui::Palette::uiFont(style.fontSize * 0.85f));
+        g.drawText("-16 .. -11 LUFS", juce::Rectangle<float>((float)b.getRight() - 96.0f, targetTop - 12.0f, 92.0f, 11.0f),
+                   juce::Justification::centredRight, false);
     }
 
-    // --- Excessive Limiting / Squashed dynamics highlights ---
+    // --- Excessive limiting / squashed dynamics: a finding, so the severity
+    // colour - with its name written on it (VIS-4) ---
     for (size_t i = 0; i < sections_.size(); ++i) {
         if (sections_[i].lufs_integrated != 0.0f) {
             const bool tooLoud = sections_[i].lufs_integrated > -11.0f;
@@ -191,21 +226,17 @@ void TimelineComponent::paint(juce::Graphics& g)
             if (tooLoud || tooSquashed) {
                 float rx0 = xFor(sections_[i].start_sec);
                 float rx1 = (i + 1 < sections_.size()) ? xFor(sections_[i + 1].start_sec) : (float)getWidth();
-
-                // Red hot limiting/squashed glow overlay
                 g.setColour(KhensuTheme::accentRed.withAlpha(0.13f));
                 g.fillRect((float)b.getX() + rx0, (float)b.getY(), rx1 - rx0, (float)b.getHeight());
-
-                // Overlay text alert
                 g.setColour(KhensuTheme::accentRed);
-                g.setFont(khensu::KhensuTheme::uiFont(8.0f, juce::Font::bold));
-                g.drawText(tooSquashed ? "SQUASHED" : "HOT LIMIT", (int)(rx0 + b.getX() + 4), (int)(b.getY() + 2),
-                           (int)(rx1 - rx0 - 8), 10, juce::Justification::centred);
+                g.setFont(ui::Palette::uiFont(style.fontSize * 0.85f).boldened());
+                g.drawText(tooSquashed ? TRANS("Squashed") : TRANS("Hot limiting"), (int)(rx0 + b.getX() + 4),
+                           (int)(b.getY() + 2), (int)(rx1 - rx0 - 8), 11, juce::Justification::centred);
             }
         }
     }
 
-    // --- Drag-selection Active Loops / Target Zones ---
+    // --- Drag-selection loop ---
     if (loopStartSec_ >= 0.0f && loopEndSec_ >= 0.0f) {
         float rx0 = xFor(std::min(loopStartSec_, loopEndSec_));
         float rx1 = xFor(std::max(loopStartSec_, loopEndSec_));
@@ -216,58 +247,47 @@ void TimelineComponent::paint(juce::Graphics& g)
         g.drawVerticalLine(juce::roundToInt(b.getX() + rx1), (float)b.getY(), (float)b.getBottom());
     }
 
-    // --- Continuous Loudness Path ---
+    // --- Section loudness line ---
     {
         juce::Path loudnessPath;
         bool firstPoint = true;
         for (size_t i = 0; i < sections_.size(); ++i) {
             if (sections_[i].lufs_integrated == 0.0f) continue;
-            float start = sections_[i].start_sec;
-            float end = (i + 1 < sections_.size()) ? sections_[i + 1].start_sec : total_;
-            float mid = (start + end) / 2.0f;
-            float px = xFor(mid);
-            float py = lufsToY(sections_[i].lufs_integrated);
-
-            if (firstPoint) {
-                loudnessPath.startNewSubPath((float)b.getX() + px, py);
-                firstPoint = false;
-            } else {
-                loudnessPath.lineTo((float)b.getX() + px, py);
-            }
+            const float start = sections_[i].start_sec;
+            const float end = (i + 1 < sections_.size()) ? sections_[i + 1].start_sec : total_;
+            const float x = (float)b.getX() + xFor((start + end) / 2.0f);
+            const float y = lufsToY(sections_[i].lufs_integrated);
+            if (firstPoint) loudnessPath.startNewSubPath(x, y);
+            else loudnessPath.lineTo(x, y);
+            firstPoint = false;
         }
         if (!loudnessPath.isEmpty()) {
-            g.setColour(KhensuTheme::accentTeal); // Cyan neon LUFS line
+            g.setColour(KhensuTheme::vizCategory(0));
             g.strokePath(loudnessPath, juce::PathStrokeType(2.0f));
         }
     }
 
-    // --- Section division lines with white circular pin heads (#19 audit & reference style) ---
+    // --- Section division lines with pin heads ---
     for (size_t i = 0; i < sections_.size(); ++i) {
-        float sx = xFor(sections_[i].start_sec);
-
-        // Draw vertical division line in the waveform container
-        g.setColour(khensu::KhensuTheme::textPrimary.withAlpha(0.45f));
+        const float sx = xFor(sections_[i].start_sec);
+        g.setColour(KhensuTheme::textPrimary.withAlpha(0.45f));
         g.drawVerticalLine(juce::roundToInt(sx), (float)b.getY(), (float)b.getBottom());
-
-        // Draw circular pin head
-        g.setColour(khensu::KhensuTheme::textPrimary);
+        g.setColour(KhensuTheme::textPrimary);
         g.fillEllipse(sx - 3.0f, (float)b.getY() - 3.0f, 6.0f, 6.0f);
     }
 
-    // --- Playhead needle ---
+    // --- Playhead (the chart kit's playhead colour) ---
     if (playheadSec_ >= 0.0f) {
-        float px = xFor(playheadSec_);
-        g.setColour(KhensuTheme::accentRed); // vibrant red
+        const float px = xFor(playheadSec_);
+        g.setColour(style.playhead);
         g.fillRect((float)b.getX() + px - 1.0f, (float)b.getY(), 2.0f, (float)b.getHeight());
-
-        // Draw a small triangular handle at the top of the playhead
         juce::Path head;
         head.addTriangle((float)b.getX() + px, (float)b.getY() + 6.0f, (float)b.getX() + px - 5.0f, (float)b.getY(),
                          (float)b.getX() + px + 5.0f, (float)b.getY());
         g.fillPath(head);
     }
 
-    // --- Recommendation markers (#19 audit & live feedback) ---
+    // --- Findings at a moment (severity colours: these are findings) ---
     auto getRecTime = [this](const Recommendation& rec) -> float {
         if (rec.time_range.has_value()) return rec.time_range->start_sec;
         if (!rec.section.empty()) {
@@ -282,47 +302,40 @@ void TimelineComponent::paint(juce::Graphics& g)
     float hoveredRecTime = -1.0f;
 
     for (const auto& rec : recs_) {
-        float tStart = getRecTime(rec);
+        const float tStart = getRecTime(rec);
         if (tStart < 0.0f) continue;
 
-        juce::Colour markerCol = rec.severity >= 66.0f   ? KhensuTheme::accentRed
-                                 : rec.severity >= 33.0f ? KhensuTheme::accentAmber
-                                                         : KhensuTheme::accentTeal;
-
-        // Draw shaded block if range is defined
+        const juce::Colour markerCol = rec.severity >= 66.0f   ? KhensuTheme::accentRed
+                                       : rec.severity >= 33.0f ? KhensuTheme::accentAmber
+                                                               : KhensuTheme::accentBlue;
         if (rec.time_range.has_value() && rec.time_range->end_sec > rec.time_range->start_sec) {
-            float rx0 = xFor(rec.time_range->start_sec);
-            float rx1 = xFor(rec.time_range->end_sec);
+            const float rx0 = xFor(rec.time_range->start_sec);
+            const float rx1 = xFor(rec.time_range->end_sec);
             g.setColour(markerCol.withAlpha(0.10f));
             g.fillRect((float)b.getX() + rx0, (float)b.getY(), rx1 - rx0, (float)b.getHeight());
         }
-
-        // Draw warning flag icon
-        float mx = xFor(tStart);
-        float my = (float)b.getY() + 10.0f;
+        const float mx = xFor(tStart);
+        const float my = (float)b.getY() + 10.0f;
         g.setColour(markerCol);
         juce::Path p;
         p.addTriangle(mx, my - 6.0f, mx - 5.0f, my + 4.0f, mx + 5.0f, my + 4.0f);
         g.fillPath(p);
-
-        // Draw tiny exclamation mark in the triangle
-        g.setColour(juce::Colours::black); // theme-exempt(glyph on a saturated accent marker - black reads in every theme)
-        g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::bold));
+        g.setColour(KhensuTheme::bgVoid);
+        g.setFont(ui::Palette::uiFont(type::caption).boldened());
         g.drawText("!", (int)mx - 4, (int)my - 4, 8, 8, juce::Justification::centred);
 
-        // Check if mouse is hovering close to this marker
         if (hoverTimeSec_ >= 0.0f && std::abs(hoverTimeSec_ - tStart) < 3.5f) {
             hoveredRec = &rec;
             hoveredRecTime = tStart;
         }
     }
 
-    // --- Hook markers (strength-proportional teal bars) ---
+    // --- Hook markers (strength-proportional bars) ---
     for (const auto& m : markers_) {
         const float x0 = xFor(m.start_sec);
         const float x1 = xFor(m.end_sec);
         const float h = juce::jlimit(0.0f, 1.0f, m.strength) * (float)b.getHeight();
-        g.setColour(KhensuTheme::accentTeal.withAlpha(0.60f));
+        g.setColour(KhensuTheme::vizCategory(2).withAlpha(0.60f));
         g.fillRect((float)b.getX() + x0, (float)b.getBottom() - h, juce::jmax(2.0f, x1 - x0), h);
     }
 
@@ -331,79 +344,62 @@ void TimelineComponent::paint(juce::Graphics& g)
     g.setColour(KhensuTheme::textSecondary.withAlpha(0.4f));
     for (float sec : beats_)
         g.fillRect((float)b.getX() + xFor(sec), (float)b.getBottom() - beatH, 1.0f, beatH);
-
-    // --- Downbeat ticks ---
     const float downH = b.getHeight() * 0.45f;
-    g.setColour(KhensuTheme::accentTeal.withAlpha(0.65f));
+    g.setColour(KhensuTheme::textSecondary.withAlpha(0.75f));
     for (float sec : downbeats_)
         g.fillRect((float)b.getX() + xFor(sec) - 0.5f, (float)b.getBottom() - downH, 2.0f, downH);
 
-    // --- Hover time readout & Tooltip popup ---
+    // --- The time axis (ChartKit ticks and labels) ---
+    if (total_ > 0.0f) {
+        const auto axis = timeAxis();
+        g.setColour(style.axis);
+        g.drawHorizontalLine(axisArea.getY(), 0.0f, (float)getWidth());
+        g.setFont(ui::Palette::uiFont(style.fontSize));
+        for (const double v : axis.ticks(std::max(2, getWidth() / 70))) {
+            const float x = xFor(static_cast<float>(v));
+            g.setColour(style.grid);
+            g.drawVerticalLine(juce::roundToInt(x), (float)b.getY(), (float)b.getBottom());
+            g.setColour(style.muted);
+            auto r = juce::Rectangle<float>(x - 30.0f, (float)axisArea.getY() + 1.0f, 60.0f, (float)kAxisH - 1.0f);
+            r = r.constrainedWithin(axisArea.toFloat());
+            g.drawText(axis.label(v), r, juce::Justification::centredTop, false);
+        }
+    }
+
+    // --- Hover: crosshair and the ChartKit readout ---
     if (hoverTimeSec_ >= 0.0f) {
         const float hx = xFor(hoverTimeSec_);
+        g.setColour(style.crosshair);
+        g.drawVerticalLine(juce::roundToInt(hx), 0.0f, (float)b.getBottom());
 
-        // Draw hover playhead needle
-        g.setColour(khensu::KhensuTheme::textPrimary.withAlpha(0.35f));
-        g.drawVerticalLine(juce::roundToInt(hx), (float)getLocalBounds().getY(), (float)getLocalBounds().getBottom());
-
+        ui::chart::Readout r;
         if (hoveredRec != nullptr) {
-            // Render active recommendation tooltip
-            juce::Colour mCol = hoveredRec->severity >= 66.0f   ? KhensuTheme::accentRed
-                                : hoveredRec->severity >= 33.0f ? KhensuTheme::accentAmber
-                                                                : KhensuTheme::accentTeal;
-            g.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::bold));
-            juce::String tooltipText = hoveredRec->what;
-            const int textW = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), tooltipText) + 16;
-            int textH = 22;
-            int tx = (int)xFor(hoveredRecTime) - textW / 2;
-            tx = juce::jlimit(getLocalBounds().getX() + 4, getLocalBounds().getRight() - textW - 4, tx);
-            int ty = (int)b.getY() + 20;
-
-            g.setColour(KhensuTheme::bgVoid.withAlpha(0.95f));
-            g.fillRoundedRectangle((float)tx, (float)ty, (float)textW, (float)textH, 4.0f);
-            g.setColour(mCol);
-            g.drawRoundedRectangle((float)tx, (float)ty, (float)textW, (float)textH, 4.0f, 1.5f);
-            g.setColour(KhensuTheme::textPrimary);
-            g.drawText(tooltipText, tx, ty, textW, textH, juce::Justification::centred);
+            r.title = timeAxis().label(hoveredRecTime, true);
+            const juce::Colour mCol = hoveredRec->severity >= 66.0f   ? KhensuTheme::accentRed
+                                      : hoveredRec->severity >= 33.0f ? KhensuTheme::accentAmber
+                                                                      : KhensuTheme::accentBlue;
+            r.lines.push_back({juce::String(hoveredRec->what), mCol});
         } else {
-            // Find section hover metrics
-            float sectionCrest = 0.0f;
-            float sectionLufs = 0.0f;
-            juce::String sectionLabel = "";
+            r.title = timeAxis().label(hoverTimeSec_, true);
             for (size_t i = 0; i < sections_.size(); ++i) {
                 const float nextStart = (i + 1 < sections_.size()) ? sections_[i + 1].start_sec : total_;
                 if (hoverTimeSec_ >= sections_[i].start_sec && hoverTimeSec_ < nextStart) {
-                    sectionLufs = sections_[i].lufs_integrated;
-                    sectionCrest = sections_[i].crest_db;
-                    sectionLabel = sections_[i].label;
+                    r.lines.push_back({sections_[i].label, KhensuTheme::textSecondary});
+                    if (sections_[i].lufs_integrated != 0.0f) {
+                        const float dev = sections_[i].lufs_integrated - (-14.0f); // the streaming reference
+                        r.lines.push_back({juce::String(sections_[i].lufs_integrated, 1) + " LUFS (" + (dev >= 0.0f ? "+" : "") +
+                                               juce::String(dev, 1) + " LU " + TRANS("vs -14") + ")",
+                                           lufsColour(sections_[i].lufs_integrated)});
+                    }
+                    if (sections_[i].crest_db > 0.0f)
+                        r.lines.push_back({TRANS("Crest") + " " + juce::String(sections_[i].crest_db, 1) + " dB",
+                                           KhensuTheme::textSecondary});
                     break;
                 }
             }
-
-            juce::String hoverText;
-            if (!sectionLabel.isEmpty() && sectionLufs != 0.0f) {
-                float targetDiff = sectionLufs - (-14.0f); // Default streaming target
-                hoverText = sectionLabel + " | " + juce::String(sectionLufs, 1) +
-                            " LUFS | Crest: " + juce::String(sectionCrest, 1) +
-                            " dB (Dev: " + (targetDiff >= 0.0f ? "+" : "") + juce::String(targetDiff, 1) + " LU)";
-            } else {
-                const int min = (int)hoverTimeSec_ / 60;
-                const int sec = (int)hoverTimeSec_ % 60;
-                hoverText = juce::String(min) + ":" + juce::String(sec).paddedLeft('0', 2);
-            }
-
-            g.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::plain));
-            const int textW = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), hoverText) + 16;
-            int textH = 18;
-            int tx = (int)hx - textW / 2;
-            tx = juce::jlimit(getLocalBounds().getX() + 4, getLocalBounds().getRight() - textW - 4, tx);
-            int ty = 2;
-
-            g.setColour(KhensuTheme::bgSurface.darker(0.25f).withAlpha(0.92f));
-            g.fillRoundedRectangle((float)tx, (float)ty, (float)textW, (float)textH, 3.0f);
-            g.setColour(khensu::KhensuTheme::textPrimary.withAlpha(0.9f));
-            g.drawText(hoverText, tx, ty, textW, textH, juce::Justification::centred, false);
+            r.lines.push_back({TRANS("Click to play from here"), style.muted});
         }
+        ui::chart::ChartView::paintReadout(g, r, {hx, (float)b.getY() + 8.0f}, getLocalBounds().toFloat(), style);
     }
 }
 
@@ -424,39 +420,17 @@ void TimelineComponent::mouseExit(const juce::MouseEvent&)
     repaint();
 }
 
+void TimelineComponent::seekTo(float sec)
+{
+    // VIS-1: the seek path every time chart uses - move there and play.
+    if (controller_ != nullptr) chart_transport::playFrom(controller_->playback(), sec);
+    else if (seekCallback_) seekCallback_(sec);
+}
+
 void TimelineComponent::mouseDoubleClick(const juce::MouseEvent& e)
 {
     if (total_ <= 0.0f) return;
-    const float clickTimeSec = timeForX((float)e.x);
-
-    // Fire the seek callback if set (preferred path - no blocking dialog)
-    if (seekCallback_) {
-        seekCallback_(clickTimeSec);
-        return;
-    }
-
-    // Fallback: show informational dialog (original behaviour)
-    juce::String sectionLabel = "Unknown";
-    for (size_t i = 0; i < sections_.size(); ++i) {
-        const float nextStart = (i + 1 < sections_.size()) ? sections_[i + 1].start_sec : total_;
-        if (clickTimeSec >= sections_[i].start_sec && clickTimeSec < nextStart) {
-            sectionLabel = sections_[i].label;
-            break;
-        }
-    }
-
-    const int min = (int)clickTimeSec / 60;
-    const int sec = (int)clickTimeSec % 60;
-    juce::String timeStr = juce::String(min) + ":" + juce::String(sec).paddedLeft('0', 2);
-
-    juce::NativeMessageBox::showMessageBoxAsync(
-        juce::MessageBoxIconType::InfoIcon, "DAW Seeker Triggered",
-        "Seeking DAW playback to position: " + timeStr +
-            "\n"
-            "Active Section: " +
-            sectionLabel +
-            "\n\n"
-            "[DAW transport synchronization is dispatched via the Khensu Copilot VST3/AU plugin]");
+    seekTo(timeForX((float)e.x));
 }
 
 void TimelineComponent::mouseDown(const juce::MouseEvent& e)
@@ -485,10 +459,11 @@ void TimelineComponent::mouseUp(const juce::MouseEvent& e)
         std::swap(loopStartSec_, loopEndSec_);
     }
 
-    // If the selection is tiny, cancel loop selection
+    // A click (no real drag) plays from there; a tiny selection is no loop.
     if (loopEndSec_ - loopStartSec_ < 0.2f) {
         loopStartSec_ = -1.0f;
         loopEndSec_ = -1.0f;
+        if (!e.mouseWasDraggedSinceMouseDown()) seekTo(timeForX((float)e.x));
     }
     repaint();
 }
@@ -503,17 +478,16 @@ void TimelineComponent::recreateWaveformCache(juce::Rectangle<int> bounds)
     juce::Rectangle<int> b(0, 0, bounds.getWidth(), bounds.getHeight());
 
     if (thumbnail_.getNumChannels() > 0) {
-        g.setColour(KhensuTheme::accentTeal.withAlpha(0.40f));
+        g.setColour(KhensuTheme::textSecondary.withAlpha(0.30f));
         thumbnail_.drawChannels(g, b.reduced(1, 1), 0.0, thumbnail_.getTotalLength(), 1.0f);
-
-        g.setColour(KhensuTheme::accentTeal.withAlpha(0.85f));
+        g.setColour(KhensuTheme::textSecondary.withAlpha(0.65f));
         thumbnail_.drawChannel(g, b.reduced(1, 1), 0.0, thumbnail_.getTotalLength(), 0, 0.95f);
     } else {
         g.setColour(KhensuTheme::bgSurface.brighter(0.06f));
         g.fillRect(b);
         g.setColour(KhensuTheme::textSecondary.withAlpha(0.35f));
-        g.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::italic));
-        g.drawText("No audio file loaded", b, juce::Justification::centred, false);
+        g.setFont(ui::Palette::uiFont(type::caption));
+        g.drawText(TRANS("No audio file loaded"), b, juce::Justification::centred, false);
     }
 
     waveformCacheNeedsRepaint_ = false;

@@ -6,6 +6,7 @@
 #include <string>
 #include <khensu/feedback/FeedbackManager.h>
 #include "../services/IIssues.h"
+#include "../ui/shared/FindingEvidence.h"
 
 namespace khensu {
 
@@ -43,6 +44,15 @@ class IssueService final : public IIssues {
     void fixInRegion(const std::string& recId, double startSec, double endSec, const juce::String& label,
                      Done onDone = {}) override;
     bool fixTopIssue(Done onDone = {}) override;
+    SafeFixPlan safeFixes() const override;
+    bool fixAllSafe(Done onDone = {}) override;
+    /// ENH-2: the evidence table Fix all safe gates on (finding_evidence.json
+    /// by default; tests set their own).
+    void setEvidenceForTesting(std::map<juce::String, finding_evidence::Entry> evidence)
+    {
+        evidenceOverride_ = std::move(evidence);
+        hasEvidenceOverride_ = true;
+    }
     void refine(const std::string& recId, bool stronger, Done onDone = {}) override;
     bool fixInProgress() const override { return fixInFlight_; }
     void markDone(const std::string& recId) override;
@@ -86,7 +96,12 @@ class IssueService final : public IIssues {
         bool kept = true;
         float amount = 1.0f; ///< the share of the move rendered (OVH-6, NEW-4)
     };
-    std::map<juce::String, FixRender> fixRenders_;
+    /// By render path; one render can fix several findings (ENH-2).
+    std::multimap<juce::String, FixRender> fixRenders_;
+    void addFixRender(const juce::String& path, FixRender fixRender);
+    const std::map<juce::String, finding_evidence::Entry>& evidence() const;
+    std::map<juce::String, finding_evidence::Entry> evidenceOverride_;
+    bool hasEvidenceOverride_ = false;
     std::map<void*, std::function<void()>> listeners_;
 
     /// FIX-6: the feedback store and outbox writes run here, one at a time in

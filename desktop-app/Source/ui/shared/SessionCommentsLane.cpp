@@ -359,7 +359,7 @@ void SessionCommentsLane::paint(juce::Graphics& g)
     const double len = view_.viewEnd - view_.viewStart;
     if (comments_.empty() || len <= 0.0) {
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::labelFont(9.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText(loadedSessionId_.isEmpty() ? TRANS("Comments: no session") : TRANS("Comments: none yet"),
                    area.reduced(6.0f, 0.0f), juce::Justification::centredLeft, true);
         return;

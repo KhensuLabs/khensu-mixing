@@ -130,3 +130,40 @@ TEST_CASE("VIZ-2: one time axis, click to seek, a marker opens its moment", "[vi
     view.setTimeline(nullptr);
     view.paintEntireComponent(g, false);
 }
+
+TEST_CASE("STU-3: the timeline's PSR lane reads out and marks squashed passages", "[viz][timeline][psr]")
+{
+    juce::ScopedJuceInitialiser_GUI init;
+    auto tl = std::make_shared<TrackTimeline>();
+    tl->durationSec = 60.0;
+    tl->hopSec = 0.1;
+    tl->shortTermLufs.assign(600, -14.0f);
+    tl->momentaryLufs.assign(600, -14.0f);
+    tl->peakDbfs.assign(600, -2.0f); // PSR 12 dB
+    for (size_t i = 200; i < 300; ++i) {
+        tl->shortTermLufs[i] = -6.0f; // 20 - 30 s: PSR 4 dB, squashed
+        tl->peakDbfs[i] = -2.0f;
+    }
+    SongTimelineView view;
+    view.setSize(1000, 400);
+    view.setTimeline(tl);
+    REQUIRE(view.psrSeries().size() == 600);
+    CHECK(view.psrSeries()[100] == Approx(12.0f));
+    REQUIRE(view.squashedPassages().size() == 1);
+    CHECK(view.squashedPassages()[0].startSec == Approx(20.0));
+    CHECK(view.squashedPassages()[0].endSec == Approx(30.0));
+    CHECK(view.laneArea(SongTimelineView::kPsr).getHeight() > 0.0f);
+    CHECK(view.psrAxis().unit == "dB");
+
+    auto line = [&view](double sec) {
+        for (const auto& [text, colour] : view.readoutAt(sec).lines)
+            if (text.startsWith("PSR")) return text;
+        return juce::String();
+    };
+    CHECK(line(10.0) == "PSR 12 dB"); // ChartKit trims a trailing .0
+    CHECK(line(25.0).contains("squashed"));
+
+    juce::Image img(juce::Image::ARGB, 1000, 400, true);
+    juce::Graphics g(img);
+    view.paintEntireComponent(g, false);
+}

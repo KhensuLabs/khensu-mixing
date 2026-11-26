@@ -32,9 +32,14 @@ DepthLadderPanel::DepthLadderPanel(IAppController& c) : PanelCard(c, "Depth Ladd
     run_.onRetry([this] { runAnalysis(); });
     run_.setIdle(TRANS("Requires separated stems."));
 
-    suggestionLabel_.setFont(KhensuTheme::labelFont(9.5f));
+    suggestionLabel_.setFont(KhensuTheme::labelFont(type::caption));
     suggestionLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(suggestionLabel_);
+    chart_.owner = this;
+    chart_.setTitle(TRANS("Depth ladder"));
+    chart_.y = ui::chart::scales::percent();
+    chart_.setMargins(52, 8, 10, 20);
+    addChildComponent(chart_);
 }
 
 void DepthLadderPanel::runAnalysis()
@@ -75,53 +80,52 @@ void DepthLadderPanel::runAnalysis()
             self.suggestionLabel_.setText(lines.isEmpty() ? juce::String("Staging uses the depth field - no flags.")
                                                           : lines.joinIntoString("\n"),
                                           juce::dontSendNotification);
+            self.rebuildChart();
             return juce::String((int)self.stems_.size()) + " stems mapped.";
         },
         std::move(options));
 }
 
-void DepthLadderPanel::paint(juce::Graphics& g)
+void DepthLadderPanel::rebuildChart()
 {
-    PanelCard::paint(g);
-    if (!run_.showsResult() || stems_.empty()) return;
-
-    auto b = bodyArea();
-    b.removeFromTop(28);
-    b.removeFromBottom(46);
-    auto ladder = b.toFloat().reduced(6.0f, 4.0f);
-    if (ladder.getHeight() < 40.0f) return;
-
-    // Rails + rungs: front (bottom) to back (top).
-    g.setColour(KhensuTheme::textTertiary.withAlpha(0.25f));
-    for (int i = 0; i <= 4; ++i) {
-        const float y = ladder.getY() + ladder.getHeight() * (float)i / 4.0f;
-        g.drawHorizontalLine(juce::roundToInt(y), ladder.getX() + 44.0f, ladder.getRight());
+    // VIS-1: a ChartKit dot chart - one column per stem (its categorical
+    // colour), depth on the y axis from front (0 %) to back (100 %); the
+    // readout adds wetness, darkness and softness.
+    std::vector<juce::String> names;
+    std::vector<ui::chart::Series> series;
+    juce::StringArray parts;
+    for (size_t i = 0; i < stems_.size(); ++i) {
+        const auto& s = stems_[i];
+        names.push_back(s.name);
+        ui::chart::Series dot{s.name, KhensuTheme::vizCategory(static_cast<int>(i)), {static_cast<double>(i)},
+                              {static_cast<double>(s.depth)}, ui::chart::Series::Kind::Dots, 4.0f};
+        dot.inLegend = false;
+        series.push_back(dot);
+        parts.add(s.name + " " + juce::String(juce::roundToInt(s.depth * 100.0f)) + " %");
     }
-    g.setFont(KhensuTheme::labelFont(8.0f));
-    g.setColour(KhensuTheme::textTertiary);
-    g.drawText("BACK", (int)ladder.getX(), (int)ladder.getY(), 40, 10, juce::Justification::left);
-    g.drawText("FRONT", (int)ladder.getX(), (int)ladder.getBottom() - 10, 40, 10, juce::Justification::left);
-
-    // Stems as pills placed by depth; x staggered so labels don't overlap.
-    const float innerX = ladder.getX() + 50.0f;
-    const float innerW = ladder.getRight() - innerX;
-    int i = 0;
-    for (const auto& s : stems_) {
-        const float y = ladder.getY() + ladder.getHeight() * s.depth;
-        const float x = innerX + innerW * ((float)(i % 4) / 4.0f);
-        juce::Rectangle<float> pill(x, y - 9.0f, innerW / 4.5f, 18.0f);
-
-        // Wetter = cooler color; front/dry = warm teal.
-        auto col = KhensuTheme::accentTeal.interpolatedWith(KhensuTheme::accentPurple, s.depth);
-        g.setColour(col.withAlpha(0.25f));
-        g.fillRoundedRectangle(pill, 9.0f);
-        g.setColour(col);
-        g.drawRoundedRectangle(pill, 9.0f, 1.2f);
-        g.setFont(KhensuTheme::labelFont(9.0f).boldened());
-        g.drawText(s.name.toUpperCase(), pill.toNearestInt(), juce::Justification::centred, false);
-        ++i;
-    }
+    chart_.x = ui::chart::scales::categories(names);
+    chart_.setXRange(chart_.x.lo, chart_.x.hi);
+    chart_.setSeries(std::move(series));
+    chart_.setSummary(TRANS("Depth of each stem, 0 % front to 100 % back") + ": " + parts.joinIntoString(", ") + ".");
 }
+
+void DepthLadderPanel::Chart::extendReadout(ui::chart::Readout& r, double x)
+{
+    if (owner == nullptr) return;
+    const int i = juce::roundToInt(x);
+    if (i < 0 || i >= static_cast<int>(owner->stems_.size())) return;
+    const auto& s = owner->stems_[static_cast<size_t>(i)];
+    r.lines.clear();
+    r.title = s.name;
+    const auto pct = [](float v) { return juce::String(juce::roundToInt(v * 100.0f)) + " %"; };
+    r.lines.push_back({TRANS("Depth") + " " + pct(s.depth) + " (" + (s.depth < 0.33f ? TRANS("front") : s.depth < 0.66f ? TRANS("middle") : TRANS("back")) + ")",
+                       KhensuTheme::vizCategory(i)});
+    r.lines.push_back({TRANS("Wetness") + " " + pct(s.wetness), style().muted});
+    r.lines.push_back({TRANS("Darkness") + " " + pct(s.darkness), style().muted});
+    r.lines.push_back({TRANS("Softness") + " " + pct(s.softness), style().muted});
+}
+
+void DepthLadderPanel::paint(juce::Graphics& g) { PanelCard::paint(g); }
 
 void DepthLadderPanel::resized()
 {
@@ -136,6 +140,8 @@ void DepthLadderPanel::resized()
     auto errArea = bodyArea();
     errArea.removeFromTop(28);
     run_.errorState().setBounds(errArea);
+    chart_.setBounds(errArea.withTrimmedBottom(48));
+    chart_.setVisible(run_.showsResult() && !stems_.empty());
 }
 
 } // namespace khensu

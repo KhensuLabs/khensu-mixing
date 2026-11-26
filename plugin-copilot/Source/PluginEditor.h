@@ -17,6 +17,8 @@
 #include "ui/MixHubPanel.h"
 #include "ui/IssueTimelinePanel.h"
 #include "ui/PluginSubTabs.h"
+#include "ui/PluginSegmentedTabs.h"
+#include "ui/ReferencePanel.h"
 #include "ui/PresetBar.h"
 #include "ui/TopFixControl.h"
 
@@ -53,6 +55,12 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     /// false for an out-of-range index.
     bool selectTabByShortcut(int index);
     int getCurrentTabIndex() const { return tabs_.getCurrentTabIndex(); }
+    /// VIS-9: the section names, as shown ("Issues", "DSP", ...).
+    juce::StringArray getTabNames() const { return tabs_.getTabNames(); }
+    ReferencePanel& referencePanel() noexcept { return referencePanel_; }
+    /// VIS-9: switches the palette (Dark / High contrast) for every open
+    /// Copilot editor and saves it with this instance.
+    void setHighContrast(bool on);
 
     /// UI-8: switches between Compact and a full size; saved per instance in
     /// the plugin state (with the current tab).
@@ -64,13 +72,13 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     PresetBar& presetBar() noexcept { return presetBar_; }
 
   private:
-    /// The tab component, reporting tab changes so the tab is saved (UI-8).
-    struct CopilotTabs final : public juce::TabbedComponent {
-        CopilotTabs() : juce::TabbedComponent(juce::TabbedButtonBar::TabsAtTop) {}
-        std::function<void(int)> onTabChanged;
-        void currentTabChanged(int index, const juce::String&) override
+    /// VIS-9: applies this instance's saved palette before any child reads
+    /// a colour (it is constructed before them).
+    struct PaletteScope {
+        explicit PaletteScope(KhensuCopilotProcessor& p)
         {
-            if (onTabChanged) onTabChanged(index);
+            PluginLookAndFeel::setPalette(p.getUiPalette() == 1 ? PluginLookAndFeel::Palette::HighContrast
+                                                                : PluginLookAndFeel::Palette::Dark);
         }
     };
 
@@ -110,6 +118,7 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     };
 
     KhensuCopilotProcessor& processor_;
+    PaletteScope paletteScope_{processor_};
     // Declared before every child so it outlives them (UX-4).
     PluginEditorLookAndFeel editorLookAndFeel_;
 
@@ -144,16 +153,19 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     MixerChainMiniPanel mixerChainPanel_;
     ChatConsoleMiniPanel chatPanel_;
     DspControlGridPanel dspGridPanel_;
+    DspControlGridPanel dspMorePanel_; ///< STU-10: bands 4-6, band options, the v5 stages
     EqCurveMiniPanel eqCurvePanel_;
     HostedChainMiniPanel hostedChainPanel_;
     MixHubPanel mixHubPanel_;
     IssueTimelinePanel issuePanel_;
+    ReferencePanel referencePanel_; ///< ENH-10
 
-    CopilotTabs tabs_;
+    PluginSegmentedTabs tabs_; ///< VIS-9: segmented, like the desktop
     HooksBrainTabPage hooksBrainPage_{hookPanel_, systemBrainPanel_};
     SuggestionsTabPage suggestionsPage_{issuePanel_, suggestionPanel_, processor_};
-    // UX-18: five tabs - Suggest (suggestions, hooks/brain), DSP (chain, EQ
-    // curve), Plugins (mixer chain, hosted), Mix, Chat.
+    // UX-18 / VIS-9: six sections - Issues (findings, hooks/brain), DSP
+    // (chain, EQ curve), Plugins (mixer chain, hosted), Mix Hub, Chat and
+    // Reference (ENH-10).
     PluginSubTabs suggestTab_, dspTab_, pluginsTab_;
 
     // UI-8 Compact view: meters, top three findings, Apply top fix, A/B.
@@ -181,6 +193,12 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     juce::Label mappingHudLabel_;
     juce::Label serviceHealthLabel_;
     PluginComparisonStrip comparisonStrip_;
+    // ENH-10: in the footer beside the A/B - hear the reference (matched),
+    // and the monitoring solo (Mono / Side / Sub / bands).
+    juce::TextButton refButton_, soloButton_;
+    void showSoloMenu();
+    void updateMonitorButtons();
+    void layoutFooter(juce::Rectangle<int> footer);
     // UX-10: what Apply did, inline - never a modal dialog inside the DAW.
     // Undo puts back every parameter the apply changed (as host gestures).
     juce::Label applyStripLabel_;
@@ -190,6 +208,8 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     std::vector<float> applyUndoSnapshot_; ///< normalised values before the last apply
     std::optional<Recommendation> pendingOverride_;
     void showApplyStrip(const juce::String& summary, const juce::String& details, bool canUndo, bool canOverride = false);
+    /// The strip's hover text for a batch: what went in, what to dial in, what was skipped and why.
+    static juce::String applyBatchDetails(const copilot::FixBatchResult& batch, const juce::String& appliedHeading);
     void undoLastApply();
   public:
     /// Routes a recommendation's suggested parameters into the built-in DSP
@@ -198,6 +218,14 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     /// finding not marked safe_to_auto_apply is not applied (the strip says
     /// why and offers Apply anyway). Returns true when anything was applied.
     bool applySuggestion(const Recommendation& rec, bool requireSafe = true);
+    /// ENH-10 (3): Apply all safe fixes - every finding in `recs` that is safe
+    /// and renderable, one undo step; the strip lists what was skipped and why.
+    bool applyAllFixes(const std::vector<Recommendation>& recs);
+    /// STU-17: a generated mixer-chain recipe into the built-in chain (all six
+    /// EQ bands and the v5 stages), one undo step; the strip lists the plugins
+    /// and EQ moves that could not be mapped, and why. False when nothing maps
+    /// (the chain is then left as it was).
+    bool applyChainRecipe(const mixerchain::RecipeDspMapping& mapping);
     /// UX-10 (tests): presses the strip's Undo.
     void undoLastApplyForTesting() { undoLastApply(); }
     /// OVH-8 (tests): presses the strip's Apply anyway.
@@ -210,6 +238,13 @@ class KhensuCopilotEditor final : public juce::AudioProcessorEditor,
     {
         return applyStripLabel_.isVisible() ? applyStripLabel_.getText() : juce::String();
     }
+    /// STU-17 (tests): the strip's hover details, empty when hidden.
+    juce::String applyStripDetailsForTesting()
+    {
+        return applyStripLabel_.isVisible() ? applyStripLabel_.getTooltip() : juce::String();
+    }
+    /// STU-17 (tests): the Mixer chain view.
+    MixerChainMiniPanel& mixerChainPanelForTesting() { return mixerChainPanel_; }
   private:
     juce::TooltipWindow tooltipWindow_{this, 600};
 

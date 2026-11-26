@@ -25,7 +25,7 @@ ArtifactPanel::ArtifactPanel(IAppController& c) : PanelCard(c, "Artifacts")
     setExplainer(TRANS("Artifacts"), kArtifactExplainerBase, "artifact_detection");
     addAndMakeVisible(clippingBadge_);
     addAndMakeVisible(aiBadge_);
-    noiseLabel_.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::plain));
+    noiseLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::plain));
     addAndMakeVisible(noiseLabel_);
 
     // -80..0 dB covers silence to full-scale; -50 dB and quieter reads as a

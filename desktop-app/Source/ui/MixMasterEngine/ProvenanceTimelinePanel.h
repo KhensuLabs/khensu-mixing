@@ -1,6 +1,7 @@
 // desktop-app/Source/ui/MixMasterEngine/ProvenanceTimelinePanel.h
 #pragma once
 #include <JuceHeader.h>
+#include "../shared/KhensuEmptyState.h"
 #include "../shared/KhensuTheme.h" // ThemeListener
 #include "../shared/PanelCard.h"
 #include <khensu/ipc/HttpServiceBridge.h>
@@ -44,7 +45,7 @@ class ProvenanceTimelinePanel final : public PanelCard {
 
     juce::Viewport viewport_;
     juce::Component content_;
-    juce::Label emptyLabel_;
+    KhensuEmptyState emptyState_; // UXR-6
 
     struct RowComp;
     std::vector<std::unique_ptr<RowComp>> rows_;

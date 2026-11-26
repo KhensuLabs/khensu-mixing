@@ -64,6 +64,50 @@ class IntelligenceApi : public virtual BridgeTransport {
     explainCounterfactual(const juce::String& filePath, const juce::String& findingCode,
                           std::optional<double> threshold, std::optional<double> freqHz,
                           const juce::String& genreId = {}, const juce::String& outputPath = {});
+
+    // REFS-1: the reference folder scan (routes in
+    // analysis/router_reference_scan.py; read the replies through
+    // api::fields::ReferenceScan*).
+    /// GET /references/scan/roots: the scan folders.
+    khensu::Result<juce::var, BridgeError> referenceScanRoots();
+    /// POST /references/scan/roots: add a scan folder; `replace` makes it the
+    /// only one. A null `rescanOnLaunch` leaves the setting as it is.
+    khensu::Result<juce::var, BridgeError> referenceScanSetRoot(const juce::String& path,
+                                                                std::optional<bool> rescanOnLaunch,
+                                                                bool replace);
+    /// POST /references/scan/roots/remove: stop using a scan folder and
+    /// forget what was found in it (the files themselves are untouched).
+    khensu::Result<juce::var, BridgeError> referenceScanRemoveRoot(const juce::String& path, bool forgetItems = true);
+    /// POST /references/scan/start: scan every saved folder (a job).
+    khensu::Result<juce::var, BridgeError> referenceScanStart(bool indexSongs = true);
+    /// GET /references/scan/status/{id}.
+    khensu::Result<juce::var, BridgeError> referenceScanStatus(const juce::String& jobId);
+    /// POST /references/scan/{id}/cancel.
+    khensu::Result<juce::var, BridgeError> referenceScanCancel(const juce::String& jobId);
+    /// GET /references/scan/current: the running (or last) scan job.
+    khensu::Result<juce::var, BridgeError> referenceScanCurrent();
+    /// Filter for the scanned items (empty = any).
+    struct ReferenceScanFilter {
+        juce::String genre;  ///< catalog genre id
+        juce::String family; ///< catalog family id
+        juce::String kind;   ///< "song" | "sample"
+        juce::String pack;   ///< pack name or folder
+        juce::String text;   ///< title / author / pack / album / path contains
+        bool unsorted = false;
+        int limit = 300;
+    };
+    /// GET /references/scan/items.
+    khensu::Result<juce::var, BridgeError> referenceScanItems(const ReferenceScanFilter& filter);
+    /// GET /references/scan/packs.
+    khensu::Result<juce::var, BridgeError> referenceScanPacks(const ReferenceScanFilter& filter);
+    /// GET /references/scan/summary: songs / samples / packs and per-genre counts.
+    khensu::Result<juce::var, BridgeError> referenceScanSummary();
+    /// POST /references/scan/items/genre: the user's genre for an item (or
+    /// its whole pack); "" clears it.
+    khensu::Result<juce::var, BridgeError> referenceScanSetGenre(const juce::String& id, const juce::String& genre,
+                                                                 bool applyToPack, bool learn = true);
+    /// GET /references/scan/thumbnail/{id}: the artwork thumbnail (base64 JPEG).
+    khensu::Result<juce::var, BridgeError> referenceScanThumbnail(const juce::String& id);
 };
 
 } // namespace khensu::ipc

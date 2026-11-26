@@ -99,9 +99,9 @@ DeliveryPackagePanel::DeliveryPackagePanel(PanelCardController& c, const juce::S
     readButton_.onClick = [this] { runCredentials(false); };
     addAndMakeVisible(readButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(statusLabel_);
-    resultsLabel_.setFont(KhensuTheme::labelFont(9.5f));
+    resultsLabel_.setFont(KhensuTheme::labelFont(type::caption));
     resultsLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(resultsLabel_);
     refreshReadiness();

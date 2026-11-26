@@ -58,6 +58,14 @@ set(KHENSU_COPILOT_SOURCES
     Source/live/CopilotLiveAnalyzer.cpp
     Source/automation/FixAutomation.cpp
     Source/ara/KhensuAraDocumentController.cpp
+    # ENH-10: reference track, monitoring solo, apply all safe fixes
+    Source/FixBatch.cpp
+    # Source/monitor/MonitorSolo.h forwards to shared-core (STU-5)
+    Source/reference/LoudnessStats.cpp
+    Source/reference/ReferenceTrack.cpp
+    Source/ui/ReferencePanel.cpp
+    # VIS-9: segmented sections
+    Source/ui/PluginSegmentedTabs.cpp
 )
 
 khensu_conversion_warnings(${KHENSU_COPILOT_SOURCES})
@@ -108,7 +116,7 @@ endfunction()
 
 juce_add_plugin(KhensuCopilot
     PRODUCT_NAME        "Khensu Copilot"
-    VERSION             "1.0.4"
+    VERSION             "1.0.5"
     BUNDLE_ID           "com.khensu.mixing.copilot"
     COMPANY_NAME        "Khensu"
     PLUGIN_MANUFACTURER_CODE KhMx
@@ -138,7 +146,7 @@ endif()
 if(KHENSU_ARA_AVAILABLE)
     juce_add_plugin(KhensuCopilotARA
         PRODUCT_NAME        "Khensu Copilot ARA"
-        VERSION             "1.0.4"
+        VERSION             "1.0.5"
         BUNDLE_ID           "com.khensu.mixing.copilot.ara"
         COMPANY_NAME        "Khensu"
         PLUGIN_MANUFACTURER_CODE KhMx

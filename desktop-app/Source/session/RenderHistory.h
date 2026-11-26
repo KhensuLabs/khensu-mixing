@@ -1,6 +1,7 @@
 // desktop-app/Source/session/RenderHistory.h
 #pragma once
 #include <JuceHeader.h>
+#include <algorithm>
 #include <vector>
 
 namespace khensu {
@@ -100,6 +101,37 @@ class RenderHistory {
         for (const auto& n : tree)
             if (n.path == path) return Kept::Undone;
         return Kept::Gone;
+    }
+
+    /// AUTO-3: the versions that were stacked on `newNode`'s input before it
+    /// was rendered - the path from its parent (the version it edited) down
+    /// to the newest other node built on that parent, in processing order.
+    /// For a root (an edit of the original) that is the newest other chain.
+    /// Empty when the parent had nothing on top of it (a plain stacked fix).
+    static std::vector<int> stackedAbove(const std::vector<TreeNode>& tree, int newNode)
+    {
+        if (newNode < 0 || newNode >= (int)tree.size()) return {};
+        const int parent = tree[(size_t)newNode].parent;
+        // Is `node` built on `parent` (a strict descendant; every node is
+        // built on the original, parent -1)? Bounded like keptInTree.
+        const auto above = [&tree, parent](int node) {
+            int n = node;
+            for (size_t steps = 0; steps <= tree.size() && n >= 0 && n < (int)tree.size(); ++steps) {
+                const int up = tree[(size_t)n].parent;
+                if (up == parent) return true;
+                n = up;
+            }
+            return false;
+        };
+        for (int i = (int)tree.size() - 1; i >= 0; --i) {
+            if (i == newNode || !above(i)) continue;
+            std::vector<int> path;
+            for (int n = i; n >= 0 && n != parent && path.size() <= tree.size(); n = tree[(size_t)n].parent)
+                path.push_back(n);
+            std::reverse(path.begin(), path.end());
+            return path;
+        }
+        return {};
     }
 
     // ---- mutations ----

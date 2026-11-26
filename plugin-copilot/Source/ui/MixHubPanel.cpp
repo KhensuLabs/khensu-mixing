@@ -7,7 +7,7 @@ namespace khensu {
 using namespace mixhub;
 
 namespace {
-constexpr int kMaxConflictsShown = 5;
+constexpr int kConflictRowH = 22;
 
 juce::String fmtDb(float db, int decimals = 1)
 {
@@ -17,21 +17,21 @@ juce::String fmtDb(float db, int decimals = 1)
 
 MixHubPanel::MixHubPanel(KhensuCopilotProcessor& processor) : processor_(processor)
 {
-    setTitle("Mix view");
-    setHelpText("Every Khensu Copilot instance in this process, their masking conflicts and the summed balance");
+    setTitle(TRANS("Mix Hub"));
+    setHelpText(TRANS("Every Khensu Copilot instance in this process, their masking conflicts and the summed balance"));
 
     // Role menu (PLG-18). Item 1 = automatic; items 2.. = selectableRoles().
     // The role strings are data (persisted, compared), so they are not
     // translated.
-    roleBox_.addItem("Role: auto", 1);
+    roleBox_.addItem(TRANS("Role: auto"), 1);
     const auto& roles = selectableRoles();
     for (int i = 0; i < roles.size(); ++i) roleBox_.addItem(roles[i], i + 2);
     const auto current = processor_.getMixHubRoleOverride();
     const int index = roles.indexOf(current);
     roleBox_.setSelectedId(index >= 0 ? index + 2 : 1, juce::dontSendNotification);
-    roleBox_.setTitle("This track's role");
-    roleBox_.setTooltip("What this track is, for masking and the summed view. Auto guesses from the track name "
-                        "and spectrum; pick Mix bus for a master or bus instance.");
+    roleBox_.setTitle(TRANS("This track's role"));
+    roleBox_.setTooltip(TRANS("What this track is, for masking and the summed view. Auto guesses from the track name "
+                              "and spectrum; pick Mix bus for a master or bus instance."));
     roleBox_.onChange = [this] {
         const int id = roleBox_.getSelectedId();
         const auto& all = selectableRoles();
@@ -39,13 +39,110 @@ MixHubPanel::MixHubPanel(KhensuCopilotProcessor& processor) : processor_(process
     };
     addAndMakeVisible(roleBox_);
 
+    // ENH-10 (4): Unmask - a complementary cut in the OTHER track of a pair
+    // that includes this one, through the hub (the other instance writes it).
+    for (int i = 0; i < kMaxConflictsShown; ++i) {
+        auto& button = unmaskButtons_[static_cast<size_t>(i)];
+        button.setButtonText(TRANS("Unmask"));
+        button.setComponentID("unmaskButton" + juce::String(i));
+        button.setTitle(TRANS("Unmask"));
+        button.onClick = [this, i] { onUnmaskClicked(i); };
+        addChildComponent(button);
+    }
+
     refresh(MixHub::nowMs());
     visibilityChanged();
 }
 
 MixHubPanel::~MixHubPanel() { stopTimer(); }
 
-void MixHubPanel::resized() { roleBox_.setBounds(getLocalBounds().reduced(8).removeFromTop(20).removeFromRight(150)); }
+void MixHubPanel::resized()
+{
+    roleBox_.setBounds(getLocalBounds().reduced(8).removeFromTop(20).removeFromRight(150));
+    layoutAreas();
+    updateUnmaskButtons();
+}
+
+void MixHubPanel::layoutAreas()
+{
+    auto area = getLocalBounds().reduced(8);
+    area.removeFromTop(20);
+    area.removeFromBottom(28);
+    const int h = area.getHeight();
+    instancesArea_ = area.removeFromTop(juce::jmax(60, h * 2 / 5));
+    area.removeFromTop(6);
+    conflictsArea_ = area.removeFromTop(juce::jmax(50, area.getHeight() * 3 / 5));
+    area.removeFromTop(6);
+    balanceArea_ = area;
+}
+
+juce::Rectangle<int> MixHubPanel::conflictRow(int row) const
+{
+    auto area = conflictsArea_.reduced(6, 4);
+    area.removeFromTop(15);
+    return area.removeFromTop(kConflictRowH * (row + 1)).removeFromBottom(kConflictRowH);
+}
+
+void MixHubPanel::updateUnmaskButtons()
+{
+    const auto self = processor_.getMixHubInstanceId();
+    auto& hub = processor_.getMixHub();
+    const auto inner = conflictsArea_.reduced(6, 4);
+    for (int i = 0; i < kMaxConflictsShown; ++i) {
+        auto& button = unmaskButtons_[static_cast<size_t>(i)];
+        auto row = conflictRow(i);
+        const bool fits = row.getBottom() <= inner.getBottom() && row.getHeight() >= 16;
+        if (i >= static_cast<int>(conflicts_.size()) || !fits || !conflicts_[static_cast<size_t>(i)].involves(self)) {
+            button.setVisible(false);
+            continue;
+        }
+        const auto& c = conflicts_[static_cast<size_t>(i)];
+        const auto target = c.instanceA == self ? c.instanceB : c.instanceA;
+        const auto other = c.instanceA == self ? c.nameB : c.nameA;
+        const auto status = hub.unmaskStatus(self, target);
+        juce::String text = TRANS("Unmask");
+        juce::String tip = TRANS("Cut") + " " + other + " " + TRANS("where this track lives") + " ("
+                           + juce::String(mixhub::unmaskCutFor(c).gainDb, 1) + " dB " + TRANS("at") + " "
+                           + mixhub::formatHz(mixhub::unmaskCutFor(c).freqHz) + ", " + TRANS("at most") + " -"
+                           + juce::String(juce::roundToInt(mixhub::kMaxUnmaskCutDb)) + " dB).";
+        bool enabled = true;
+        if (hub.hasPendingUnmask(self, target)) {
+            text = TRANS("Sent...");
+            enabled = false;
+            tip = TRANS("Waiting for the other instance to apply it.");
+        } else if (status.has_value() && status->applied) {
+            text = TRANS("Remove cut");
+            tip = other + ": " + status->note + ". " + TRANS("Click to take the cut out again.");
+        } else if (status.has_value()) {
+            tip = status->note;
+        }
+        if (button.getButtonText() != text) button.setButtonText(text);
+        button.setTooltip(tip);
+        button.setEnabled(enabled);
+        button.setBounds(row.removeFromRight(96).reduced(0, 1));
+        button.setVisible(true);
+    }
+}
+
+void MixHubPanel::onUnmaskClicked(int row)
+{
+    if (row < 0 || row >= static_cast<int>(conflicts_.size())) return;
+    const auto self = processor_.getMixHubInstanceId();
+    const auto& c = conflicts_[static_cast<size_t>(row)];
+    if (!c.involves(self)) return;
+    const auto target = c.instanceA == self ? c.instanceB : c.instanceA;
+    const auto status = processor_.getMixHub().unmaskStatus(self, target);
+    if (status.has_value() && status->applied) {
+        processor_.requestRemoveUnmask(target);
+        unmaskNote_ = TRANS("Asked") + " " + (c.instanceA == self ? c.nameB : c.nameA) + " " + TRANS("to remove the cut.");
+    } else {
+        juce::String message;
+        processor_.requestUnmask(c, message);
+        unmaskNote_ = message;
+    }
+    updateUnmaskButtons();
+    repaint();
+}
 
 void MixHubPanel::visibilityChanged()
 {
@@ -60,8 +157,8 @@ void MixHubPanel::visibilityChanged()
 
 juce::String MixHubPanel::scopeNote()
 {
-    return "Shows Copilot instances running in this process. Hosts that sandbox or bridge plugins "
-           "into separate processes show each instance only itself.";
+    return TRANS("Shows Copilot instances running in this process. Hosts that sandbox or bridge plugins "
+                 "into separate processes show each instance only itself.");
 }
 
 void MixHubPanel::refresh(double nowMs)
@@ -81,6 +178,7 @@ void MixHubPanel::refresh(double nowMs)
         text << "Summed loudness about " << fmtDb(summary_.estimatedLufs) << " LUFS short-term.";
     summaryText_ = text;
     setDescription(summaryText_);
+    updateUnmaskButtons();
     repaint();
 }
 
@@ -97,20 +195,18 @@ void MixHubPanel::paint(juce::Graphics& g)
     auto area = getLocalBounds().reduced(8);
 
     g.setColour(PluginLookAndFeel::textPrimary);
-    g.setFont(ui::Palette::uiFont(13.0f, juce::Font::bold));
-    g.drawText("Mix - " + juce::String((int)frames_.size()) + " Copilot instance" + (frames_.size() == 1 ? "" : "s"),
+    g.setFont(ui::Palette::uiFont(type::body, juce::Font::bold));
+    g.drawText(TRANS("Mix Hub") + " - " + juce::String((int)frames_.size()) + " "
+                   + (frames_.size() == 1 ? TRANS("Copilot instance") : TRANS("Copilot instances")),
                area.removeFromTop(20).withTrimmedRight(roleBox_.getWidth() + 6), juce::Justification::centredLeft);
 
     g.setColour(PluginLookAndFeel::textMuted);
-    g.setFont(ui::Palette::uiFont(10.5f, juce::Font::plain));
+    g.setFont(ui::Palette::uiFont(type::caption, juce::Font::plain));
     g.drawFittedText(scopeNote(), area.removeFromBottom(28), juce::Justification::centredLeft, 2);
 
-    const int h = area.getHeight();
-    paintInstances(g, area.removeFromTop(juce::jmax(60, h * 2 / 5)));
-    area.removeFromTop(6);
-    paintConflicts(g, area.removeFromTop(juce::jmax(50, area.getHeight() / 2)));
-    area.removeFromTop(6);
-    paintBalance(g, area);
+    paintInstances(g, instancesArea_);
+    paintConflicts(g, conflictsArea_);
+    paintBalance(g, balanceArea_);
 }
 
 void MixHubPanel::paintInstances(juce::Graphics& g, juce::Rectangle<int> area) const
@@ -119,7 +215,7 @@ void MixHubPanel::paintInstances(juce::Graphics& g, juce::Rectangle<int> area) c
     g.fillRoundedRectangle(area.toFloat(), 4.0f);
     area = area.reduced(6, 4);
 
-    g.setFont(ui::Palette::uiFont(10.5f, juce::Font::bold));
+    g.setFont(ui::Palette::uiFont(type::caption, juce::Font::bold));
     g.setColour(PluginLookAndFeel::textMuted);
     auto header = area.removeFromTop(15);
     const int w = header.getWidth();
@@ -132,23 +228,23 @@ void MixHubPanel::paintInstances(juce::Graphics& g, juce::Rectangle<int> area) c
         g.drawText(d, row.removeFromLeft(colNum), juce::Justification::centredRight, true);
         g.drawText(e, row, juce::Justification::centredRight, true);
     };
-    drawRow(header, "Track", "Role", "LUFS-S", "Peak", "Width");
+    drawRow(header, TRANS("Track"), TRANS("Role"), "LUFS-S", TRANS("Peak"), TRANS("Width"));
 
     if (frames_.empty()) {
-        g.setFont(ui::Palette::uiFont(11.0f, juce::Font::plain));
-        g.drawFittedText("No instance is playing audio yet. Insert Khensu Copilot on more tracks and press play.",
+        g.setFont(ui::Palette::uiFont(type::caption, juce::Font::plain));
+        g.drawFittedText(TRANS("No instance is playing audio yet. Insert Khensu Copilot on more tracks and press play."),
                          area, juce::Justification::centredLeft, 2);
         return;
     }
     const auto self = processor_.getMixHubInstanceId();
-    g.setFont(ui::Palette::uiFont(11.0f, juce::Font::plain));
+    g.setFont(ui::Palette::uiFont(type::caption, juce::Font::plain));
     for (const auto& f : frames_) {
         if (area.getHeight() < 14) break;
         auto row = area.removeFromTop(15);
         const bool isSelf = f.instanceId == self;
         g.setColour(isSelf ? PluginLookAndFeel::accentTeal
                            : (f.hasSignal() ? PluginLookAndFeel::textPrimary : PluginLookAndFeel::textMuted));
-        drawRow(row, displayName(f) + (isSelf ? " (this)" : ""), f.role, fmtDb(f.shortTermLufs), fmtDb(f.peakDb),
+        drawRow(row, displayName(f) + (isSelf ? " (" + TRANS("this") + ")" : juce::String()), f.role, fmtDb(f.shortTermLufs), fmtDb(f.peakDb),
                 juce::String(f.width, 2));
     }
 }
@@ -159,25 +255,34 @@ void MixHubPanel::paintConflicts(juce::Graphics& g, juce::Rectangle<int> area) c
     g.fillRoundedRectangle(area.toFloat(), 4.0f);
     area = area.reduced(6, 4);
     g.setColour(PluginLookAndFeel::textMuted);
-    g.setFont(ui::Palette::uiFont(10.5f, juce::Font::bold));
-    g.drawText("Masking conflicts", area.removeFromTop(15), juce::Justification::centredLeft);
+    g.setFont(ui::Palette::uiFont(type::caption, juce::Font::bold));
+    auto header = area.removeFromTop(15);
+    g.drawText(TRANS("Masking conflicts"), header.removeFromLeft(140), juce::Justification::centredLeft);
+    if (unmaskNote_.isNotEmpty()) {
+        g.setFont(ui::Palette::uiFont(type::caption, juce::Font::plain));
+        g.setColour(PluginLookAndFeel::accentTeal);
+        g.drawText(unmaskNote_, header, juce::Justification::centredRight, true);
+        g.setColour(PluginLookAndFeel::textMuted);
+    }
 
-    g.setFont(ui::Palette::uiFont(11.0f, juce::Font::plain));
+    g.setFont(ui::Palette::uiFont(type::caption, juce::Font::plain));
     if (conflicts_.empty()) {
-        g.drawFittedText(frames_.size() < 2 ? "Needs two or more instances with audio."
-                                            : "No two tracks share a band at similar level.",
+        g.drawFittedText(frames_.size() < 2 ? TRANS("Needs two or more instances with audio.")
+                                            : TRANS("No two tracks share a band at similar level."),
                          area, juce::Justification::centredLeft, 2);
         return;
     }
     const auto self = processor_.getMixHubInstanceId();
-    int shown = 0;
-    for (const auto& c : conflicts_) {
-        if (shown++ >= kMaxConflictsShown || area.getHeight() < 14) break;
+    for (int i = 0; i < static_cast<int>(conflicts_.size()) && i < kMaxConflictsShown; ++i) {
+        const auto& c = conflicts_[static_cast<size_t>(i)];
+        auto row = conflictRow(i);
+        if (row.getBottom() > area.getBottom() || row.getHeight() < 14) break;
         // Severity colours: amber for the strongest overlaps, blue for the rest.
         const bool strong = c.score > 30.0f;
         g.setColour(c.involves(self) ? PluginLookAndFeel::accentTeal
                                      : (strong ? PluginLookAndFeel::statusWarn : PluginLookAndFeel::accentBlue));
-        g.drawText(c.describe(), area.removeFromTop(15), juce::Justification::centredLeft, true);
+        if (unmaskButtons_[static_cast<size_t>(i)].isVisible()) row.removeFromRight(100);
+        g.drawText(c.describe(), row, juce::Justification::centredLeft, true);
     }
 }
 
@@ -187,8 +292,8 @@ void MixHubPanel::paintBalance(juce::Graphics& g, juce::Rectangle<int> area) con
     g.fillRoundedRectangle(area.toFloat(), 4.0f);
     area = area.reduced(6, 4);
     g.setColour(PluginLookAndFeel::textMuted);
-    g.setFont(ui::Palette::uiFont(10.5f, juce::Font::bold));
-    juce::String title = "Summed balance";
+    g.setFont(ui::Palette::uiFont(type::caption, juce::Font::bold));
+    juce::String title = TRANS("Summed balance");
     if (summary_.contributingTracks > 0)
         title << "  -  ~" << fmtDb(summary_.estimatedLufs) << " LUFS-S, low " << juce::roundToInt(summary_.lowShare * 100)
               << "% / mid " << juce::roundToInt(summary_.midShare * 100) << "% / high "

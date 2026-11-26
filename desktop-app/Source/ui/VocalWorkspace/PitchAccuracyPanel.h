@@ -6,6 +6,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "../shared/KhensuTheme.h" // ThemeListener
+#include "../shared/ChartKitDesktop.h"
 #include "../shared/PanelCard.h"
 #include "../shared/PanelRunState.h"
 #include "MixTuningReference.h"
@@ -45,6 +46,8 @@ class PitchAccuracyPanel final : public PanelCard {
     float meanAbsCents_ = 0.0f;
     float inTunePct_ = 0.0f;
     TuningReading tuning_; ///< grid the cents are measured on + off-grid caveat (AUDIT-016)
+    void rebuildChart();
+    ThemedBarChart chart_; ///< VIS-1
     /// Re-applies every cached palette colour. Called at construction and on
     /// each theme change.
     void applyThemeColours();

@@ -16,7 +16,7 @@ ChainReasoningView::Section::Section(const juce::String& label, juce::Colour acc
     };
     addAndMakeVisible(headerButton_);
 
-    bodyLabel_.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::plain));
+    bodyLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::plain));
     bodyLabel_.setJustificationType(juce::Justification::topLeft);
     bodyLabel_.setMinimumHorizontalScale(1.0f);
     addAndMakeVisible(bodyLabel_);

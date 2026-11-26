@@ -84,7 +84,7 @@ WordClipGainEditor::WordClipGainEditor(IAppController& c) : PanelCard(c, "Per-Wo
     renderButton_.setEnabled(false);
     addAndMakeVisible(renderButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setText(TRANS("Find words, then draw gain across the waveform."), juce::dontSendNotification);
     addAndMakeVisible(statusLabel_);
 }
@@ -273,7 +273,7 @@ void WordClipGainEditor::paint(juce::Graphics& g)
     g.setColour(KhensuTheme::borderSubtle);
     g.drawHorizontalLine(juce::roundToInt(lane.getCentreY()), lane.getX(), lane.getRight());
 
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     for (size_t i = 0; i < model_.words().size(); ++i) {
         const auto& w = model_.words()[i];
         const float x0 = xForTime(w.startSec), x1 = xForTime(w.endSec);

@@ -97,18 +97,18 @@ void DropZoneComponent::paint(juce::Graphics& g)
         auto badgeArea = b.removeFromLeft(44).reduced(0, 4);
         g.setColour(KhensuTheme::bgOverlay);
         g.fillRoundedRectangle(badgeArea.toFloat(), 3.0f);
-        g.setFont(KhensuTheme::monoFont(10.0f));
+        g.setFont(KhensuTheme::monoFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(format_, badgeArea, juce::Justification::centred, false);
 
         b.removeFromLeft(KhensuTheme::sp2);
 
         // Filename (top half) + spec - duration (bottom half)
-        g.setFont(KhensuTheme::bodyFont(12.0f));
+        g.setFont(KhensuTheme::bodyFont(type::secondary));
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(filename_, b.removeFromTop(b.getHeight() / 2), juce::Justification::centredLeft, true);
 
-        g.setFont(KhensuTheme::monoFont(10.0f));
+        g.setFont(KhensuTheme::monoFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         juce::String meta = spec_.isEmpty() ? duration_ : (spec_ + "  " + duration_);
         g.drawText(meta, b, juce::Justification::centredLeft, true);
@@ -137,11 +137,11 @@ void DropZoneComponent::paint(juce::Graphics& g)
 
     // Centre labels
     auto centre = getLocalBounds().reduced(KhensuTheme::sp7);
-    g.setFont(KhensuTheme::bodyFont(13.0f));
+    g.setFont(KhensuTheme::bodyFont(type::body));
     g.setColour(dragOver ? KhensuTheme::textPrimary : KhensuTheme::textSecondary);
     g.drawText("Drop audio file here", centre.removeFromTop(centre.getHeight() / 2), juce::Justification::centredBottom,
                false);
-    g.setFont(KhensuTheme::labelFont(11.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText("or click to browse", centre, juce::Justification::centredTop, false);
 }

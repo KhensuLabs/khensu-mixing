@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/SessionIntake/MaskingMatrixComponent.cpp
 #include "MaskingMatrixComponent.h"
+#include "../shared/KhensuEmptyState.h"
 #include "../shared/KhensuTheme.h"
 
 namespace khensu {
@@ -80,10 +81,7 @@ const multitrack::Pair* MaskingMatrixComponent::pairFor(int row, int col) const
 void MaskingMatrixComponent::paint(juce::Graphics& g)
 {
     if (names_.empty()) {
-        g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::bodyFont());
-        g.drawText(TRANS("Masking appears here after the stems are analyzed."), getLocalBounds(),
-                   juce::Justification::centred, true);
+        KhensuEmptyState::paintInto(g, getLocalBounds(), TRANS("Masking appears here after the stems are analyzed."), {}); // UXR-6
         return;
     }
     const auto grid = gridArea();

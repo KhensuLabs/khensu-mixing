@@ -45,11 +45,11 @@ SectionIntensityPanel::SectionIntensityPanel(IAppController& c, std::string base
     : controller_(c), baseUrl_(std::move(baseUrl))
 {
     applyThemeColours();
-    headerLabel_.setFont(juce::Font(juce::FontOptions{15.f, juce::Font::bold}));
+    headerLabel_.setFont(KhensuTheme::uiFont(type::subtitle, juce::Font::bold));
     headerLabel_.setText(TRANS("  Section-Aware Processing - vary intensity per section"), juce::dontSendNotification);
     addAndMakeVisible(headerLabel_);
 
-    baseIntensityLabel_.setFont(juce::Font(juce::FontOptions{11.f}));
+    baseIntensityLabel_.setFont(KhensuTheme::uiFont(type::caption));
     addAndMakeVisible(baseIntensityLabel_);
 
     baseIntensitySlider_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -69,9 +69,9 @@ SectionIntensityPanel::SectionIntensityPanel(IAppController& c, std::string base
     addAndMakeVisible(cancelButton_);
     cancelButton_.setVisible(false);
 
-    statusLabel_.setFont(juce::Font(juce::FontOptions{12.f}));
+    statusLabel_.setFont(KhensuTheme::uiFont(type::secondary));
     addAndMakeVisible(statusLabel_);
-    guardrailLabel_.setFont(juce::Font(juce::FontOptions{10.f}));
+    guardrailLabel_.setFont(KhensuTheme::uiFont(type::caption));
     guardrailLabel_.setJustificationType(juce::Justification::centredLeft);
     guardrailLabel_.setMinimumHorizontalScale(0.65f);
     addAndMakeVisible(guardrailLabel_);
@@ -129,7 +129,7 @@ void SectionIntensityPanel::refreshSections()
         row->label.setText(juce::String(sec.label) + "  (" + formatTime(sec.start_sec) + "-" + formatTime(sec.end_sec) +
                                ")",
                            juce::dontSendNotification);
-        row->label.setFont(juce::Font(juce::FontOptions{11.f}));
+        row->label.setFont(KhensuTheme::uiFont(type::caption));
         row->label.setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
         rowsContent_.addAndMakeVisible(row->label);
 

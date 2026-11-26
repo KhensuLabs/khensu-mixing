@@ -318,13 +318,17 @@ class CopilotApi : public virtual BridgeTransport {
     /// `decisionHash`: the CopilotChatResponse/MixerChainResponse::decision_hash
     /// of the model decision that proposed the chain, so the render's
     /// provenance event traces back to it - omitted from the body when empty.
+    /// `keyStem` (ENH-6): ApplyChainRequest.key_stem, the stem in `stemPaths`
+    /// that keys the chain's DynamicEQ stages with use_key 1 - omitted when
+    /// empty (the service then keys them on their own input).
     khensu::Result<juce::String, BridgeError>
     startApplyChainJob(const juce::String& filePath, const juce::String& outputPath,
                        const std::vector<EffectSpec>& chain, const juce::String& sessionId = {},
                        const juce::String& sourceRecommendationId = {},
                        const std::map<juce::String, juce::String>& stemPaths = {}, bool genreRelative = false,
                        bool genreActionAllowed = false, const juce::String& abstainedReason = {},
-                       const juce::String& targetStem = {}, const juce::String& decisionHash = {});
+                       const juce::String& targetStem = {}, const juce::String& decisionHash = {},
+                       const juce::String& keyStem = {});
 
     khensu::Result<juce::String, BridgeError>
     startApplyGraphJob(const juce::String& filePath, const juce::String& outputPath, const juce::var& branches,
@@ -423,6 +427,11 @@ class CopilotApi : public virtual BridgeTransport {
         juce::String decisionHash;
         juce::var guardrail; // matched-level post-render safety result
         std::vector<MasteringIteration> iterations;
+        // ENH-5: the style the run used and the targets it converged toward.
+        juce::String style;        // warm | balanced | open | loud
+        double strength = 0.5;     // 0..1
+        juce::String styleSummary; // one line: what the style moved
+        juce::var targets;         // {lufs, crest_db, centroid_hz, ceiling_dbtp}
     };
     struct MasteringJobStatus {
         juce::String status; // "pending" | "running" | "completed" | "failed" | "cancelled"
@@ -434,9 +443,49 @@ class CopilotApi : public virtual BridgeTransport {
     startMasteringAgentJob(const juce::String& filePath, const juce::String& genreId,
                            const std::vector<EffectSpec>& initialChain, int maxIterations = 5,
                            bool genreActionAllowed = false, const juce::String& abstainedReason = {},
-                           const std::map<juce::String, juce::String>& stemPaths = {});
+                           const std::map<juce::String, juce::String>& stemPaths = {},
+                           const juce::String& style = "balanced", double strength = 0.5);
     khensu::Result<MasteringJobStatus, BridgeError> getMasteringAgentJobStatus(const juce::String& job_id);
     void cancelMasteringAgentJob(const juce::String& job_id);
+
+    // ---- ENH-4: per-file smart batch ----
+    // POST /copilot/batch/smart/start | GET status | POST cancel: every file
+    // analysed, fixed (the verified agent loop) and optionally mastered (the
+    // mastering agent in a style) on its own terms; results per file.
+    struct SmartBatchRequest {
+        std::vector<juce::String> filePaths;
+        juce::String outputDir; // "" = <first file's folder>/khensu_smart_batch
+        juce::String suffix{"_smart"};
+        bool fix = true;
+        bool master = false;
+        juce::String genreId;
+        bool genreActionAllowed = false;
+        juce::String abstainedReason;
+        juce::String style{"balanced"};
+        double strength = 0.5;
+        double targetLufs = -14.0;
+        double loudnessOffsetDb = 0.0;      // a macro set's Loudness: shifts the mastering target
+        std::optional<double> ceilingDbtp;  // a macro set's Ceiling; empty = the genre's own
+    };
+    struct SmartBatchFileResult {
+        juce::String filePath, outputPath, status, error, fixSummary, masterSummary;
+        std::optional<double> beforeLufs, beforeTruePeak, afterLufs, afterTruePeak;
+        int findingsBefore = 0, findingsAfter = 0, findingsCleared = 0, keptSteps = 0;
+        bool mastered = false;
+        juce::StringArray cleared, remaining;
+    };
+    struct SmartBatchStatus {
+        juce::String status, error, outputDir, current, stage;
+        int total = 0, done = 0, failed = 0;
+        std::vector<SmartBatchFileResult> results;
+    };
+    struct SmartBatchStart {
+        juce::String jobId, outputDir;
+        int totalFiles = 0;
+    };
+    khensu::Result<SmartBatchStart, BridgeError> startSmartBatch(const SmartBatchRequest& request);
+    khensu::Result<SmartBatchStatus, BridgeError> getSmartBatchStatus(const juce::String& jobId);
+    void cancelSmartBatch(const juce::String& jobId);
 
     // ---- Delta solo (null test) ----
     /// POST /copilot/render_delta - renders (wet - dry) so the desktop app
@@ -532,6 +581,9 @@ class CopilotApi : public virtual BridgeTransport {
                                                       const juce::String& source);
     /// DELETE /genre/examples: forget every example; returns how many.
     khensu::Result<int, BridgeError> clearGenreExamples();
+    /// GET /genre/examples (AUTO-4): {examples, genres: {genre id: count}}
+    /// (api::fields::GenreExamplesSummaryResponse).
+    khensu::Result<juce::var, BridgeError> genreExamplesSummary();
 
     // ---- Learned-model manifest ----
     // One entry per bundled *.onnx model with provenance + integrity, backing

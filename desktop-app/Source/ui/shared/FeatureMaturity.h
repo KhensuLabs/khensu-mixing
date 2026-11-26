@@ -4,9 +4,10 @@
 // they claim parity with. An experimental Dashboard card carries a badge and
 // stays out of the Essentials view (UX-1).
 //
-// docs/experimental-features.md holds the whole table (these cards plus the
-// app-wide items) with each outstanding check and who can do it;
-// scripts/check_doc_drift.py fails when an id here is missing from it.
+// docs/manual.md section 9 holds the whole table (these cards plus the
+// app-wide items) with each outstanding check; scripts/check_doc_drift.py
+// fails when an id here is missing from it. Keep the two texts in step
+// (CLN-2).
 #pragma once
 
 #include <array>
@@ -24,22 +25,22 @@ struct ExperimentalFeature {
 inline constexpr std::array<ExperimentalFeature, 9> kExperimentalPanels{{
     {"hooks", NEEDS_TRANS("Hook detection has not been compared with listeners' judgements.")},
     {"memorability", NEEDS_TRANS("The memorability score has not been compared with listeners' judgements.")},
-    {"emotional_arc", NEEDS_TRANS("The emotional arc has not been compared with listeners' judgements.")},
+    {"emotional_arc", NEEDS_TRANS("The emotional arc has not been compared with listener ratings over time.")},
     {"heaviness", NEEDS_TRANS("The heaviness model has not been checked against rated tracks.")},
     {"recreate_sound", NEEDS_TRANS("Sound recreation has not been checked against the source on real stems.")},
-    {"ai_artifacts", NEEDS_TRANS("The AI-detection fusion has not had its false-alarm rate measured on real releases.")},
+    {"ai_artifacts", NEEDS_TRANS("Partly checked: the learned probe has not been tested on generators unlike the seven it knows.")},
     {"spatial_audio", NEEDS_TRANS("Immersive checks have not been compared with a Dolby renderer.")},
-    {"structural", NEEDS_TRANS("Sections are fixed 8-bar blocks, not detected verses and choruses.")},
-    {"section_readiness", NEEDS_TRANS("Sections are fixed 8-bar blocks, not detected verses and choruses.")},
+    {"structural", NEEDS_TRANS("Detected section boundaries have not been compared with hand-marked songs.")},
+    {"section_readiness", NEEDS_TRANS("Detected section boundaries have not been compared with hand-marked songs.")},
 }};
 
 /// App-wide experimental features that are not Dashboard cards; each surface
 /// shows an ExperimentalBadge (ExperimentalBadge::forFeature) beside its title.
 inline constexpr std::array<ExperimentalFeature, 5> kExperimentalFeatures{{
     {"listening_room", NEEDS_TRANS("The listening room has not been tested from a second device.")},
-    {"similar_references", NEEDS_TRANS("CLAP similarity has not been checked on a real reference library.")},
-    {"local_llm", NEEDS_TRANS("Local models have not been checked with a real GGUF model or local server.")},
-    {"voice_commands", NEEDS_TRANS("Whisper has not been checked on real spoken instructions.")},
+    {"similar_references", NEEDS_TRANS("Partly checked on released tracks; not yet on a user's own library.")},
+    {"local_llm", NEEDS_TRANS("Partly checked with Ollama; the in-process GGUF path has not been checked.")},
+    {"voice_commands", NEEDS_TRANS("Partly checked with synthetic voices; not yet with real voices in a control room.")},
     {"reference_profiles", NEEDS_TRANS("Shared reference profiles have not been tested with a hosted index.")},
 }};
 

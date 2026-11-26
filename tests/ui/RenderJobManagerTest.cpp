@@ -221,6 +221,38 @@ TEST_CASE("RenderJobManager: target_stem is carried through to the apply_chain r
     CHECK(body.contains("vocals"));
 }
 
+TEST_CASE("RenderJobManager: a keyed render sends key_stem beside stem_paths", "[renderjobmanager][enh6]")
+{
+    // ENH-6: the service-path render of a keyed DynamicEQ (masking fix) must
+    // name its key stem, and the stem must be among the stem_paths it sends,
+    // or the service keys the stage on the track itself.
+    FakeApplyChainServer server(19733);
+    server.setResponse("POST /copilot/apply_chain/start", {200, R"({"job_id":"job-key"})"});
+    server.setResponse("GET /copilot/apply_chain/status/job-key",
+                       {200, R"({"status":"completed","result":{"output_path":"Z:/k.wav"}})"});
+
+    RenderJobManager mgr(server.baseUrl().toStdString());
+    mgr.setStemProvenanceProvider([] {
+        return std::map<juce::String, juce::String>{{"vocals", "Z:/stems/vocals.wav"}};
+    });
+    bool called = false;
+    mgr.startChainRender("masking fix", "Z:/mix.wav", "Z:/mix_out.wav", {}, "session1", "rec1",
+                         [&](bool, const juce::String&, const juce::var&) { called = true; },
+                         false, false, {}, {}, {}, /*keyStem=*/"vocals");
+
+    REQUIRE(pumpUntil([&] { return called; }));
+    const auto body = juce::JSON::parse(server.lastBody("POST /copilot/apply_chain/start"));
+    CHECK(body["key_stem"].toString() == "vocals");
+    CHECK(body["stem_paths"]["vocals"].toString() == "Z:/stems/vocals.wav");
+
+    // Without a key stem the key is left out entirely.
+    called = false;
+    mgr.startChainRender("plain", "Z:/mix.wav", "Z:/mix_out2.wav", {}, "session1", "rec1",
+                         [&](bool, const juce::String&, const juce::var&) { called = true; });
+    REQUIRE(pumpUntil([&] { return called; }));
+    CHECK_FALSE(server.lastBody("POST /copilot/apply_chain/start").contains("\"key_stem\""));
+}
+
 TEST_CASE("RenderJobManager: an unspecified target_stem is omitted (backend defaults to mix)",
           "[renderjobmanager][ai02]")
 {

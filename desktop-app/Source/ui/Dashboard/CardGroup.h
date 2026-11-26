@@ -77,7 +77,7 @@ class CardGroup final : public juce::Component {
         g.setColour(KhensuTheme::bgSurface);
         g.fillRoundedRectangle(tabRow, 6.0f);
         g.setColour(KhensuTheme::textPrimary);
-        g.setFont(KhensuTheme::labelFont(12.0f));
+        g.setFont(KhensuTheme::labelFont(type::secondary));
         g.drawText(title_, tabRow.reduced(10.0f, 0.0f).toNearestInt(), juce::Justification::centredLeft, false);
     }
 
@@ -85,7 +85,7 @@ class CardGroup final : public juce::Component {
     {
         auto b = getLocalBounds();
         auto row = b.removeFromTop(kTabRowH).reduced(4, 3);
-        const int titleW = juce::GlyphArrangement::getStringWidthInt(KhensuTheme::labelFont(12.0f), title_) + 24;
+        const int titleW = juce::GlyphArrangement::getStringWidthInt(KhensuTheme::labelFont(type::secondary), title_) + 24;
         row.removeFromLeft(juce::jmin(titleW, row.getWidth() / 3));
         const int n = static_cast<int>(tabs_.size());
         if (n > 0) {

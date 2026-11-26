@@ -138,6 +138,9 @@ inline constexpr Route post_copilot_apply_chain_by_job_id_cancel{"POST", "/copil
 inline constexpr Route post_copilot_apply_section_chain_start{"POST", "/copilot/apply_section_chain/start"};
 inline constexpr Route get_copilot_apply_section_chain_status_by_job_id{"GET", "/copilot/apply_section_chain/status/{job_id}"};
 inline constexpr Route post_copilot_apply_section_chain_by_job_id_cancel{"POST", "/copilot/apply_section_chain/{job_id}/cancel"};
+inline constexpr Route post_copilot_batch_smart_start{"POST", "/copilot/batch/smart/start"};
+inline constexpr Route get_copilot_batch_smart_status_by_job_id{"GET", "/copilot/batch/smart/status/{job_id}"};
+inline constexpr Route post_copilot_batch_smart_by_job_id_cancel{"POST", "/copilot/batch/smart/{job_id}/cancel"};
 inline constexpr Route post_copilot_chat{"POST", "/copilot/chat"};
 inline constexpr Route post_copilot_chat_start{"POST", "/copilot/chat/start"};
 inline constexpr Route get_copilot_chat_status_by_job_id{"GET", "/copilot/chat/status/{job_id}"};
@@ -216,6 +219,18 @@ inline constexpr Route post_references_profiles_analyze{"POST", "/references/pro
 inline constexpr Route post_references_profiles_export{"POST", "/references/profiles/export"};
 inline constexpr Route post_references_profiles_import{"POST", "/references/profiles/import"};
 inline constexpr Route delete_references_profiles_by_profile_id{"DELETE", "/references/profiles/{profile_id}"};
+inline constexpr Route get_references_scan_current{"GET", "/references/scan/current"};
+inline constexpr Route get_references_scan_items{"GET", "/references/scan/items"};
+inline constexpr Route post_references_scan_items_genre{"POST", "/references/scan/items/genre"};
+inline constexpr Route get_references_scan_packs{"GET", "/references/scan/packs"};
+inline constexpr Route get_references_scan_roots{"GET", "/references/scan/roots"};
+inline constexpr Route post_references_scan_roots{"POST", "/references/scan/roots"};
+inline constexpr Route post_references_scan_roots_remove{"POST", "/references/scan/roots/remove"};
+inline constexpr Route post_references_scan_start{"POST", "/references/scan/start"};
+inline constexpr Route get_references_scan_status_by_job_id{"GET", "/references/scan/status/{job_id}"};
+inline constexpr Route get_references_scan_summary{"GET", "/references/scan/summary"};
+inline constexpr Route get_references_scan_thumbnail_by_item_id{"GET", "/references/scan/thumbnail/{item_id}"};
+inline constexpr Route post_references_scan_by_job_id_cancel{"POST", "/references/scan/{job_id}/cancel"};
 inline constexpr Route post_render_fit_chain{"POST", "/render/fit_chain"};
 inline constexpr Route post_render_pitch_correct{"POST", "/render/pitch_correct"};
 inline constexpr Route post_render_word_clip_gain{"POST", "/render/word_clip_gain"};
@@ -716,6 +731,7 @@ inline constexpr const char* genre_action_allowed = "genre_action_allowed";
 inline constexpr const char* genre_relative = "genre_relative";
 inline constexpr const char* graph = "graph";
 inline constexpr const char* input_dir = "input_dir";
+inline constexpr const char* key_stem = "key_stem";
 inline constexpr const char* normalize = "normalize";
 inline constexpr const char* output_dir = "output_dir";
 inline constexpr const char* session_id = "session_id";
@@ -732,6 +748,7 @@ inline constexpr const char* file_path = "file_path";
 inline constexpr const char* genre_action_allowed = "genre_action_allowed";
 inline constexpr const char* genre_relative = "genre_relative";
 inline constexpr const char* graph = "graph";
+inline constexpr const char* key_stem = "key_stem";
 inline constexpr const char* normalize = "normalize";
 inline constexpr const char* output_path = "output_path";
 inline constexpr const char* session_id = "session_id";
@@ -748,6 +765,7 @@ inline constexpr const char* render_state = "render_state";
 inline constexpr const char* skipped_effects = "skipped_effects";
 inline constexpr const char* stage_levels = "stage_levels";
 inline constexpr const char* status = "status";
+inline constexpr const char* warnings = "warnings";
 } // namespace ApplyChainResponse
 namespace ArrangementFlag {
 inline constexpr const char* code = "code";
@@ -900,6 +918,7 @@ inline constexpr const char* skipped_effects = "skipped_effects";
 inline constexpr const char* status = "status";
 inline constexpr const char* stem_paths = "stem_paths";
 inline constexpr const char* stem_provenance = "stem_provenance";
+inline constexpr const char* warnings = "warnings";
 } // namespace BatchFileResult
 namespace BatchJobStartResponse {
 inline constexpr const char* job_id = "job_id";
@@ -2670,6 +2689,8 @@ inline constexpr const char* genre_id = "genre_id";
 inline constexpr const char* initial_chain = "initial_chain";
 inline constexpr const char* max_iterations = "max_iterations";
 inline constexpr const char* stem_paths = "stem_paths";
+inline constexpr const char* strength = "strength";
+inline constexpr const char* style = "style";
 inline constexpr const char* target_stem = "target_stem";
 } // namespace MasteringAgentRequest
 namespace MasteringAgentResult {
@@ -2682,12 +2703,22 @@ inline constexpr const char* guardrail = "guardrail";
 inline constexpr const char* iterations = "iterations";
 inline constexpr const char* requires_user_choice = "requires_user_choice";
 inline constexpr const char* stop_reason = "stop_reason";
+inline constexpr const char* strength = "strength";
+inline constexpr const char* style = "style";
+inline constexpr const char* style_summary = "style_summary";
+inline constexpr const char* targets = "targets";
 } // namespace MasteringAgentResult
 namespace MasteringAgentStatusResponse {
 inline constexpr const char* error = "error";
 inline constexpr const char* result = "result";
 inline constexpr const char* status = "status";
 } // namespace MasteringAgentStatusResponse
+namespace MasteringAgentTargets {
+inline constexpr const char* ceiling_dbtp = "ceiling_dbtp";
+inline constexpr const char* centroid_hz = "centroid_hz";
+inline constexpr const char* crest_db = "crest_db";
+inline constexpr const char* lufs = "lufs";
+} // namespace MasteringAgentTargets
 namespace MasteringChainStage {
 inline constexpr const char* effect = "effect";
 inline constexpr const char* parameters = "parameters";
@@ -3682,6 +3713,143 @@ inline constexpr const char* lra = "lra";
 inline constexpr const char* lufs_integrated = "lufs_integrated";
 inline constexpr const char* spectral_tilt_db_per_octave = "spectral_tilt_db_per_octave";
 } // namespace ReferenceProfileMetrics
+namespace ReferenceScanCurrentResponse {
+inline constexpr const char* job_id = "job_id";
+inline constexpr const char* status = "status";
+} // namespace ReferenceScanCurrentResponse
+namespace ReferenceScanGenreRequest {
+inline constexpr const char* apply_to_pack = "apply_to_pack";
+inline constexpr const char* genre = "genre";
+inline constexpr const char* id = "id";
+inline constexpr const char* learn = "learn";
+} // namespace ReferenceScanGenreRequest
+namespace ReferenceScanGenreResponse {
+inline constexpr const char* item = "item";
+inline constexpr const char* learned = "learned";
+inline constexpr const char* updated = "updated";
+} // namespace ReferenceScanGenreResponse
+namespace ReferenceScanItem {
+inline constexpr const char* album = "album";
+inline constexpr const char* artwork_path = "artwork_path";
+inline constexpr const char* author = "author";
+inline constexpr const char* bpm = "bpm";
+inline constexpr const char* duration_s = "duration_s";
+inline constexpr const char* error = "error";
+inline constexpr const char* exists = "exists";
+inline constexpr const char* family = "family";
+inline constexpr const char* genre = "genre";
+inline constexpr const char* genre_confidence = "genre_confidence";
+inline constexpr const char* genre_source = "genre_source";
+inline constexpr const char* has_artwork = "has_artwork";
+inline constexpr const char* id = "id";
+inline constexpr const char* indexed = "indexed";
+inline constexpr const char* key = "key";
+inline constexpr const char* kind = "kind";
+inline constexpr const char* pack = "pack";
+inline constexpr const char* pack_path = "pack_path";
+inline constexpr const char* path = "path";
+inline constexpr const char* root = "root";
+inline constexpr const char* sample_type = "sample_type";
+inline constexpr const char* tag_genre = "tag_genre";
+inline constexpr const char* title = "title";
+} // namespace ReferenceScanItem
+namespace ReferenceScanItemsResponse {
+inline constexpr const char* items = "items";
+inline constexpr const char* total = "total";
+} // namespace ReferenceScanItemsResponse
+namespace ReferenceScanPack {
+inline constexpr const char* artwork_path = "artwork_path";
+inline constexpr const char* author = "author";
+inline constexpr const char* family = "family";
+inline constexpr const char* genre = "genre";
+inline constexpr const char* has_artwork = "has_artwork";
+inline constexpr const char* loops = "loops";
+inline constexpr const char* pack = "pack";
+inline constexpr const char* pack_path = "pack_path";
+inline constexpr const char* samples = "samples";
+} // namespace ReferenceScanPack
+namespace ReferenceScanPacksResponse {
+inline constexpr const char* packs = "packs";
+} // namespace ReferenceScanPacksResponse
+namespace ReferenceScanProgress {
+inline constexpr const char* current = "current";
+inline constexpr const char* done = "done";
+inline constexpr const char* failed = "failed";
+inline constexpr const char* indexed = "indexed";
+inline constexpr const char* phase = "phase";
+inline constexpr const char* samples = "samples";
+inline constexpr const char* songs = "songs";
+inline constexpr const char* total = "total";
+inline constexpr const char* unchanged = "unchanged";
+} // namespace ReferenceScanProgress
+namespace ReferenceScanResult {
+inline constexpr const char* cancelled = "cancelled";
+inline constexpr const char* failed = "failed";
+inline constexpr const char* files_found = "files_found";
+inline constexpr const char* indexed = "indexed";
+inline constexpr const char* processed = "processed";
+inline constexpr const char* removed = "removed";
+inline constexpr const char* samples = "samples";
+inline constexpr const char* songs = "songs";
+inline constexpr const char* truncated = "truncated";
+inline constexpr const char* unchanged = "unchanged";
+} // namespace ReferenceScanResult
+namespace ReferenceScanRoot {
+inline constexpr const char* added_at = "added_at";
+inline constexpr const char* exists = "exists";
+inline constexpr const char* items = "items";
+inline constexpr const char* last_scan_at = "last_scan_at";
+inline constexpr const char* path = "path";
+inline constexpr const char* rescan_on_launch = "rescan_on_launch";
+} // namespace ReferenceScanRoot
+namespace ReferenceScanRootRemoveRequest {
+inline constexpr const char* forget_items = "forget_items";
+inline constexpr const char* path = "path";
+} // namespace ReferenceScanRootRemoveRequest
+namespace ReferenceScanRootRemoveResponse {
+inline constexpr const char* forgotten_items = "forgotten_items";
+inline constexpr const char* removed = "removed";
+} // namespace ReferenceScanRootRemoveResponse
+namespace ReferenceScanRootRequest {
+inline constexpr const char* path = "path";
+inline constexpr const char* replace = "replace";
+inline constexpr const char* rescan_on_launch = "rescan_on_launch";
+} // namespace ReferenceScanRootRequest
+namespace ReferenceScanRootsResponse {
+inline constexpr const char* roots = "roots";
+} // namespace ReferenceScanRootsResponse
+namespace ReferenceScanStartRequest {
+inline constexpr const char* index_songs = "index_songs";
+inline constexpr const char* max_files = "max_files";
+inline constexpr const char* roots = "roots";
+} // namespace ReferenceScanStartRequest
+namespace ReferenceScanStartResponse {
+inline constexpr const char* created = "created";
+inline constexpr const char* job_id = "job_id";
+inline constexpr const char* roots = "roots";
+} // namespace ReferenceScanStartResponse
+namespace ReferenceScanStatusResponse {
+inline constexpr const char* error = "error";
+inline constexpr const char* progress = "progress";
+inline constexpr const char* result = "result";
+inline constexpr const char* roots = "roots";
+inline constexpr const char* status = "status";
+} // namespace ReferenceScanStatusResponse
+namespace ReferenceScanSummaryResponse {
+inline constexpr const char* families = "families";
+inline constexpr const char* genres = "genres";
+inline constexpr const char* packs = "packs";
+inline constexpr const char* samples = "samples";
+inline constexpr const char* songs = "songs";
+inline constexpr const char* unsorted = "unsorted";
+} // namespace ReferenceScanSummaryResponse
+namespace ReferenceScanThumbnailResponse {
+inline constexpr const char* height = "height";
+inline constexpr const char* id = "id";
+inline constexpr const char* jpeg_base64 = "jpeg_base64";
+inline constexpr const char* path = "path";
+inline constexpr const char* width = "width";
+} // namespace ReferenceScanThumbnailResponse
 namespace ReferenceSpectralDeltaRequest {
 inline constexpr const char* n_bands = "n_bands";
 inline constexpr const char* reference_path = "reference_path";
@@ -3754,6 +3922,7 @@ inline constexpr const char* skipped_effects = "skipped_effects";
 inline constexpr const char* source_path = "source_path";
 inline constexpr const char* stage_levels = "stage_levels";
 inline constexpr const char* status = "status";
+inline constexpr const char* warnings = "warnings";
 } // namespace RenderJobResult
 namespace RenderJobStatusResponse {
 inline constexpr const char* error = "error";
@@ -3955,6 +4124,7 @@ inline constexpr const char* decision_hash = "decision_hash";
 inline constexpr const char* file_path = "file_path";
 inline constexpr const char* genre_action_allowed = "genre_action_allowed";
 inline constexpr const char* genre_relative = "genre_relative";
+inline constexpr const char* key_stem = "key_stem";
 inline constexpr const char* output_path = "output_path";
 inline constexpr const char* sections = "sections";
 inline constexpr const char* session_id = "session_id";
@@ -4130,6 +4300,64 @@ namespace SiiSample {
 inline constexpr const char* sii = "sii";
 inline constexpr const char* time_sec = "time_sec";
 } // namespace SiiSample
+namespace SmartBatchFileResult {
+inline constexpr const char* after_lufs = "after_lufs";
+inline constexpr const char* after_true_peak_dbtp = "after_true_peak_dbtp";
+inline constexpr const char* before_lufs = "before_lufs";
+inline constexpr const char* before_true_peak_dbtp = "before_true_peak_dbtp";
+inline constexpr const char* cleared = "cleared";
+inline constexpr const char* error = "error";
+inline constexpr const char* file_path = "file_path";
+inline constexpr const char* findings_after = "findings_after";
+inline constexpr const char* findings_before = "findings_before";
+inline constexpr const char* findings_cleared = "findings_cleared";
+inline constexpr const char* fix_summary = "fix_summary";
+inline constexpr const char* kept_steps = "kept_steps";
+inline constexpr const char* master_summary = "master_summary";
+inline constexpr const char* mastered = "mastered";
+inline constexpr const char* output_path = "output_path";
+inline constexpr const char* remaining = "remaining";
+inline constexpr const char* status = "status";
+} // namespace SmartBatchFileResult
+namespace SmartBatchProgress {
+inline constexpr const char* current = "current";
+inline constexpr const char* done = "done";
+inline constexpr const char* failed = "failed";
+inline constexpr const char* stage = "stage";
+inline constexpr const char* total = "total";
+} // namespace SmartBatchProgress
+namespace SmartBatchRequest {
+inline constexpr const char* abstained_reason = "abstained_reason";
+inline constexpr const char* ceiling_dbtp = "ceiling_dbtp";
+inline constexpr const char* file_paths = "file_paths";
+inline constexpr const char* fix = "fix";
+inline constexpr const char* genre_action_allowed = "genre_action_allowed";
+inline constexpr const char* genre_id = "genre_id";
+inline constexpr const char* include_loudness = "include_loudness";
+inline constexpr const char* input_dir = "input_dir";
+inline constexpr const char* loudness_offset_db = "loudness_offset_db";
+inline constexpr const char* master = "master";
+inline constexpr const char* max_iterations = "max_iterations";
+inline constexpr const char* max_steps = "max_steps";
+inline constexpr const char* output_dir = "output_dir";
+inline constexpr const char* strength = "strength";
+inline constexpr const char* style = "style";
+inline constexpr const char* suffix = "suffix";
+inline constexpr const char* target_lufs = "target_lufs";
+inline constexpr const char* targets = "targets";
+} // namespace SmartBatchRequest
+namespace SmartBatchStartResponse {
+inline constexpr const char* job_id = "job_id";
+inline constexpr const char* output_dir = "output_dir";
+inline constexpr const char* total_files = "total_files";
+} // namespace SmartBatchStartResponse
+namespace SmartBatchStatusResponse {
+inline constexpr const char* error = "error";
+inline constexpr const char* output_dir = "output_dir";
+inline constexpr const char* progress = "progress";
+inline constexpr const char* results = "results";
+inline constexpr const char* status = "status";
+} // namespace SmartBatchStatusResponse
 namespace SoundRecreationFeatures {
 inline constexpr const char* attack_sec = "attack_sec";
 inline constexpr const char* bandwidth_hz = "bandwidth_hz";

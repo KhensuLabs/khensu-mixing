@@ -44,7 +44,7 @@ CompingPanel::CompingPanel(IAppController& c) : PanelCard(c, "Comping Assistant"
     renderButton_.onClick = [this] { runAnalysis(true); };
     addAndMakeVisible(renderButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(statusLabel_);
     showBinStatus();
     takesListener_ = listen(controller_.vocalEdit(), this, &IVocalEdit::addTakesListener,
@@ -177,7 +177,7 @@ void CompingPanel::paint(juce::Graphics& g)
 
     for (int t = 0; t < takeCount_; ++t) {
         const float y = grid.getY() + t * rowH;
-        g.setFont(KhensuTheme::labelFont(8.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textSecondary);
         g.drawText("TAKE " + juce::String(t + 1),
                    juce::Rectangle<float>(grid.getX(), y, labelW - 4.0f, rowH).toNearestInt(),

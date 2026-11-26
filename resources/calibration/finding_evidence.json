@@ -714,6 +714,12 @@
    "fix": {
     "tried": 0,
     "advice_only": true
+   },
+   "plugin_fix": {
+    "tried": 5,
+    "advice_only": false,
+    "clears_rate": 0.0,
+    "side_effects": []
    }
   },
   "stereo_too_wide": {
@@ -730,6 +736,25 @@
    "fix": {
     "tried": 0,
     "advice_only": true
+   },
+   "plugin_fix": {
+    "tried": 4,
+    "advice_only": false,
+    "clears_rate": 1.0,
+    "side_effects": [
+     {
+      "code": "lra_too_compressed",
+      "rate": 0.25,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     },
+     {
+      "code": "lufs_too_quiet",
+      "rate": 0.25,
+      "tracks": 1,
+      "peak_guard_share": 1.0
+     }
+    ]
    }
   },
   "structural_flow_poor": {

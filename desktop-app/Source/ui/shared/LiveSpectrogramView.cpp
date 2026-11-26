@@ -3,14 +3,14 @@
 #include "../../IAppController.h"
 #include "../../session/PlaybackMeterTap.h"
 #include <khensu/ui/VizPalette.h>
+#include "VizMaps.h"
+#include <algorithm>
 #include <cmath>
 
 namespace khensu {
 
 namespace {
 constexpr int kHistoryColumns = 720;
-constexpr int kFrame = 2048;
-constexpr int kHop = 1024;
 constexpr float kRangeDb = 60.0f;
 
 juce::Colour severityColour(float s)
@@ -53,6 +53,7 @@ void LiveSpectrogramView::visibilityChanged()
             gl_.attachTo(*this);
         }
         refreshOverlays();
+        wasPlaying_ = true; // the first tick settles the rate
         startTimerHz(30);
     } else {
         stopTimer();
@@ -68,7 +69,7 @@ juce::Rectangle<float> LiveSpectrogramView::plotArea() const noexcept
     r.removeFromLeft(40.0f);
     r.removeFromTop(22.0f);
     r.removeFromBottom(6.0f);
-    r.removeFromRight(6.0f);
+    r.removeFromRight(ui::viz::kColourBarW); // the colour bar
     return r;
 }
 
@@ -103,40 +104,49 @@ void LiveSpectrogramView::refreshOverlays()
 
 void LiveSpectrogramView::pushSamples(const float* left, const float* right, int n, double sampleRate)
 {
-    sampleRate_ = sampleRate > 0.0 ? sampleRate : 48000.0;
-    for (int i = 0; i < n; ++i)
-        pending_.push_back(0.5f * (left[i] + right[i]));
-    while (static_cast<int>(pending_.size()) >= kFrame) {
-        std::fill(fftBuf_.begin(), fftBuf_.end(), 0.0f);
-        for (int i = 0; i < kFrame; ++i)
-            fftBuf_[static_cast<size_t>(i)] = pending_[static_cast<size_t>(i)] * window_[static_cast<size_t>(i)];
-        fft_.performFrequencyOnlyForwardTransform(fftBuf_.data(), true);
-        std::vector<float> bandDb(kBands, -140.0f);
-        const double norm = 4.0 / (static_cast<double>(kFrame) * kFrame);
+    const double sr = sampleRate > 0.0 ? sampleRate : 48000.0;
+    if (sr != sampleRate_ || binLo_[0] == 0) {
+        // The log bands' FFT bins, worked out once per sample rate.
+        sampleRate_ = sr;
         for (int b = 0; b < kBands; ++b) {
             const double f0 = kLoHz * std::pow(kHiHz / kLoHz, static_cast<double>(b) / kBands);
             const double f1 = kLoHz * std::pow(kHiHz / kLoHz, static_cast<double>(b + 1) / kBands);
             const int k0 = std::max(1, static_cast<int>(f0 * kFrame / sampleRate_));
-            const int k1 = std::min(kFrame / 2, std::max(k0, static_cast<int>(f1 * kFrame / sampleRate_)));
+            binLo_[static_cast<size_t>(b)] = k0;
+            binHi_[static_cast<size_t>(b)] = std::min(kFrame / 2, std::max(k0, static_cast<int>(f1 * kFrame / sampleRate_)));
+        }
+    }
+    // STU-1: a fixed ring of one frame; a full frame is read out and one hop
+    // dropped, so nothing is allocated or shifted on this path.
+    for (int i = 0; i < n; ++i) {
+        if (!pending_.push(0.5f * (left[i] + right[i]))) continue;
+        pending_.readFrame(fftBuf_.data());
+        std::fill(fftBuf_.begin() + kFrame, fftBuf_.end(), 0.0f);
+        for (int j = 0; j < kFrame; ++j)
+            fftBuf_[static_cast<size_t>(j)] *= window_[static_cast<size_t>(j)];
+        fft_.performFrequencyOnlyForwardTransform(fftBuf_.data(), true);
+        const double norm = 4.0 / (static_cast<double>(kFrame) * kFrame);
+        for (int b = 0; b < kBands; ++b) {
+            const int k0 = binLo_[static_cast<size_t>(b)], k1 = binHi_[static_cast<size_t>(b)];
             double sum = 0.0;
             for (int k = k0; k <= k1; ++k)
                 sum += static_cast<double>(fftBuf_[static_cast<size_t>(k)]) * fftBuf_[static_cast<size_t>(k)];
-            bandDb[static_cast<size_t>(b)] = static_cast<float>(10.0 * std::log10(sum * norm / (k1 - k0 + 1) + 1e-14));
+            bandDb_[static_cast<size_t>(b)] = static_cast<float>(10.0 * std::log10(sum * norm / (k1 - k0 + 1) + 1e-14));
         }
-        writeColumn(bandDb);
-        pending_.erase(pending_.begin(), pending_.begin() + kHop);
+        writeColumn(bandDb_);
+        pending_.advance();
     }
 }
 
-void LiveSpectrogramView::writeColumn(const std::vector<float>& bandDb)
+void LiveSpectrogramView::writeColumn(const std::array<float, kBands>& bandDb)
 {
     // The colour scale follows the music's own top (slow), 60 dB deep.
     const float top = *std::max_element(bandDb.begin(), bandDb.end());
     topDb_ = top > topDb_ ? top : topDb_ + 0.02f * (top - topDb_);
-    juce::Image::BitmapData px(history_, juce::Image::BitmapData::writeOnly);
+    juce::Image::BitmapData px(history_, writeX_, 0, 1, kBands, juce::Image::BitmapData::writeOnly);
     for (int b = 0; b < kBands; ++b) {
         const float t = (bandDb[static_cast<size_t>(b)] - (topDb_ - kRangeDb)) / kRangeDb;
-        px.setPixelColour(writeX_, kBands - 1 - b, ui::viz::spectrogram(juce::jlimit(0.0f, 1.0f, t)));
+        px.setPixelColour(0, kBands - 1 - b, ui::viz::spectrogram(juce::jlimit(0.0f, 1.0f, t)));
     }
     writeX_ = (writeX_ + 1) % kHistoryColumns;
     ++columnsWritten_;
@@ -144,6 +154,14 @@ void LiveSpectrogramView::writeColumn(const std::vector<float>& bandDb)
 
 void LiveSpectrogramView::timerCallback()
 {
+    // Stopped: nothing new arrives, so poll slowly (VIS-7: timers only as
+    // fast as needed) and repaint once to grey the picture.
+    const bool playing = controller_.playback().isPlaying();
+    if (playing != wasPlaying_) {
+        wasPlaying_ = playing;
+        startTimerHz(playing ? 30 : 4);
+        repaint();
+    }
     auto* tap = controller_.playback().meterTap();
     if (tap == nullptr) return;
     std::array<float, 2048> l{}, r{};
@@ -154,10 +172,10 @@ void LiveSpectrogramView::timerCallback()
     const int before = columnsWritten_;
     while ((n = tap->spectrumRing().pop(l.data(), r.data(), static_cast<int>(l.size()))) > 0)
         pushSamples(l.data(), r.data(), n, sr);
-    if (++overlayTick_ % 30 == 0) refreshOverlays(); // findings change slowly
+    if (++overlayTick_ % (playing ? 30 : 4) == 0) refreshOverlays(); // findings change slowly
     // A finding tied to a moment names itself while the playhead is in it.
     juce::String now;
-    if (controller_.playback().isPlaying()) {
+    if (playing) {
         const double t = controller_.playback().getPlaybackPosition();
         for (const auto& m : moments_)
             if (t >= m.startSec && t <= m.endSec) now = m.label;
@@ -196,18 +214,22 @@ void LiveSpectrogramView::paint(juce::Graphics& g)
         g.drawText(b.label, juce::Rectangle<float>(plot.getX() + 6.0f, y0 + 1.0f, plot.getWidth() * 0.6f, 14.0f),
                    juce::Justification::centredLeft, true);
     }
-    // The frequency axis.
-    g.setColour(KhensuTheme::textTertiary);
-    for (const float hz : {50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f}) {
-        const float y = yForHz(hz);
-        g.drawText(hz >= 1000.0f ? juce::String(juce::roundToInt(hz / 1000.0f)) + "k" : juce::String(juce::roundToInt(hz)),
-                   juce::Rectangle<float>(0.0f, y - 7.0f, 36.0f, 14.0f), juce::Justification::centredRight, false);
+    const bool playing = controller_.playback().isPlaying();
+    if (!playing && columnsWritten_ > 0) { // VIS-6: the last picture, greyed
+        g.setColour(KhensuTheme::bgSurface.withAlpha(0.45f));
+        g.fillRect(plot);
     }
+    // The standard frequency axis (VIS-3) and the colour bar (VIS-2).
+    ui::viz::paintFrequencyTicks(g, plot, 40.0f, false);
+    ui::viz::paintSpectrogramBar(g, juce::Rectangle<float>(plot.getRight() + 6.0f, plot.getY(), ui::viz::kColourBarW - 6.0f,
+                                                           plot.getHeight()),
+                                 "0 dB", "-60");
     // Header: what this is, and the finding playing right now.
     auto header = getLocalBounds().toFloat().removeFromTop(20.0f).withTrimmedLeft(40.0f);
     g.setColour(KhensuTheme::textSecondary);
-    g.drawText(controller_.playback().isPlaying() ? TRANS("Live - newest on the right")
-                                                  : TRANS("Press play: the spectrogram scrolls with the music"),
+    g.drawText(playing ? TRANS("Live - newest on the right")
+                       : (columnsWritten_ > 0 ? TRANS("Stopped - the last seconds played; press play to scroll")
+                                              : TRANS("Press play: the spectrogram scrolls with the music")),
                header, juce::Justification::centredLeft, true);
     if (nowLabel_.isNotEmpty()) {
         g.setColour(KhensuTheme::accentAmber);
@@ -221,7 +243,7 @@ void LiveSpectrogramView::mouseMove(const juce::MouseEvent& e)
     if (!plot.contains(e.position)) return;
     const float t = (plot.getBottom() - e.position.y) / plot.getHeight();
     const float hz = kLoHz * std::pow(kHiHz / kLoHz, t);
-    juce::String tip = (hz >= 1000.0f ? juce::String(hz / 1000.0f, 2) + " kHz" : juce::String(juce::roundToInt(hz)) + " Hz");
+    juce::String tip = ui::viz::freqReadout(hz);
     for (const auto& b : bands_)
         if (hz >= b.lowHz && hz <= b.highHz) tip << " - " << b.label;
     setTooltip(tip);

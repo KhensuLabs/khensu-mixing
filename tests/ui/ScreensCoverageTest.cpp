@@ -7,7 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "support/FakeAppController.h"
 #include "ui/shared/AccessibilityCoverage.h"
-#include "ui/AiDetection/AiDetectionScreen.h"
+#include "ui/ProvenanceSource/AiDetectionScreen.h"
 #include "ui/ReferenceLibrary/ReferenceLibraryScreen.h"
 #include "ui/Settings/SettingsScreen.h"
 
@@ -71,7 +71,7 @@ TEST_CASE("Settings screen builds, lays out and tears down", "[ver6][screens]")
     }
 }
 
-#include "ui/AiDetection/SourceSummaryView.h"
+#include "ui/ProvenanceSource/SourceSummaryView.h"
 
 TEST_CASE("Provenance & Source: the Source view reads the session's source scans (CON-8)", "[con8][screens]")
 {

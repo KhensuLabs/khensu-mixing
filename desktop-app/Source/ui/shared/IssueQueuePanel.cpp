@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/shared/IssueQueuePanel.cpp
 #include "IssueQueuePanel.h"
+#include "../Dashboard/FindingCardMap.h"
 #include "PanelRunState.h"
 #include "TimelineCache.h"
 #include "ChangedRegions.h"
@@ -18,6 +19,7 @@
 #include "MonitoringText.h"
 #include "IssuePlaylist.h"
 #include "RenderPaths.h"
+#include "UndoToast.h"
 #include "../../settings/OnlineSettings.h"
 #include <khensu/common/AppPaths.h>
 #include <khensu/session/Session.h>
@@ -192,12 +194,12 @@ class IssueQueuePanel::Row final : public juce::Component {
         head.removeFromRight(rightControlsWidth());
         head = head.reduced(0, 10);
         g.setColour(settled ? KhensuTheme::textTertiary : KhensuTheme::textPrimary);
-        g.setFont(KhensuTheme::bodyFont(13.0f).boldened());
+        g.setFont(KhensuTheme::bodyFont(type::body).boldened());
         g.drawFittedText(IssueQueuePanel::titleFor(issue_), head.removeFromTop(20), juce::Justification::centredLeft,
                          1);
         // Meta: the severity word in its colour, then the state.
         auto meta = head.removeFromTop(18);
-        const auto metaFont = KhensuTheme::labelFont(11.0f);
+        const auto metaFont = KhensuTheme::labelFont(type::caption);
         g.setFont(metaFont);
         if (!settled) {
             const auto word = IssueQueuePanel::severityWord(issue_.rec.severity);
@@ -209,33 +211,33 @@ class IssueQueuePanel::Row final : public juce::Component {
         g.drawText(IssueQueuePanel::stateLabel(issue_), meta, juce::Justification::centredLeft, true);
         if (reachNote_.isNotEmpty()) { // NEW-10: informational, not a severity colour
             g.setColour(KhensuTheme::textSecondary);
-            g.setFont(KhensuTheme::labelFont(11.0f).italicised());
+            g.setFont(KhensuTheme::labelFont(type::caption).italicised());
             g.drawFittedText(reachNote_, text.removeFromTop(18), juce::Justification::centredLeft, 1);
         }
         if (!expanded_) return;
 
         text.removeFromTop(6);
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(KhensuTheme::bodyFont(13.0f));
+        g.setFont(KhensuTheme::bodyFont(type::body));
         g.drawFittedText(howText(), text.removeFromTop(howLines() * 18), juce::Justification::topLeft, howLines());
         if (prediction_.isNotEmpty() && canFix(issue_)) {
             auto line = text.removeFromTop(20);
             g.setColour(KhensuTheme::accentTeal);
             g.fillEllipse(line.removeFromLeft(10).withSizeKeepingCentre(5, 5).toFloat());
             g.setColour(KhensuTheme::textPrimary);
-            g.setFont(KhensuTheme::bodyFont(13.0f));
+            g.setFont(KhensuTheme::bodyFont(type::body));
             g.drawFittedText(prediction_, line, juce::Justification::centredLeft, 1);
         }
         if (!issue_.rec.trade_off.empty()) {
             g.setColour(KhensuTheme::textTertiary);
-            g.setFont(KhensuTheme::labelFont(11.0f).italicised());
+            g.setFont(KhensuTheme::labelFont(type::caption).italicised());
             g.drawFittedText(TRANS("Trade-off:") + " " + juce::String(issue_.rec.trade_off), text.removeFromTop(18),
                              juce::Justification::centredLeft, 1);
         }
         if (canFix(issue_)) {
             auto controls = text.removeFromTop(KhensuTheme::buttonHSmall + 14).withTrimmedTop(8);
             g.setColour(KhensuTheme::textTertiary);
-            g.setFont(KhensuTheme::labelFont(11.0f));
+            g.setFont(KhensuTheme::labelFont(type::caption));
             g.drawText(TRANS("Amount"), controls.removeFromLeft(56), juce::Justification::centredLeft, false);
             // The preview's state, right of the controls.
             const int used = 56 + 260 + 8 + 96 + 12;
@@ -316,7 +318,7 @@ class IssueQueuePanel::Row final : public juce::Component {
 
     void showMenu(juce::Component* target)
     {
-        enum { kWhy = 1, kPlay, kDone, kStronger, kGentler, kReopen, kFix, kDismissBase = 100, kSectionBase = 200 };
+        enum { kWhy = 1, kPlay, kDone, kStronger, kGentler, kReopen, kFix, kCard, kDismissBase = 100, kSectionBase = 200 };
         auto& issues = owner_.controller_.issues();
         const bool open = issue_.state == IIssues::State::Open;
         const bool hasRec = !issue_.recId.empty();
@@ -324,6 +326,10 @@ class IssueQueuePanel::Row final : public juce::Component {
         juce::PopupMenu m;
         m.addItem(kWhy, TRANS("Why? - what was measured and how to fix it"),
                   hasRec || !issue_.rec.suggested_action.empty());
+        // ENH-7: the Analysis card that shows this finding.
+        const std::string cardKey = issue_.code.empty() ? issue_.recId : issue_.code;
+        if (!finding_card::forFinding(cardKey).empty())
+            m.addItem(kCard, TRANS("Show its card in Analysis"));
         if (issue_.rec.time_range) {
             const auto [start, end] = issue_playlist::region(*issue_.rec.time_range);
             m.addItem(kPlay, owner_.controller_.shell().isLoopingRegion(start, end) ? TRANS("Stop the loop")
@@ -376,6 +382,10 @@ class IssueQueuePanel::Row final : public juce::Component {
             case kWhy:
                 row.owner_.controller_.shell().showChainReasoning(row.issue_.rec);
                 return;
+            case kCard:
+                row.owner_.controller_.shell().revealCardForFinding(row.issue_.code.empty() ? row.issue_.recId
+                                                                                             : row.issue_.code);
+                return;
             case kPlay: {
                 const auto [start, end] = issue_playlist::region(*row.issue_.rec.time_range);
                 auto& shell = row.owner_.controller_.shell();
@@ -393,6 +403,7 @@ class IssueQueuePanel::Row final : public juce::Component {
                 return;
             case kDone:
                 issues.markDone(id); // the queue rebuilds on the next turn
+                row.owner_.showUndoToast(TRANS("Issue marked done"), id);
                 return;
             case kReopen:
                 issues.reopen(id);
@@ -402,7 +413,10 @@ class IssueQueuePanel::Row final : public juce::Component {
             }
             if (choice >= kDismissBase) {
                 const auto reasons = dismissReasons();
-                if (choice - kDismissBase < reasons.size()) issues.dismiss(id, reasons[choice - kDismissBase]);
+                if (choice - kDismissBase < reasons.size()) {
+                    issues.dismiss(id, reasons[choice - kDismissBase]);
+                    row.owner_.showUndoToast(TRANS("Issue dismissed"), id);
+                }
             }
         });
     }
@@ -433,7 +447,6 @@ void IssueQueuePanel::applyThemeColours()
     summaryLabel_.setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
     milestoneLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     checkLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
-    emptyLabel_.setColour(juce::Label::textColourId, KhensuTheme::textTertiary);
 }
 
 IssueQueuePanel::IssueQueuePanel(IAppController& controller) : PanelCard(controller, TRANS("Issue queue"))
@@ -447,11 +460,11 @@ IssueQueuePanel::IssueQueuePanel(IAppController& controller) : PanelCard(control
                        "audition in the A/B first; Keep makes it a version. Mark done (in ...) when you handled "
                        "it yourself; Dismiss when it is not a problem for this mix (Khensu learns from it)."));
 
-    summaryLabel_.setFont(KhensuTheme::bodyFont(17.0f).boldened());
+    summaryLabel_.setFont(KhensuTheme::bodyFont(type::title).boldened());
     addAndMakeVisible(summaryLabel_);
-    milestoneLabel_.setFont(KhensuTheme::labelFont(11.0f));
+    milestoneLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(milestoneLabel_);
-    checkLabel_.setFont(KhensuTheme::labelFont(11.0f));
+    checkLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(checkLabel_);
     checkAgainButton_.setTooltip(TRANS("Re-analyse the current version and compare it with the original"));
     checkAgainButton_.onClick = [this] { controller_.issues().verify(); };
@@ -479,10 +492,9 @@ IssueQueuePanel::IssueQueuePanel(IAppController& controller) : PanelCard(control
     nextTimedButton_.setTooltip(TRANS("The next finding in time: loop its moment"));
     nextTimedButton_.onClick = [this] { stepPlaylist(true); };
     addChildComponent(nextTimedButton_);
-    statusLabel_.setFont(KhensuTheme::bodyFont(13.0f));
+    statusLabel_.setFont(KhensuTheme::bodyFont(type::body));
     addAndMakeVisible(statusLabel_);
-    emptyLabel_.setJustificationType(juce::Justification::centred);
-    addChildComponent(emptyLabel_);
+    addChildComponent(emptyState_);
 
     hero_.onFindingClicked = [this](const std::string& key) { select(key, true); };
     addChildComponent(difference_);
@@ -644,10 +656,10 @@ void IssueQueuePanel::refresh()
         rows_.back()->setExpanded(keyOf(issue) == selectedKey_);
         content_.addAndMakeVisible(*rows_.back());
     }
-    emptyLabel_.setText(controller_.hasAnalysis() ? TRANS("No issues found - nothing to fix.")
-                                                  : TRANS("The issues appear when the analysis finishes."),
-                        juce::dontSendNotification);
-    emptyLabel_.setVisible(rows_.empty());
+    emptyState_.setMessage(controller_.hasAnalysis() ? TRANS("No issues found - nothing to fix.")
+                                                     : TRANS("The issues appear when the analysis finishes."),
+                         {});
+    emptyState_.setVisible(rows_.empty());
     const bool anyTimed = !issue_playlist::timedOrder(issues).empty();
     prevTimedButton_.setVisible(anyTimed);
     nextTimedButton_.setVisible(anyTimed);
@@ -795,6 +807,22 @@ void IssueQueuePanel::moveSelection(int delta)
     index = juce::jlimit(0, static_cast<int>(rows_.size()) - 1, index + delta);
     select(rows_[static_cast<size_t>(index)]->key(), true);
     rows_[static_cast<size_t>(index)]->grabKeyboardFocus();
+}
+
+void IssueQueuePanel::showUndoToast(const juce::String& message, const std::string& recId)
+{
+    // UXR-9: the change is made; the toast offers it back for 6 s. Undo
+    // reopens through the queue, as the row's Reopen does.
+    auto* host = getTopLevelComponent();
+    if (host == nullptr) host = this;
+    juce::Component::SafePointer<IssueQueuePanel> self(this);
+    UndoToast::show(*host, message, [self, recId] {
+        // Only while the finding is still in this session's queue (the user
+        // may have switched sessions or re-analysed within the 6 s).
+        if (self == nullptr || !self->controller_.issues().issue(recId).has_value()) return;
+        self->controller_.issues().reopen(recId);
+        self->setStatus(TRANS("Reopened."));
+    });
 }
 
 bool IssueQueuePanel::keyPressed(const juce::KeyPress& key)
@@ -1057,6 +1085,37 @@ void IssueQueuePanel::fixTopIssue()
                                         : TRANS("Analyze the session first."));
 }
 
+void IssueQueuePanel::fixAllSafe()
+{
+    auto& issues = controller_.issues();
+    if (issues.fixInProgress()) {
+        setStatus(TRANS("A fix is still rendering - try again when it finishes."));
+        return;
+    }
+    const auto plan = issues.safeFixes();
+    if (plan.recIds.empty()) {
+        setStatus(controller_.hasAnalysis() ? TRANS("No open issue has a fix validated on real music - fix them one by one.")
+                                            : TRANS("Analyze the session first."));
+        return;
+    }
+    if (preview_.stage == Preview::Stage::Rendering) cancelPreview();
+    else if (preview_.stage == Preview::Stage::Ready) discardPreview();
+    const int n = static_cast<int>(plan.recIds.size());
+    setStatus(TRANS("Rendering %n safe fixes as one version...").replace("%n", juce::String(n)));
+    juce::Component::SafePointer<IssueQueuePanel> self(this);
+    issues.fixAllSafe([self, n](bool ok, juce::String message) {
+        if (self == nullptr) return;
+        if (ok)
+            self->setStatus(TRANS("Fixed %n issues - now the current version (B). Checking what worked...")
+                                .replace("%n", juce::String(n)));
+        else
+            self->setStatus(TRANS("Fix all safe failed:") + " " + message, true);
+        self->triggerAsyncUpdate();
+    });
+    for (auto& r : rows_)
+        r->updateLabels();
+}
+
 void IssueQueuePanel::updateAbButton()
 {
     auto& playback = controller_.playback();
@@ -1111,7 +1170,7 @@ void IssueQueuePanel::resized()
     statusLabel_.setBounds(b.removeFromTop(20));
     b.removeFromTop(KhensuTheme::sp1);
     viewport_.setBounds(b);
-    emptyLabel_.setBounds(b);
+    emptyState_.setBounds(b);
     layoutRows();
 }
 

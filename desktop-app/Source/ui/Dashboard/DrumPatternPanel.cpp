@@ -119,7 +119,7 @@ void DrumPatternPanel::paint(juce::Graphics& g)
     }
 
     g.setColour(KhensuTheme::textSecondary.withAlpha(0.6f));
-    g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::plain));
+    g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     for (float t = 0.0f; t <= span_; t += step) {
         const float x = xFor(t);
         g.drawVerticalLine(juce::roundToInt(x), axis.getBottom() - 5.0f, axis.getBottom());
@@ -130,7 +130,7 @@ void DrumPatternPanel::paint(juce::Graphics& g)
 
     if (kickAvgBpm_ > 0.0f) {
         g.setColour(KhensuTheme::textSecondary.withAlpha(0.7f));
-        g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::bold));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
         g.drawText(juce::String(juce::roundToInt(kickAvgBpm_)) + " " + TRANS("kicks/min"), axis.withTrimmedLeft(axis.getWidth() - 80.0f),
                    juce::Justification::centredRight, false);
     }
@@ -151,7 +151,7 @@ void DrumPatternPanel::paint(juce::Graphics& g)
         g.fillRect(lane.withTrimmedLeft((float)kLabelW));
 
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::bold));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
         g.drawText(lanes[(size_t)i].label, lane.withWidth((float)kLabelW).toNearestInt(),
                    juce::Justification::centredLeft, false);
 

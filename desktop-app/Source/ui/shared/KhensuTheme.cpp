@@ -1,6 +1,7 @@
 // desktop-app/Source/ui/shared/KhensuTheme.cpp
 #include "KhensuTheme.h"
 #include "../../BundledResources.h"
+#include <khensu/ui/KhensuPalette.h>
 #include <khensu/ui/VizPalette.h>
 #include <map>
 #include <utility>
@@ -365,6 +366,13 @@ void KhensuTheme::setTheme(Theme t)
         vizGrid = textPrimary.withAlpha(light ? 0.08f : 0.06f);
         vizAxis = textPrimary.withAlpha(light ? 0.25f : 0.18f);
     }
+
+    // STU-6: the shared-core widgets' palette (StudioMeters, KhensuKnob,
+    // ChartKit, EqCurveComponent ...) follows the same theme, before any
+    // listener below reads it.
+    khensu::ui::Palette::setTheme(t == Theme::HighContrast ? khensu::ui::Palette::Theme::HighContrast
+                                  : t == Theme::Light      ? khensu::ui::Palette::Theme::Light
+                                                           : khensu::ui::Palette::Theme::Dark);
 
     // Palette is fully reassigned - now let cached-colour surfaces re-apply.
     // Iterate a copy: a handler is allowed to add/remove listeners (a panel

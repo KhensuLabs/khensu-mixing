@@ -13,6 +13,7 @@
 #include "../shared/PanelCard.h"
 #include "../shared/PanelRunState.h"
 #include "../shared/StemViz.h"
+#include "../shared/ChartKitDesktop.h"
 #include <vector>
 
 namespace khensu {
@@ -32,6 +33,7 @@ class StemEnergyTimelinePanel final : public PanelCard {
     {
         timelines_.clear();
         stream_.setStream({});
+        stream_.setSummary({});
         masking_.setMap({});
         pairBox_.clear(juce::dontSendNotification);
         run_.reset();
@@ -53,6 +55,10 @@ class StemEnergyTimelinePanel final : public PanelCard {
     StemStreamGraph stream_;
     juce::ComboBox pairBox_;
     MaskingHeatmapView masking_;
+    juce::String streamSummary() const; ///< VIS-8
+    // VIS-1: the transport's playhead on both time charts.
+    chart_transport::PlayheadFollower streamPlayhead_{stream_, controller_.playback()};
+    chart_transport::PlayheadFollower maskingPlayhead_{masking_, controller_.playback()};
     /// Re-applies every cached palette colour. Called at construction and on
     /// each theme change.
     void applyThemeColours();

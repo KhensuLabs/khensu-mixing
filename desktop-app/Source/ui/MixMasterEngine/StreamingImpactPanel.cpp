@@ -2,6 +2,7 @@
 #include "StreamingImpactPanel.h"
 #include "../shared/KhensuLookAndFeel.h"
 #include "../../IAppController.h"
+#include "../shared/FeatureHomeLink.h"
 #include <khensu/targets/PlatformTargets.h>
 
 namespace khensu {
@@ -13,14 +14,15 @@ void StreamingImpactPanel::applyThemeColours()
     previewButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
 }
 
-StreamingImpactPanel::StreamingImpactPanel(IAppController& c) : PanelCard(c, "Streaming Impact")
+StreamingImpactPanel::StreamingImpactPanel(IAppController& c) : PanelCard(c, "Streaming preview")
 {
     applyThemeColours();
-    setExplainer(TRANS("Streaming Impact"),
+    setExplainer(TRANS("Streaming preview"),
                  TRANS("Every platform normalizes loudness to its own target, quietly turning hot mixes "
                  "down. Most never turn a quiet mix up; Spotify does, but only as far as its true-peak "
-                 "ceiling allows. Preview auditions your mix as that platform's listeners will hear it, "
-                 "and flags true-peak values likely to trigger its own limiter/re-encode."));
+                 "ceiling allows. Preview auditions your mix as that platform's listeners will hear it. "
+                 "The table of every platform lives on the Analysis screen (Loudness & delivery > "
+                 "Streaming)."));
 
     for (const auto& p : getPlatformLoudnessTargets())
         platformCombo_.addItem(juce::String(p.name), platformCombo_.getNumItems() + 1);
@@ -40,9 +42,15 @@ StreamingImpactPanel::StreamingImpactPanel(IAppController& c) : PanelCard(c, "St
     previewButton_.onClick = [this] { togglePreview(); };
     addAndMakeVisible(previewButton_);
 
-    penaltyLabel_.setFont(KhensuTheme::labelFont(10.0f));
-    penaltyLabel_.setJustificationType(juce::Justification::topLeft);
+    penaltyLabel_.setFont(KhensuTheme::bodyFont(KhensuTheme::kFontBody));
+    penaltyLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(penaltyLabel_);
+
+    // ENH-8: the per-platform table is the Analysis screen's (Loudness &
+    // delivery > Streaming); this card keeps the audition and one line.
+    tableLinkButton_.setTooltip(TRANS("Every platform's target and turn-down, on the Analysis screen"));
+    tableLinkButton_.onClick = [this] { feature_home::showAnalysisCard(controller_.shell(), "streaming_norm"); };
+    addAndMakeVisible(tableLinkButton_);
 }
 
 void StreamingImpactPanel::setData(const AnalysisResult& r)
@@ -84,6 +92,10 @@ void StreamingImpactPanel::updatePenaltyText()
 
     const auto& p = targets[(size_t)idx];
     const float adj = platformPlaybackGainDb(p, intLufs_, truePeakDbtp_);
+    const juce::String played = TRANS("%p plays it at %d dB.")
+                                    .replace("%p", juce::String(p.name))
+                                    .replace("%d", (adj < 0.0f ? juce::String("-") : juce::String("+"))
+                                                       + juce::String(std::abs(adj), 1));
     const float shortfall = p.lufs - intLufs_ - juce::jmax(0.0f, adj); // quieter than the target after playback gain
 
     juce::StringArray warnings;
@@ -104,61 +116,29 @@ void StreamingImpactPanel::updatePenaltyText()
 
     penaltyLabel_.setColour(juce::Label::textColourId,
                             warnings.isEmpty() ? KhensuTheme::textTertiary : KhensuTheme::accentAmber);
-    penaltyLabel_.setText(warnings.isEmpty() ? TRANS("No penalties predicted for this platform.")
-                                             : warnings.joinIntoString("\n"),
+    // One line (ENH-8): the playback gain and the first warning; the
+    // tooltip carries every warning.
+    penaltyLabel_.setText(played + " "
+                              + (warnings.isEmpty() ? TRANS("No penalties predicted for this platform.")
+                                                    : warnings[0]),
                           juce::dontSendNotification);
+    penaltyLabel_.setTooltip(warnings.isEmpty() ? juce::String() : warnings.joinIntoString("\n"));
 }
 
 void StreamingImpactPanel::resized()
 {
     PanelCard::resized();
-    auto b = bodyArea();
-    auto controlsRow = b.removeFromBottom(26);
-    platformCombo_.setBounds(controlsRow.removeFromLeft(130));
-    controlsRow.removeFromLeft(6);
-    previewButton_.setBounds(controlsRow);
-    b.removeFromBottom(4);
-    penaltyLabel_.setBounds(b.removeFromBottom(34));
+    // One row: platform, audition, the line, the link to the full table.
+    auto row = bodyArea().withSizeKeepingCentre(bodyArea().getWidth(), KhensuTheme::buttonH);
+    platformCombo_.setBounds(row.removeFromLeft(150));
+    row.removeFromLeft(KhensuTheme::sp2);
+    previewButton_.setBounds(row.removeFromLeft(230));
+    row.removeFromLeft(KhensuTheme::sp3);
+    tableLinkButton_.setBounds(row.removeFromRight(juce::jmin(200, juce::jmax(0, row.getWidth() / 3))));
+    row.removeFromRight(KhensuTheme::sp3);
+    penaltyLabel_.setBounds(row);
 }
 
-void StreamingImpactPanel::paint(juce::Graphics& g)
-{
-    PanelCard::paint(g);
-    auto b = bodyArea().withTrimmedBottom(64); // reserve space for the preview controls + penalty text
-
-    for (const auto& p : getPlatformLoudnessTargets()) {
-        if (b.getHeight() < 20) break;
-        auto row = b.removeFromTop(28);
-        b.removeFromTop(4);
-
-        const float adj = platformPlaybackGainDb(p, intLufs_, truePeakDbtp_); // negative = turned down
-        const bool warn = adj < -1.5f;
-
-        // Platform name
-        g.setFont(KhensuTheme::bodyFont(12.0f));
-        g.setColour(KhensuTheme::textSecondary);
-        g.drawText(juce::String(p.name), row.removeFromLeft(110), juce::Justification::centredLeft, true);
-
-        // Target LUFS
-        g.setFont(KhensuTheme::monoFont(10.0f));
-        g.setColour(KhensuTheme::textTertiary);
-        g.drawText(juce::String(juce::roundToInt(p.lufs)) + " LUFS", row.removeFromLeft(72), juce::Justification::centredLeft, false);
-
-        // Adjustment
-        juce::String adjStr =
-            (adj < 0.0f ? juce::String("-") : juce::String("+")) + juce::String(std::abs(adj), 1) + " dB";
-        g.setColour(warn ? KhensuTheme::accentAmber : KhensuTheme::textSecondary);
-        g.drawText(adjStr, row, juce::Justification::centredRight, false);
-    }
-
-    // True peak warning
-    if (truePeakDbtp_ > -1.0f) {
-        b.removeFromTop(4);
-        g.setFont(KhensuTheme::labelFont(10.0f));
-        g.setColour(KhensuTheme::accentAmber);
-        g.drawText("(!)  " + TRANS("True peak > -1 dBTP - re-encode risk"), b, juce::Justification::centredLeft,
-                   true);
-    }
-}
+void StreamingImpactPanel::paint(juce::Graphics& g) { PanelCard::paint(g); }
 
 } // namespace khensu

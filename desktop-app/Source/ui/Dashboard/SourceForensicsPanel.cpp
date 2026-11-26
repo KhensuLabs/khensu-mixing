@@ -81,7 +81,7 @@ void SourceForensicsPanel::paint(juce::Graphics& g)
     }
     auto b = bodyArea();
     b.removeFromTop(28);
-    g.setFont(KhensuTheme::monoFont(10.0f));
+    g.setFont(KhensuTheme::monoFont(type::caption));
     g.setColour(KhensuTheme::textSecondary);
     g.drawText(header_, b.removeFromTop(16), juce::Justification::centredLeft, false);
     b.removeFromTop(4);
@@ -91,13 +91,13 @@ void SourceForensicsPanel::paint(juce::Graphics& g)
         auto row = b.removeFromTop(rowH);
         const juce::Colour c = f.flag ? KhensuTheme::accentAmber : KhensuTheme::accentGreen;
         g.setColour(c);
-        g.setFont(KhensuTheme::labelFont(10.0f).boldened());
+        g.setFont(KhensuTheme::labelFont(type::caption).boldened());
         g.drawText((f.flag ? juce::String(juce::CharPointer_UTF8("\xe2\x9a\xa0 "))
                            : juce::String(juce::CharPointer_UTF8("+ "))) +
                        f.label,
                    row.removeFromTop(14), juce::Justification::centredLeft, false);
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::bodyFont(9.5f));
+        g.setFont(KhensuTheme::bodyFont(type::caption));
         g.drawFittedText(f.detail, row, juce::Justification::topLeft, 2);
     }
 }

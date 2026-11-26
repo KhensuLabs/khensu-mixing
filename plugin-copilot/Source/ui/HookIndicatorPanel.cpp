@@ -32,11 +32,11 @@ void HookIndicatorPanel::drawBadge(juce::Graphics& g, juce::Rectangle<int> bound
 
     auto top = bounds.removeFromTop(bounds.getHeight() / 2);
     g.setColour(PluginLookAndFeel::textMuted);
-    g.setFont(khensu::ui::Palette::uiFont(9.0f, juce::Font::plain));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
     g.drawText(label, top, juce::Justification::centred);
 
     g.setColour(accent);
-    g.setFont(khensu::ui::Palette::uiFont(13.0f, juce::Font::bold));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::body, juce::Font::bold));
     g.drawText(value, bounds, juce::Justification::centred);
 }
 
@@ -50,13 +50,13 @@ void HookIndicatorPanel::paint(juce::Graphics& g)
     // Title
     auto titleArea = b.removeFromTop(16);
     g.setColour(PluginLookAndFeel::accentTeal);
-    g.setFont(khensu::ui::Palette::uiFont(10.0f, juce::Font::bold));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::bold));
     g.drawText("HOOK INTELLIGENCE", titleArea, juce::Justification::centredLeft);
     b.removeFromTop(4);
 
     if (!hasData_) {
         g.setColour(PluginLookAndFeel::textMuted);
-        g.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::plain));
+        g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
         g.drawText("Load analysis to see hook data", b, juce::Justification::centred);
         return;
     }
@@ -68,7 +68,7 @@ void HookIndicatorPanel::paint(juce::Graphics& g)
 
     auto barLabel = left.removeFromTop(14);
     g.setColour(PluginLookAndFeel::textMuted);
-    g.setFont(khensu::ui::Palette::uiFont(9.0f, juce::Font::plain));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
     g.drawText("STRENGTH", barLabel, juce::Justification::centredLeft);
 
     auto barBg = left;
@@ -88,7 +88,7 @@ void HookIndicatorPanel::paint(juce::Graphics& g)
 
     // Strength percentage below bar
     g.setColour(PluginLookAndFeel::textPrimary);
-    g.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::bold));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::bold));
     // (no extra space - barBg already consumed)
 
     // Badges (right side)

@@ -76,7 +76,7 @@ TakeAlignmentPanel::TakeAlignmentPanel(IAppController& c) : PanelCard(c, "Double
     auditionBox_.setEnabled(false);
     addAndMakeVisible(auditionBox_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setText(TRANS("Add double or ad-lib takes to tighten them against the lead."),
                          juce::dontSendNotification);
     addAndMakeVisible(statusLabel_);
@@ -211,7 +211,7 @@ void TakeAlignmentPanel::paint(juce::Graphics& g)
     const double dur = juce::jmax(0.001, result_.durationSec());
     const double maxShift = juce::jmax(5.0, result_.maxAbsShiftMs());
     const int laneH = juce::jmin(36, b.getHeight() / static_cast<int>(result_.takes.size()));
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     for (const auto& t : result_.takes) {
         auto lane = b.removeFromTop(laneH).reduced(0, 2).toFloat();
         auto label = lane.removeFromLeft(90.0f);

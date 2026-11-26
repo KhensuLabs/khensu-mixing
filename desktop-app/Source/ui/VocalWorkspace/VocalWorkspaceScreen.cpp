@@ -18,22 +18,24 @@ void VocalWorkspaceScreen::applyThemeColours()
     statusLabel.setColour(juce::Label::textColourId, KhensuTheme::accentTeal);
     warningLabel.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     currentVocalLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
-    // The per-stem solo buttons carry an active/inactive tint that depends on
-    // which stem is currently soloed, so they are re-resolved by
-    // updateSoloButtonStates() rather than being restated here.
-    updateSoloButtonStates();
+    // The stem row (a SegmentedControl) reads the theme live in paint().
 }
 
 VocalWorkspaceScreen::VocalWorkspaceScreen(IAppController& ctrl)
     : controller(ctrl), analysisPanel(ctrl), strategyPanel(ctrl), macroPanel(ctrl), renderPanel(ctrl), gainRider_(ctrl),
-      preflight_(ctrl), comping_(ctrl), pitchAccuracy_(ctrl), hookPanel(ctrl), vocalStats_(ctrl), stemMasking_(ctrl),
-      stemEnergy_(ctrl), lyricIntelligibility_(ctrl), pitchEditor_(ctrl), wordClipGain_(ctrl), takeAlignment_(ctrl), vocalHarmony_(ctrl), mixMap_(ctrl)
+      preflight_(ctrl), comping_(ctrl), pitchAccuracy_(ctrl), hookPanel(ctrl), vocalStats_(ctrl),
+      lyricIntelligibility_(ctrl), pitchEditor_(ctrl), wordClipGain_(ctrl), takeAlignment_(ctrl), vocalHarmony_(ctrl), mixMap_(ctrl),
+      stemsLink_(TRANS("Stem energy and masking live in Analysis > Stems"),
+                 TRANS("Each stem's share of the mix and where stems collide. The mix map below places the "
+                       "separated stems by spectrum and energy."),
+                 TRANS("Open Analysis > Stems"),
+                 [&ctrl] { feature_home::showAnalysisCard(ctrl.shell(), "taxonomy_masking"); })
 {
     applyThemeColours();
     titleLabel.setScreen(ScreenType::VocalWorkspace);
     addAndMakeVisible(titleLabel);
 
-    statusLabel.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::plain));
+    statusLabel.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::plain));
     addAndMakeVisible(statusLabel);
 
     warningLabel.setText(no_session::message(),
@@ -119,20 +121,19 @@ VocalWorkspaceScreen::VocalWorkspaceScreen(IAppController& ctrl)
 
     // Per-stem solo row - swaps the transport playback source to an isolated
     // stem. Only meaningful once separation has produced all four files.
-    auto setupSoloButton = [this](juce::TextButton& btn, const juce::String& stemName) {
-        btn.setClickingTogglesState(false);
-        btn.onClick = [this, stemName]() {
-            controller.playback().soloStem(stemName);
-            updateSoloButtonStates();
-        };
-        btn.setVisible(false);
-        addChildComponent(btn); // UX-14: above the tabs, on every tab
+    // UXR-5: one segmented choice (the last segment, "Full mix", un-solos).
+    for (const char* name : {NEEDS_TRANS("Vocals"), NEEDS_TRANS("Drums"), NEEDS_TRANS("Bass"), NEEDS_TRANS("Other"),
+                             NEEDS_TRANS("Full mix")})
+        stemListen_.addSegment(juce::translate(name));
+    stemListen_.setSelected(4); // the full mix until a stem is soloed
+    stemListen_.setTitle(TRANS("Listen to a stem"));
+    stemListen_.setDescription(TRANS("Play one separated stem, or the full mix"));
+    stemListen_.onChange = [this](int i) {
+        if (i < 0 || i >= (int)std::size(kListenStems)) return;
+        controller.playback().soloStem(kListenStems[(size_t)i]);
+        updateSoloButtonStates();
     };
-    setupSoloButton(soloVocalsButton_, "vocals");
-    setupSoloButton(soloDrumsButton_, "drums");
-    setupSoloButton(soloBassButton_, "bass");
-    setupSoloButton(soloOtherButton_, "other");
-    setupSoloButton(soloFullMixButton_, ""); // empty = full mix
+    addChildComponent(stemListen_); // UX-14: above the tabs, on every tab
 
     // Wire strategy -> macros. Must update macroPanel directly here rather
     // than waiting for the next pushDataToPanels() (driven by a fresh
@@ -171,14 +172,15 @@ VocalWorkspaceScreen::VocalWorkspaceScreen(IAppController& ctrl)
     editContent_.addAndMakeVisible(wordClipGain_);
     editContent_.addAndMakeVisible(takeAlignment_);
     editContent_.addAndMakeVisible(vocalHarmony_);
-    // CON-6: one stems card with tabs; it shows once stems exist.
-    stemsGroup_.addMember("masking", TRANS("Masking"), stemMasking_);
-    stemsGroup_.addMember("energy", TRANS("Energy"), stemEnergy_);
+    // ENH-8: stem energy and masking are Analysis > Stems' (a link here);
+    // the mix map is the vocal screen's own. Both show once stems exist.
+    diagnoseContent_.addChildComponent(stemsLink_);
     stemsGroup_.addMember("mix_map", TRANS("Mix map"), mixMap_);
     diagnoseContent_.addChildComponent(stemsGroup_);
 
     setUpDocking();
-    for (const char* name : {NEEDS_TRANS("Edit"), NEEDS_TRANS("Diagnose"), NEEDS_TRANS("Tone")})
+    // UXR-11: "Vocal tone" - "Tone" is also an Analysis card group.
+    for (const char* name : {NEEDS_TRANS("Edit"), NEEDS_TRANS("Diagnose"), NEEDS_TRANS("Vocal tone")})
         tabStrip_.addSegment(juce::translate(name));
     tabStrip_.setTitle(TRANS("Vocal workspace section"));
     tabStrip_.onChange = [this](int i) { showTab(i); };
@@ -209,7 +211,7 @@ VocalWorkspaceScreen::VocalWorkspaceScreen(IAppController& ctrl)
                                     });
 
     // WF-4: the vocal the tools process, when it is an edit.
-    currentVocalLabel_.setFont(KhensuTheme::labelFont(11.0f));
+    currentVocalLabel_.setFont(KhensuTheme::labelFont(type::caption));
     currentVocalLabel_.setJustificationType(juce::Justification::centredRight);
     addChildComponent(currentVocalLabel_);
     backToStemButton_.setTooltip(TRANS("Drop the stacked edits: the vocal tools and Stem Rebalance use the "
@@ -328,12 +330,9 @@ void VocalWorkspaceScreen::resized()
     }
 
     // Per-stem solo row, when visible - above the tabs so it serves every tab.
-    if (soloVocalsButton_.isVisible()) {
-        auto row = b.removeFromTop(28);
-        const int btnW = row.getWidth() / 5;
-        for (auto* btn :
-             {&soloVocalsButton_, &soloDrumsButton_, &soloBassButton_, &soloOtherButton_, &soloFullMixButton_})
-            btn->setBounds(row.removeFromLeft(btnW));
+    if (stemListen_.isVisible()) {
+        auto row = b.removeFromTop(KhensuTheme::buttonH);
+        stemListen_.setBounds(row.removeFromLeft(juce::jmin(560, row.getWidth())));
         b.removeFromTop(KhensuTheme::cardGap);
     }
     auto tabRow = b.removeFromTop(KhensuTheme::buttonH);
@@ -378,6 +377,7 @@ void VocalWorkspaceScreen::layoutContent()
     layoutTab(diagnoseContent_,
               {{&vocalStats_, "vocal_stats", 220}, {&analysisPanel, "analysis", 360},
                {&pitchAccuracy_, "pitch_accuracy", 200}, {&lyricIntelligibility_, "lyric_intelligibility", 220},
+               {&stemsLink_, "stems_link", stemsLink_.preferredHeight(w)},
                {&stemsGroup_, "stems", CardGroup::kTabRowH + 360},
                {&preflight_, "preflight", 270}, {&hookPanel, "hooks", 260}});
     // Vocal Strategy's 5-segment control ~70px, Vocal Macros' 7 sliders ~330px.
@@ -496,21 +496,11 @@ void VocalWorkspaceScreen::updateStemPanel()
     if (ready) controller.stems().ensureVocalAnalysis();
 
     stemsGroup_.setVisible(ready); // CON-6: the group shows its active tab
+    stemsLink_.setVisible(ready);
     if (ready) {
         mixMap_.setStemPaths(
             controller.getStemFile("vocals").getFullPathName(), controller.getStemFile("drums").getFullPathName(),
             controller.getStemFile("bass").getFullPathName(), controller.getStemFile("other").getFullPathName());
-        stemMasking_.setStemPaths(
-            controller.getStemFile("vocals").getFullPathName(), controller.getStemFile("drums").getFullPathName(),
-            controller.getStemFile("bass").getFullPathName(), controller.getStemFile("other").getFullPathName());
-        stemEnergy_.setStemPaths(
-            controller.getStemFile("vocals").getFullPathName(), controller.getStemFile("drums").getFullPathName(),
-            controller.getStemFile("bass").getFullPathName(), controller.getStemFile("other").getFullPathName());
-
-        if (const auto& sep = controller.stems().getLastSeparationResult(); sep.has_value())
-            stemMasking_.setSeparationInfo(juce::String(sep->method_used), sep->separation_quality_score);
-        else
-            stemMasking_.setSeparationInfo({}, -1.0f);
 
         // Intake auto-run (spec §1.2): the stem-gated vocal analyses fire as
         // soon as stems are ready, once per source file. Buttons remain as
@@ -520,15 +510,13 @@ void VocalWorkspaceScreen::updateStemPanel()
             const juce::String path(controller.getActiveSession()->files.front().path);
             if (path != lastStemAutoScanPath_) {
                 lastStemAutoScanPath_ = path;
-                stemMasking_.autoRun();
                 pitchAccuracy_.autoRun();
                 gainRider_.autoRun();
             }
         }
     }
 
-    for (auto* btn : {&soloVocalsButton_, &soloDrumsButton_, &soloBassButton_, &soloOtherButton_, &soloFullMixButton_})
-        btn->setVisible(ready);
+    stemListen_.setVisible(ready);
     if (ready) updateSoloButtonStates();
     renderPanel.refreshEnabledState();
 
@@ -539,23 +527,8 @@ void VocalWorkspaceScreen::updateStemPanel()
 void VocalWorkspaceScreen::updateSoloButtonStates()
 {
     const juce::String current = controller.playback().currentStemSolo();
-    struct Entry {
-        juce::TextButton* btn;
-        const char* name;
-    };
-    const Entry entries[] = {
-        {&soloVocalsButton_, "vocals"}, {&soloDrumsButton_, "drums"}, {&soloBassButton_, "bass"},
-        {&soloOtherButton_, "other"},   {&soloFullMixButton_, ""},
-    };
-    for (const auto& e : entries) {
-        const bool active = (current == juce::String(e.name));
-        e.btn->setColour(juce::TextButton::buttonColourId, active ? KhensuTheme::accentTeal : KhensuTheme::bgSurface);
-        // The active label sits on a solid accentTeal fill, so it needs the
-        // background tone rather than a literal black (invisible in Light).
-        e.btn->setColour(juce::TextButton::textColourOffId,
-                         active ? KhensuTheme::bgVoid : KhensuTheme::textSecondary);
-        e.btn->repaint();
-    }
+    for (size_t i = 0; i < std::size(kListenStems); ++i)
+        if (current == juce::String(kListenStems[i])) stemListen_.setSelected((int)i);
 }
 
 } // namespace khensu

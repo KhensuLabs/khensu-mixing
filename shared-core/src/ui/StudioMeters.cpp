@@ -59,6 +59,20 @@ AnimatedMeter::AnimatedMeter()
     setOpaque(false);
 }
 
+void AnimatedMeter::setStopped(bool stopped)
+{
+    if (stopped == stopped_) return;
+    stopped_ = stopped;
+    repaint();
+}
+
+juce::Colour AnimatedMeter::ink(juce::Colour c) const noexcept
+{
+    if (!stopped_) return c;
+    // Most of the hue gone and dimmed: the analysed state, not a live reading.
+    return c.withSaturation(c.getSaturation() * 0.15f).withMultipliedAlpha(0.7f);
+}
+
 //==============================================================================
 LoudnessMeter::LoudnessMeter()
 {
@@ -133,7 +147,7 @@ void LoudnessMeter::paint(juce::Graphics& g)
         auto valueRow = r.removeFromTop(size + 4.0f);
         const bool hasValue = integrated_ > kNoSignal;
         const bool over = hasValue && std::isfinite(target_) && integrated_ > target_ + tolerance_;
-        g.setColour(over ? Palette::statusWarn : Palette::textPrimary);
+        g.setColour(ink(over ? Palette::statusWarn : Palette::textPrimary));
         g.setFont(numberFont(size));
         const auto text = hasValue ? juce::String(integrated_, 1) : juce::String(juce::CharPointer_UTF8("\xe2\x80\x94")); // utf8-exempt(em dash)
         g.drawText(text, valueRow, juce::Justification::centredLeft, false);
@@ -168,7 +182,7 @@ void LoudnessMeter::paint(juce::Graphics& g)
         auto track = row;
         drawTrack(g, track);
         fillSegmentedBar(g, track, meter::proportion(display, minLufs_, maxLufs_), lowSplit, highSplit,
-                         studio::neutralFill(), Palette::accentTeal, Palette::statusWarn, false);
+                         ink(studio::neutralFill()), ink(Palette::accentTeal), ink(Palette::statusWarn), false);
         if (hold && mHold_.value > minLufs_) {
             g.setColour(Palette::textPrimary.withAlpha(0.8f));
             g.fillRect(toX(mHold_.value) - 1.0f, track.getY(), 2.0f, track.getHeight());
@@ -196,9 +210,17 @@ void LoudnessMeter::paint(juce::Graphics& g)
     drawRow(rows.removeFromTop(barH), "S", sDisplay_.value, shortTerm_, !twoBars);
 
     // Scale ticks every 6 LU.
-    g.setFont(numberFont(9.5f));
-    // Every 6 LU, or every 12 when the track is too short for the labels.
-    const float tickStep = trackW < 220.0f ? 12.0f : 6.0f;
+    g.setFont(numberFont(type::caption));
+    // BUG-5: a step that keeps the labels at least ~30 px apart (6, 12, 18 or
+    // 36 LU); a track too short for two labels gets none.
+    const float span = maxLufs_ - minLufs_;
+    float tickStep = 36.0f;
+    for (const float step : {6.0f, 12.0f, 18.0f, 36.0f})
+        if (trackW * step / span >= 30.0f) {
+            tickStep = step;
+            break;
+        }
+    if (trackW * tickStep / span < 30.0f) return;
     for (float lufs = std::ceil(minLufs_ / tickStep) * tickStep; lufs <= maxLufs_ + 0.01f; lufs += tickStep) {
         const float x = toX(lufs);
         g.setColour(studio::hairline());
@@ -295,7 +317,7 @@ void TruePeakMeter::paint(juce::Graphics& g)
     auto top = b.removeFromTop(juce::jmin(40.0f, b.getHeight() * 0.35f));
     drawLabel(g, "TRUE PEAK", top.removeFromTop(13.0f), juce::Justification::topLeft);
     const bool over = maxHold_.hasValue() && maxHold_.value > ceiling_;
-    g.setColour(over ? Palette::statusBad : Palette::textPrimary);
+    g.setColour(ink(over ? Palette::statusBad : Palette::textPrimary));
     const float size = juce::jlimit(12.0f, studio::kTitleSize, top.getHeight() - 2.0f);
     g.setFont(numberFont(size));
     const auto text = maxHold_.hasValue() ? formatDb(maxHold_.value, 1, -99.0f) : juce::String(juce::CharPointer_UTF8("\xe2\x80\x94")); // utf8-exempt(em dash)
@@ -314,11 +336,11 @@ void TruePeakMeter::paint(juce::Graphics& g)
         const auto i = static_cast<size_t>(c);
         juce::Rectangle<float> bar(b.getX() + static_cast<float>(c) * (barW + gap), b.getY(), barW, b.getHeight());
         drawTrack(g, bar);
-        fillSegmentedBar(g, bar, meter::proportion(bars_[i].value, minDb_, maxDb_), warnP, ceilP, studio::neutralFill(),
-                         Palette::statusWarn, Palette::statusBad, true);
+        fillSegmentedBar(g, bar, meter::proportion(bars_[i].value, minDb_, maxDb_), warnP, ceilP,
+                         ink(studio::neutralFill()), ink(Palette::statusWarn), ink(Palette::statusBad), true);
         if (holds_[i].value > minDb_) {
             const float y = bar.getBottom() - bar.getHeight() * meter::proportion(holds_[i].value, minDb_, maxDb_);
-            g.setColour(holds_[i].value > ceiling_ ? Palette::statusBad : Palette::textPrimary.withAlpha(0.85f));
+            g.setColour(ink(holds_[i].value > ceiling_ ? Palette::statusBad : Palette::textPrimary.withAlpha(0.85f)));
             g.fillRect(bar.getX(), y - 1.0f, bar.getWidth(), 2.0f);
         }
         if (n <= 2)
@@ -359,21 +381,34 @@ void CorrelationMeter::advance(double dt)
 
 void CorrelationMeter::paint(juce::Graphics& g)
 {
-    auto b = getLocalBounds().toFloat().reduced(6.0f);
-    if (b.isEmpty()) return;
-    auto top = b.removeFromTop(16.0f);
-    drawLabel(g, "CORRELATION", top, juce::Justification::centredLeft);
+    // BUG-5: the caption row, the track and the scale each get their own
+    // strip; a short meter drops the scale, then the caption, instead of
+    // drawing them over each other.
+    auto b = getLocalBounds().toFloat().reduced(4.0f, 2.0f);
+    if (b.getWidth() < 40.0f || b.getHeight() < 6.0f) return;
     const float value = needle_.value;
-    g.setColour(value < -0.5f ? Palette::statusBad : value < 0.0f ? Palette::statusWarn : Palette::textPrimary);
-    g.setFont(numberFont(studio::kBodySize));
-    g.drawText((value >= 0.0f ? "+" : "") + juce::String(value, 2), top, juce::Justification::centredRight, false);
-
-    auto scale = b.removeFromBottom(12.0f);
-    auto track = b.withSizeKeepingCentre(b.getWidth(), juce::jlimit(4.0f, 12.0f, b.getHeight()));
+    const bool withCaption = b.getHeight() >= 26.0f;
+    const bool withScale = b.getHeight() >= 40.0f;
+    if (withCaption) {
+        auto top = b.removeFromTop(14.0f);
+        const auto valueText = (value >= 0.0f ? "+" : "") + juce::String(value, 2);
+        const float valueW = juce::GlyphArrangement::getStringWidth(numberFont(studio::kBodySize), valueText) + 6.0f;
+        g.setColour(ink(value < -0.5f ? Palette::statusBad : value < 0.0f ? Palette::statusWarn : Palette::textPrimary));
+        g.setFont(numberFont(studio::kBodySize));
+        g.drawText(valueText, top.removeFromRight(valueW), juce::Justification::centredRight, false);
+        if (top.getWidth() > 30.0f)
+            drawLabel(g, top.getWidth() >= 84.0f ? "CORRELATION" : "CORR", top, juce::Justification::centredLeft);
+        b.removeFromTop(3.0f);
+    }
+    juce::Rectangle<float> scale;
+    if (withScale) scale = b.removeFromBottom(12.0f);
+    auto track = b.withSizeKeepingCentre(b.getWidth(), juce::jlimit(3.0f, 10.0f, b.getHeight() - 6.0f));
     drawTrack(g, track);
     auto toX = [&](float c) { return track.getX() + track.getWidth() * (c + 1.0f) * 0.5f; };
     const float x0 = toX(0.0f), xv = toX(value);
-    g.setColour(value < -0.5f ? Palette::statusBad : value < 0.0f ? Palette::statusWarn : Palette::accentTeal.withAlpha(0.65f));
+    g.setColour(ink(value < -0.5f   ? Palette::statusBad
+                    : value < 0.0f ? Palette::statusWarn
+                                   : Palette::accentTeal.withAlpha(0.65f)));
     g.fillRect(juce::jmin(x0, xv), track.getY(), std::abs(xv - x0), track.getHeight());
     // Lowest recent value, faint.
     if (minHold_.value < value - 0.02f) {
@@ -382,10 +417,11 @@ void CorrelationMeter::paint(juce::Graphics& g)
     }
     g.setColour(studio::hairline().withAlpha(0.4f));
     g.fillRect(x0 - 0.5f, track.getY() - 2.0f, 1.0f, track.getHeight() + 4.0f);
-    g.setColour(Palette::textPrimary);
-    g.fillRoundedRectangle(xv - 1.5f, track.getY() - 3.0f, 3.0f, track.getHeight() + 6.0f, 1.0f);
+    g.setColour(ink(Palette::textPrimary));
+    g.fillRoundedRectangle(xv - 1.5f, track.getY() - 2.0f, 3.0f, track.getHeight() + 4.0f, 1.0f);
 
-    g.setFont(numberFont(9.5f));
+    if (scale.isEmpty()) return;
+    g.setFont(numberFont(type::caption));
     g.setColour(Palette::textMuted);
     for (float c : {-1.0f, 0.0f, 1.0f}) {
         const juce::String t = c < 0.0f ? "-1" : c > 0.0f ? "+1" : "0";
@@ -452,7 +488,7 @@ void Vectorscope::advance(double dt)
     const float half = size * 0.5f;
     const float dot = juce::jmax(1.0f, size / 160.0f);
     juce::Graphics ig(trail_);
-    ig.setColour(Palette::accentTeal.withAlpha(0.55f));
+    ig.setColour(ink(Palette::accentTeal).withAlpha(0.55f));
     float framePeak = 0.0f;
     for (;;) {
         const int n = source.pop(scratchL_.data(), scratchR_.data(), static_cast<int>(scratchL_.size()));
@@ -500,7 +536,7 @@ void Vectorscope::paint(juce::Graphics& g)
     g.drawLine(c.x + d, c.y - d, c.x - d, c.y + d, 1.0f);
     if (trail_.isValid()) g.drawImage(trail_, square, juce::RectanglePlacement::stretchToFit);
     g.setColour(Palette::textMuted);
-    g.setFont(studio::labelFont(10.0f));
+    g.setFont(studio::labelFont(type::caption));
     g.drawText("L", juce::Rectangle<float>(c.x - d - 14.0f, c.y - d - 14.0f, 12.0f, 12.0f), juce::Justification::centred);
     g.drawText("R", juce::Rectangle<float>(c.x + d + 2.0f, c.y - d - 14.0f, 12.0f, 12.0f), juce::Justification::centred);
     g.drawText("M", juce::Rectangle<float>(c.x + 2.0f, square.getY() + 1.0f, 12.0f, 12.0f), juce::Justification::centredLeft);

@@ -13,7 +13,7 @@ constexpr float kLaneGap = 4.0f;
 constexpr float kLufsTop = 0.0f, kLufsBottom = -42.0f;
 /// Lane heights as weights of the free height; sections and findings fixed.
 constexpr float kSectionsH = 20.0f, kFindingsH = 24.0f;
-constexpr float kWaveWeight = 0.26f, kLoudWeight = 0.38f, kSpecWeight = 0.36f;
+constexpr float kWaveWeight = 0.22f, kLoudWeight = 0.32f, kPsrWeight = 0.16f, kSpecWeight = 0.30f;
 
 const char* laneName(int lane)
 {
@@ -21,6 +21,7 @@ const char* laneName(int lane)
     case SongTimelineView::kSections: return NEEDS_TRANS("Sections");
     case SongTimelineView::kWaveform: return NEEDS_TRANS("Waveform");
     case SongTimelineView::kLoudness: return NEEDS_TRANS("Loudness");
+    case SongTimelineView::kPsr: return NEEDS_TRANS("PSR");
     case SongTimelineView::kSpectrogram: return NEEDS_TRANS("Spectrum");
     case SongTimelineView::kFindings: return NEEDS_TRANS("Findings");
     default: return "";
@@ -32,7 +33,7 @@ const char* laneName(int lane)
 
 SongTimelineView::MomentCard::MomentCard()
 {
-    title.setFont(KhensuTheme::bodyFont(12.0f));
+    title.setFont(KhensuTheme::bodyFont(type::secondary));
     title.setMinimumHorizontalScale(1.0f);
     title.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(title);
@@ -69,8 +70,14 @@ void SongTimelineView::MomentCard::resized()
 SongTimelineView::SongTimelineView()
 {
     setTitle(TRANS("Song timeline"));
-    setDescription(TRANS("Sections, waveform, loudness, spectrum and findings on one time axis"));
+    setDescription(TRANS("Sections, waveform, loudness, PSR, spectrum and findings on one time axis"));
     time_.format = ui::chart::Format::Time;
+    // STU-3: PSR on its own dB axis; 0-20 dB holds every master from
+    // brick-walled to fully dynamic.
+    psrAxis_.lo = 0.0;
+    psrAxis_.hi = 20.0;
+    psrAxis_.unit = "dB";
+    psrAxis_.decimals = 1;
     addChildComponent(card_);
     card_.play.onClick = [this] {
         if (selected_ && *selected_ < static_cast<int>(markers_.size()) && onPlayMoment) {
@@ -93,6 +100,12 @@ void SongTimelineView::setTimeline(std::shared_ptr<const TrackTimeline> timeline
     fullDuration_ = timeline_ ? timeline_->durationSec : 0.0;
     time_.lo = 0.0;
     time_.hi = std::max(1.0, fullDuration_);
+    psr_.clear();
+    squashed_.clear();
+    if (timeline_) {
+        psr_ = psr::series(timeline_->peakDbfs, timeline_->shortTermLufs, timeline_->hopSec);
+        squashed_ = psr::squashedPassages(psr_, timeline_->hopSec);
+    }
     rebuildSpectrogramImage();
     repaint();
 }
@@ -181,9 +194,9 @@ juce::Rectangle<float> SongTimelineView::laneArea(int lane) const
     r.removeFromLeft(static_cast<float>(kLabelW));
     r.removeFromRight(8.0f);
     r.removeFromBottom(kAxisH);
-    const float free = std::max(0.0f, r.getHeight() - kSectionsH - kFindingsH - 4.0f * kLaneGap);
-    const float heights[kLaneCount] = {kSectionsH, free * kWaveWeight, free * kLoudWeight, free * kSpecWeight,
-                                       kFindingsH};
+    const float free = std::max(0.0f, r.getHeight() - kSectionsH - kFindingsH - static_cast<float>(kLaneCount - 1) * kLaneGap);
+    const float heights[kLaneCount] = {kSectionsH,          free * kWaveWeight, free * kLoudWeight,
+                                       free * kPsrWeight,   free * kSpecWeight, kFindingsH};
     float y = r.getY();
     for (int i = 0; i < kLaneCount; ++i) {
         if (i == lane) return {r.getX(), y, r.getWidth(), heights[i]};
@@ -241,7 +254,7 @@ int SongTimelineView::markerAt(juce::Point<float> pos) const
 void SongTimelineView::paint(juce::Graphics& g)
 {
     const auto style = desktopChartStyle();
-    g.setFont(KhensuTheme::labelFont(11.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     for (int lane = 0; lane < kLaneCount; ++lane) {
         const auto r = laneArea(lane);
         g.setColour(KhensuTheme::textTertiary);
@@ -252,7 +265,7 @@ void SongTimelineView::paint(juce::Graphics& g)
     }
     if (!timeline_) {
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::bodyFont(13.0f));
+        g.setFont(KhensuTheme::bodyFont(type::body));
         g.drawText(status_, laneArea(kLoudness), juce::Justification::centred, true);
         return;
     }
@@ -263,6 +276,7 @@ void SongTimelineView::paint(juce::Graphics& g)
         paintSections(g, laneArea(kSections));
         paintWaveform(g, laneArea(kWaveform));
         paintLoudness(g, laneArea(kLoudness));
+        paintPsr(g, laneArea(kPsr));
         paintSpectrogram(g, laneArea(kSpectrogram));
         paintFindings(g, laneArea(kFindings));
     }
@@ -288,7 +302,7 @@ void SongTimelineView::paintTimeAxis(juce::Graphics& g) const
 {
     const auto r = laneArea(kWaveform);
     const float y = laneArea(kFindings).getBottom() + 2.0f;
-    g.setFont(KhensuTheme::labelFont(11.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     for (const double t : time_.ticks(std::max(2, static_cast<int>(r.getWidth() / 80.0f)))) {
         const float x = xForTime(t);
@@ -311,14 +325,14 @@ void SongTimelineView::paintSections(juce::Graphics& g, juce::Rectangle<float> r
         g.setColour(KhensuTheme::vizCategory(slot).withAlpha(0.55f));
         g.fillRoundedRectangle(block, 3.0f);
         g.setColour(KhensuTheme::textPrimary);
-        g.setFont(KhensuTheme::labelFont(11.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         if (block.getWidth() > 34.0f)
             g.drawText(juce::String(juce::CharPointer_UTF8(s.label.c_str())), block.reduced(4.0f, 0.0f),
                        juce::Justification::centredLeft, true);
     }
     if (sections_.empty()) {
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::labelFont(11.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText(TRANS("Sections appear after the deep analysis"), r.reduced(6.0f, 0.0f), juce::Justification::centredLeft,
                    false);
     }
@@ -365,7 +379,7 @@ void SongTimelineView::paintLoudness(juce::Graphics& g, juce::Rectangle<float> r
         g.fillRect(juce::Rectangle<float>(r.getX(), y0, r.getWidth(), std::max(1.0f, y1 - y0)));
     }
     g.setColour(KhensuTheme::vizGrid);
-    g.setFont(KhensuTheme::labelFont(10.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     for (float lufs = -36.0f; lufs <= -6.0f; lufs += 6.0f) {
         const float y = yForLufs(r, lufs);
         g.setColour(KhensuTheme::vizGrid);
@@ -415,6 +429,57 @@ void SongTimelineView::paintLoudness(juce::Graphics& g, juce::Rectangle<float> r
     }
 }
 
+void SongTimelineView::paintPsr(juce::Graphics& g, juce::Rectangle<float> r) const
+{
+    // STU-3: the peak to short-term loudness ratio on its ChartKit axis.
+    auto yFor = [&](double db) {
+        return r.getBottom() - static_cast<float>(psrAxis_.norm(juce::jlimit(psrAxis_.lo, psrAxis_.hi, db))) * r.getHeight();
+    };
+    // The squashed zone (under 6 dB) as a band, labelled so it reads without colour.
+    const float yLimit = yFor(psr::kSquashedBelowDb);
+    g.setColour(KhensuTheme::accentAmber.withAlpha(0.07f));
+    g.fillRect(juce::Rectangle<float>(r.getX(), yLimit, r.getWidth(), r.getBottom() - yLimit));
+    g.setFont(KhensuTheme::labelFont(type::caption));
+    for (const double t : psrAxis_.ticks(std::max(2, static_cast<int>(r.getHeight() / 18.0f)))) {
+        const float y = yFor(t);
+        g.setColour(KhensuTheme::vizGrid);
+        g.drawHorizontalLine(juce::roundToInt(y), r.getX(), r.getRight());
+        g.setColour(KhensuTheme::textTertiary.withAlpha(0.8f));
+        g.drawText(psrAxis_.label(t), juce::Rectangle<float>(r.getX() + 2.0f, y - 11.0f, 30.0f, 10.0f),
+                   juce::Justification::centredLeft, false);
+    }
+    if (psr_.empty()) return;
+    // Squashed passages: shaded, with the word where there is room.
+    for (const auto& p : squashed_) {
+        if (p.endSec < time_.lo || p.startSec > time_.hi) continue;
+        const float x0 = xForTime(p.startSec), x1 = std::max(x0 + 2.0f, xForTime(p.endSec));
+        g.setColour(KhensuTheme::accentAmber.withAlpha(0.16f));
+        g.fillRect(juce::Rectangle<float>(x0, r.getY(), x1 - x0, r.getHeight()));
+        if (x1 - x0 > 56.0f) {
+            g.setColour(KhensuTheme::textPrimary);
+            g.drawText(TRANS("Squashed"), juce::Rectangle<float>(x0 + 3.0f, r.getY() + 1.0f, x1 - x0 - 6.0f, 12.0f),
+                       juce::Justification::centredLeft, true);
+        }
+    }
+    juce::Path line;
+    bool pen = false;
+    const int w = std::max(1, juce::roundToInt(r.getWidth()));
+    for (int px = 0; px <= w; px += 2) {
+        const double t = timeForX(r.getX() + static_cast<float>(px));
+        const float v = psr::at(psr_, timeline_->hopSec, t);
+        if (t < 0.0 || t > timeline_->durationSec || !psr::measured(v)) {
+            pen = false;
+            continue;
+        }
+        const float x = r.getX() + static_cast<float>(px), y = yFor(v);
+        if (!pen) line.startNewSubPath(x, y);
+        else line.lineTo(x, y);
+        pen = true;
+    }
+    g.setColour(KhensuTheme::vizCategory(1));
+    g.strokePath(line, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
+
 void SongTimelineView::paintSpectrogram(juce::Graphics& g, juce::Rectangle<float> r)
 {
     if (spectrogramImage_.isValid() && timeline_->durationSec > 0.0) {
@@ -444,7 +509,7 @@ void SongTimelineView::paintSpectrogram(juce::Graphics& g, juce::Rectangle<float
         g.drawRect(juce::Rectangle<float>(x0, y0, x1 - x0, std::max(3.0f, y1 - y0)), sel ? 2.0f : 1.2f);
     }
     g.setColour(KhensuTheme::textTertiary);
-    g.setFont(KhensuTheme::labelFont(10.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     for (const float f : {100.0f, 1000.0f, 10000.0f})
         if (f > hz.front() && f < hz.back())
             g.drawText(f >= 1000.0f ? juce::String(juce::roundToInt(f / 1000.0f)) + "k" : juce::String(juce::roundToInt(f)),
@@ -456,7 +521,7 @@ void SongTimelineView::paintFindings(juce::Graphics& g, juce::Rectangle<float> r
 {
     if (markers_.empty()) {
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::labelFont(11.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText(TRANS("No finding is tied to a moment"), r.reduced(6.0f, 0.0f), juce::Justification::centredLeft, false);
         return;
     }
@@ -492,6 +557,10 @@ ui::chart::Readout SongTimelineView::readoutAt(double sec) const
                            KhensuTheme::vizCategory(0).withAlpha(0.5f)});
         r.lines.push_back({TRANS("Peak") + " " + juce::String(TrackTimeline::at(timeline_->peakDbfs, timeline_->hopSec, sec, -240.0f), 1) + " dBFS",
                            KhensuTheme::textSecondary});
+        if (const float v = psr::at(psr_, timeline_->hopSec, sec); psr::measured(v))
+            r.lines.push_back({TRANS("PSR") + " " + psrAxis_.label(v, true)
+                                   + (v < psr::kSquashedBelowDb ? " - " + TRANS("squashed") : juce::String()),
+                               KhensuTheme::vizCategory(1)});
         for (const auto& e : timeline_->truePeakEvents)
             if (sec >= e.startSec - 0.05 && sec <= e.endSec + 0.05) {
                 r.lines.push_back({TRANS("True peak") + " " + juce::String(e.maxDbtp, 1) + " dBTP", KhensuTheme::accentRed});

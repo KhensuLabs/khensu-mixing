@@ -36,6 +36,25 @@ $commandSec = 60 * (Get-MinutesSetting "KHENSU_BUILD_TIMEOUT_MIN" 120)
 # build's nodes in its own process tree.
 $env:MSBUILDDISABLENODEREUSE = "1"
 
+# PowerShell reads a "-name:value" token as parameter syntax and hands the
+# script "-name:" and "value" separately, so `--screenshot=C:/dir` arrived as
+# `--screenshot=C:` + `/dir` (the app then wrote into a relative "C" folder)
+# and `--fix=D:/x.wav` as two broken arguments. Rejoin them.
+$joined = [System.Collections.Generic.List[string]]::new()
+for ($i = 0; $i -lt $Command.Count; $i++) {
+    $tok = $Command[$i]
+    $next = if (($i + 1) -lt $Command.Count) { $Command[$i + 1] } else { $null }
+    if ($null -ne $next -and $tok -match '^-.*:$') {
+        $joined.Add($tok + $next); $i++
+    } elseif ($null -ne $next -and $tok -match '^-.*=[A-Za-z]$' -and $next -match '^[\\/]') {
+        # the colon itself is eaten: "--out=C" + "/dir" was "--out=C:/dir"
+        $joined.Add($tok + ':' + $next); $i++
+    } else {
+        $joined.Add($tok)
+    }
+}
+$Command = $joined.ToArray()
+
 $exe = $Command[0]
 $rest = @()
 if ($Command.Count -gt 1) { $rest = $Command[1..($Command.Count - 1)] }

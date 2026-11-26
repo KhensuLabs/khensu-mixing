@@ -3,13 +3,14 @@
 #include "../mixhub/MixHub.h"
 #include "PluginLookAndFeel.h"
 
+#include <array>
 #include <vector>
 
 namespace khensu {
 
 class KhensuCopilotProcessor; // forward
 
-/// "Mix" tab: every Khensu Copilot instance in this process, the strongest
+/// "Mix Hub" tab: every Khensu Copilot instance in this process, the strongest
 /// track-vs-track masking conflicts ("Kick vs Bass at 60 Hz"), and the summed
 /// whole-mix balance. Reads MixHub::snapshot() on a 4 Hz timer that only runs
 /// while the tab is shown; draws everything in paint() except the role menu
@@ -38,11 +39,21 @@ class MixHubPanel final : public juce::Component, private juce::Timer {
 
     juce::ComboBox& getRoleBoxForTest() noexcept { return roleBox_; }
 
+    /// ENH-10 (4): the Unmask button of conflict row `row` (shown only for a
+    /// pair that includes this track).
+    static constexpr int kMaxConflictsShown = 5;
+    juce::TextButton& unmaskButtonForTest(int row) { return unmaskButtons_[static_cast<size_t>(row)]; }
+    juce::String unmaskNoteForTest() const { return unmaskNote_; }
+
   private:
     void timerCallback() override { refresh(mixhub::MixHub::nowMs()); }
     void paintInstances(juce::Graphics& g, juce::Rectangle<int> area) const;
     void paintConflicts(juce::Graphics& g, juce::Rectangle<int> area) const;
     void paintBalance(juce::Graphics& g, juce::Rectangle<int> area) const;
+    void layoutAreas();
+    void updateUnmaskButtons();
+    void onUnmaskClicked(int row);
+    juce::Rectangle<int> conflictRow(int row) const;
 
     KhensuCopilotProcessor& processor_;
     std::vector<mixhub::TrackFrame> frames_;
@@ -50,6 +61,9 @@ class MixHubPanel final : public juce::Component, private juce::Timer {
     mixhub::MixSummary summary_;
     juce::String summaryText_;
     juce::ComboBox roleBox_;
+    std::array<juce::TextButton, kMaxConflictsShown> unmaskButtons_;
+    juce::String unmaskNote_;
+    juce::Rectangle<int> instancesArea_, conflictsArea_, balanceArea_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixHubPanel)
 };

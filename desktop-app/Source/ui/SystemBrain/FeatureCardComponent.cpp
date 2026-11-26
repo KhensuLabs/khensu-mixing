@@ -87,7 +87,7 @@ void FeatureCardComponent::drawPercentileVisualization(juce::Graphics& g, const 
     g.fillPath(arc);
 
     // Value label
-    g.setFont(KhensuTheme::monoFont(9.0f));
+    g.setFont(KhensuTheme::monoFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     juce::String label((int)std::round(sessionValue_));
     g.drawText(label, area, juce::Justification::centred, false);
@@ -116,7 +116,7 @@ void FeatureCardComponent::drawPresenceVisualization(juce::Graphics& g, const ju
         g.setColour(active ? valueColour().withAlpha(0.25f) : KhensuTheme::bgVoid.withAlpha(0.5f));
         g.fillRoundedRectangle(chip.toFloat(), 2.0f);
 
-        g.setFont(KhensuTheme::labelFont(7.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(active ? valueColour() : KhensuTheme::textTertiary);
         g.drawText(juce::String(labels[i]), chip, juce::Justification::centred, true);
     }
@@ -141,7 +141,7 @@ void FeatureCardComponent::drawIconVisualization(juce::Graphics& g, const juce::
     // Small centre dot
     g.fillEllipse(centre.x - 2.0f, centre.y - 2.0f, 4.0f, 4.0f);
 
-    g.setFont(KhensuTheme::labelFont(8.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     auto labelArea = area;
     g.drawText(juce::String(entry_.visualization.icon), labelArea.removeFromBottom(12), juce::Justification::centred,
@@ -162,7 +162,7 @@ void FeatureCardComponent::paint(juce::Graphics& g)
     // Loudness Normalization", ...) stop truncating to "X..." on every narrow
     // card - the original single-row layout reserved x=140 unconditionally,
     // leaving as little as ~68px for the title text.
-    const auto tagFont = khensu::KhensuTheme::uiFont(10.0f, juce::Font::bold);
+    const auto tagFont = khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold);
     g.setFont(tagFont);
     const int tagTextW = juce::GlyphArrangement::getStringWidthInt(tagFont, juce::String(entry_.category));
     const int tagW = juce::jlimit(50, getWidth() - 24, tagTextW + 16);
@@ -173,7 +173,7 @@ void FeatureCardComponent::paint(juce::Graphics& g)
     g.drawText(juce::String(entry_.category), tagArea, juce::Justification::centred, true);
 
     g.setColour(KhensuTheme::textPrimary);
-    g.setFont(khensu::KhensuTheme::uiFont(13.0f, juce::Font::bold));
+    g.setFont(khensu::KhensuTheme::uiFont(khensu::type::body, juce::Font::bold));
     g.drawText(juce::String(entry_.name), 12, 27, getWidth() - 24, 18, juce::Justification::centredLeft, true);
 
     int descWidth = getWidth() - 24;
@@ -199,7 +199,7 @@ void FeatureCardComponent::paint(juce::Graphics& g)
     }
 
     g.setColour(KhensuTheme::textSecondary);
-    g.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     g.drawText(juce::String(entry_.short_description), 12, 47, descWidth, 20, juce::Justification::topLeft, true);
 }
 

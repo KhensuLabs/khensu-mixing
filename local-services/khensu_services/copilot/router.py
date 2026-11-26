@@ -51,6 +51,7 @@ from khensu_services.copilot.router_render import (  # noqa: F401
     router as _render_router,
 )
 # ENG-6: router_render's batch, section and tool routes are their own modules.
+from khensu_services.copilot.router_batch_smart import router as _batch_smart_router
 from khensu_services.copilot.router_render_batch import (  # noqa: F401
     ApplyChainBatchRequest,
     router as _render_batch_router,
@@ -81,5 +82,6 @@ router.include_router(_chat_stream_router)
 router.include_router(_chat_providers_router)
 router.include_router(_render_router)
 router.include_router(_render_batch_router)
+router.include_router(_batch_smart_router)
 router.include_router(_render_sections_router)
 router.include_router(_render_tools_router)

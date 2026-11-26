@@ -9,8 +9,8 @@ class KhensuCopilotProcessor;
 
 /// "Visuals" tab, phase 1 of VST3/Dashboard panel parity: hosts the shared
 /// EqCurveComponent (also used by desktop-app's MixMasterScreen/EqCurvePanel/
-/// ReferenceComparePanel) bound to the plugin's own 3-band corrective EQ
-/// (ParamIDs::eq*/eq2*/eq3*). Bidirectional: a host automating those params
+/// ReferenceComparePanel) bound to the plugin's own 6-band corrective EQ
+/// (mixerchain::kEqBandParamIds, STU-10). Bidirectional: a host automating those params
 /// updates the curve here (polled at low rate, since APVTS parameters don't
 /// push change notifications to arbitrary listeners without a dedicated
 /// AudioProcessorParameter::Listener per param); dragging a band here writes

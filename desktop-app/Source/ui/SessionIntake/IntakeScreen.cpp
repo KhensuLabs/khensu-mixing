@@ -17,6 +17,7 @@
 #include "../shared/JobPoller.h"
 #include "../../PythonServiceManager.h"
 #include "ServiceWaitPolicy.h"
+#include "TrendRows.h"
 #include <atomic>
 
 namespace af = khensu::api::fields;
@@ -49,7 +50,7 @@ IntakeScreen::IntakeScreen(IAppController& ctrl) : controller(ctrl)
     addAndMakeVisible(*nativeTiles_);
 
     genreContextLabel_.setText(TRANS("Genre context: waiting for intake"), juce::dontSendNotification);
-    genreContextLabel_.setFont(KhensuTheme::bodyFont(11.0f));
+    genreContextLabel_.setFont(KhensuTheme::bodyFont(type::caption));
     genreContextLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(genreContextLabel_);
     // Item ids, not texts, carry the meaning (currentIntakeSettings), so the
@@ -158,13 +159,29 @@ IntakeScreen::IntakeScreen(IAppController& ctrl) : controller(ctrl)
     };
     addAndMakeVisible(recentPanel);
     addAndMakeVisible(trendPanel);
+    // AUTO-5: built in the body (it captures the controller - ENG-2). It
+    // measures files, so it runs on the long pool and only while the engine
+    // is up and no track is being analysed.
+    recurringPanel_ = std::make_unique<RecurringIssuesPanel>(
+        [this](std::function<void()> job) { controller.runLongInBackground(std::move(job)); });
+    recurringPanel_->canRunNow = [this] {
+        // "Starting" can last while the engine already answers; a stopped one waits.
+        const auto st = controller.lifecycle().getPythonServiceStatus();
+        return st != PythonStatus::Stopped && st != PythonStatus::GaveUp &&
+               !controller.analysis().resultsPending();
+    };
+    recurringPanel_->onOpenSession = [this](const std::string& id) {
+        if (!controller.sessions().loadSessionById(id))
+            controller.shell().showServiceError(TRANS("That session could not be opened."));
+    };
+    addAndMakeVisible(*recurringPanel_);
 
     createButton.setEnabled(false);
     createButton.onClick = [this] { onCreateClicked(); };
     button_role::markPrimary(createButton); // UX-4
     addAndMakeVisible(createButton);
 
-    serviceStatusLabel_.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    serviceStatusLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     serviceStatusLabel_.setVisible(false);
     addChildComponent(serviceStatusLabel_);
 
@@ -218,12 +235,12 @@ IntakeScreen::IntakeScreen(IAppController& ctrl) : controller(ctrl)
         updateDisclosure();
     };
     addChildComponent(changeTargetButton_);
-    detectedLabel_.setFont(KhensuTheme::bodyFont(14.0f));
+    detectedLabel_.setFont(KhensuTheme::bodyFont(type::large));
     detectedLabel_.setJustificationType(juce::Justification::topLeft);
     addChildComponent(detectedLabel_);
     createHintLabel_.setText(TRANS("Create Session unlocks when the first file is analysed."),
                              juce::dontSendNotification);
-    createHintLabel_.setFont(KhensuTheme::bodyFont(12.0f));
+    createHintLabel_.setFont(KhensuTheme::bodyFont(type::secondary));
     createHintLabel_.setJustificationType(juce::Justification::centredRight);
     addChildComponent(createHintLabel_);
     confirmCandidateToggle_.onStateChange = [this] { updateDetectedLabel(); };
@@ -1068,11 +1085,12 @@ void IntakeScreen::refreshRecentSessions()
     juce::Component::SafePointer<IntakeScreen> self(this);
     controller.runInBackground([sm, self] {
         auto sessions = sm->listSessions(10);
-        auto summaries = sm->listRecentAnalysisSummaries(10);
+        // AUTO-5: enough history for a trend (one row per session).
+        auto summaries = sm->listRecentAnalysisSummaries(24);
         const bool sessionsFailed = sessions.is_err();
         std::vector<Session> sessionList = sessions.is_ok() ? sessions.value() : std::vector<Session>{};
         std::vector<SessionManager::AnalysisSummary> summaryList =
-            summaries.is_ok() ? summaries.value() : std::vector<SessionManager::AnalysisSummary>{};
+            summaries.is_ok() ? trend_rows::forChart(summaries.value()) : std::vector<SessionManager::AnalysisSummary>{};
         juce::MessageManager::callAsync([self, sessionList, summaryList, sessionsFailed] {
             if (self == nullptr) return;
             self->recentPanel.setSessions(sessionList);
@@ -1209,8 +1227,15 @@ void IntakeScreen::resized()
     }
 
     if (!loaded) {
-        // Before a file: the drop zone, and the cross-session trends below it.
-        auto trendStrip = b.removeFromBottom(juce::jlimit(120, 200, b.getHeight() * 30 / 100));
+        // Before a file: the drop zone, and below it the cross-session trends
+        // beside the findings that recur across those sessions (AUTO-5).
+        auto trendStrip = b.removeFromBottom(juce::jlimit(150, 220, b.getHeight() * 34 / 100));
+        if (recurringPanel_ != nullptr) {
+            recurringPanel_->setVisible(true);
+            auto right = trendStrip.removeFromRight(trendStrip.getWidth() * 45 / 100);
+            right.removeFromLeft(KhensuTheme::cardGap);
+            recurringPanel_->setBounds(right);
+        }
         trendPanel.setBounds(trendStrip);
         b.removeFromBottom(KhensuTheme::cardGap);
         dropZone.setBounds(b);
@@ -1222,6 +1247,7 @@ void IntakeScreen::resized()
 
     // After a drop: the file and its queue on the left, what was detected on
     // the right (with the target form when opened).
+    if (recurringPanel_ != nullptr) recurringPanel_->setVisible(false); // the file's own details take the room
     auto left = b.removeFromLeft(b.getWidth() * 55 / 100);
     left.removeFromRight(KhensuTheme::cardGap);
     auto trendStrip = left.removeFromBottom(juce::jlimit(120, 200, left.getHeight() * 35 / 100));

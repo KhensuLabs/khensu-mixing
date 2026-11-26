@@ -7,8 +7,13 @@
 
 namespace khensu {
 
+/// ENH-8: the streaming audition on Mix / Master - pick a platform, hear the
+/// mix at its playback gain, one line of what it does. The per-platform
+/// table is the Analysis screen's (Loudness & delivery > Streaming), linked.
 class StreamingImpactPanel final : public PanelCard {
   public:
+    /// The card's height: the header and one row of controls.
+    static constexpr int kPreferredHeight = 30 + 2 * 8 + 32 + 8;
     explicit StreamingImpactPanel(IAppController& c);
     void setData(const AnalysisResult& r);
     void paint(juce::Graphics& g) override;
@@ -24,6 +29,7 @@ class StreamingImpactPanel final : public PanelCard {
     juce::ComboBox platformCombo_;
     juce::TextButton previewButton_{TRANS("Preview at Platform Loudness")};
     juce::Label penaltyLabel_;
+    juce::TextButton tableLinkButton_{TRANS("All platforms in Analysis")};
     void togglePreview();
     void updatePenaltyText();
     /// Re-applies every cached palette colour. Called at construction and on

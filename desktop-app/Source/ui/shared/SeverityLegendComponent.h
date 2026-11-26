@@ -29,7 +29,7 @@ class SeverityLegendComponent final : public juce::Component {
             {KhensuTheme::accentGreen, "strength"},
         };
 
-        const auto font = KhensuTheme::labelFont(9.0f);
+        const auto font = KhensuTheme::labelFont(type::caption);
         g.setFont(font);
         int x = 0;
         const int dotSize = 7;

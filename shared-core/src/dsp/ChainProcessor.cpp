@@ -3,6 +3,7 @@
 // change the two together (tests/shared-core/test_offline_chain_renderer.cpp
 // pins them through fixtures written by scripts/gen_render_parity_fixtures.py).
 #include <khensu/dsp/ChainProcessor.h>
+#include <khensu/dsp/ExtendedChainStages.h>
 #include <khensu/dsp/IirDesign.h>
 #include <khensu/dsp/SpectralDenoiser.h>
 #include <khensu/dsp/TapeSaturator.h>
@@ -12,6 +13,7 @@
 #include <cmath>
 #include <cstddef>
 #include <deque>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -25,6 +27,10 @@ struct ParamRule {
     const char* name;
     double lo, hi, fallback; ///< clamp range; `fallback` = the processor's own default
 };
+
+/// A `fallback` that leaves the key out when the chain does not give it (an
+/// optional native-only parameter whose default is another parameter).
+constexpr double kOptional = std::numeric_limits<double>::quiet_NaN();
 
 struct EffectRules {
     const char* effect;
@@ -63,6 +69,63 @@ const std::vector<EffectRules>& rules()
         {"TapeSaturation",
          {{"drive_db", 0.0, 24.0, 6.0}, {"warmth", 0.0, 1.0, 0.5}, {"mix", 0.0, 1.0, 1.0}, {"output_trim_db", -24.0, 6.0, 0.0}}},
         {"StereoWidener", {{"width", 0.0, 2.0, 1.0}}},
+        // ENH-6 - dsp_params._PARAM_CLAMPS, defaults the Python functions'
+        // keyword defaults (pedalboard's for NoiseGate). Keys the service does
+        // not know (it drops them) default to its behaviour.
+        {"DynamicEQ",
+         {{"frequency_hz", 40.0, 18000.0, 3000.0},
+          {"q", 0.3, 18.0, 2.0},
+          {"threshold_db", -60.0, 0.0, -30.0},
+          {"ratio", 1.0, 20.0, 4.0},
+          {"attack_ms", 0.1, 200.0, 5.0},
+          {"release_ms", 5.0, 2000.0, 120.0},
+          {"max_reduction_db", 0.0, 24.0, 24.0},
+          {"shape", 0.0, 2.0, 0.0},     // native: 0 bell, 1 low shelf, 2 high shelf
+          {"use_key", 0.0, 1.0, 0.0}}}, // native: 1 = detect on the render's key signal
+        {"MultibandCompressor",
+         {{"low_crossover_hz", 40.0, 800.0, 200.0},
+          {"high_crossover_hz", 800.0, 12000.0, 3000.0},
+          {"low_threshold_db", -60.0, 0.0, -24.0},
+          {"low_ratio", 1.0, 20.0, 3.0},
+          {"mid_threshold_db", -60.0, 0.0, -20.0},
+          {"mid_ratio", 1.0, 20.0, 2.5},
+          {"high_threshold_db", -60.0, 0.0, -18.0},
+          {"high_ratio", 1.0, 20.0, 2.0},
+          {"attack_ms", 0.1, 200.0, 10.0},
+          {"release_ms", 10.0, 2000.0, 120.0},
+          {"makeup_db", 0.0, 24.0, 0.0},
+          // native: per-band overrides of the shared attack / release / makeup
+          {"low_attack_ms", 0.1, 200.0, kOptional},
+          {"mid_attack_ms", 0.1, 200.0, kOptional},
+          {"high_attack_ms", 0.1, 200.0, kOptional},
+          {"low_release_ms", 10.0, 2000.0, kOptional},
+          {"mid_release_ms", 10.0, 2000.0, kOptional},
+          {"high_release_ms", 10.0, 2000.0, kOptional},
+          {"low_makeup_db", 0.0, 24.0, kOptional},
+          {"mid_makeup_db", 0.0, 24.0, kOptional},
+          {"high_makeup_db", 0.0, 24.0, kOptional}}},
+        {"MidSideProcessor",
+         {{"mid_gain_db", -24.0, 24.0, 0.0},
+          {"side_gain_db", -24.0, 24.0, 0.0},
+          // native: a bell on each path and a side high-pass (0 = off)
+          {"mid_eq_frequency_hz", 20.0, 20000.0, 1000.0},
+          {"mid_eq_gain_db", -24.0, 24.0, 0.0},
+          {"mid_eq_q", 0.1, 18.0, 0.7071067811865476},
+          {"side_eq_frequency_hz", 20.0, 20000.0, 1000.0},
+          {"side_eq_gain_db", -24.0, 24.0, 0.0},
+          {"side_eq_q", 0.1, 18.0, 0.7071067811865476},
+          {"side_highpass_frequency_hz", 0.0, 2000.0, 0.0}}},
+        {"Exciter",
+         {{"frequency_hz", 1000.0, 16000.0, 3000.0},
+          {"drive", 0.5, 10.0, 4.0},
+          {"even_harmonics", 0.0, 1.0, 0.35},
+          {"mix", 0.0, 1.0, 0.3}}},
+        {"BassMonoMaker", {{"crossover_hz", 40.0, 300.0, 120.0}}},
+        {"NoiseGate",
+         {{"threshold_db", -100.0, 0.0, -100.0},
+          {"ratio", 1.0, 30.0, 10.0},
+          {"attack_ms", 0.05, 500.0, 1.0},
+          {"release_ms", 5.0, 3000.0, 100.0}}},
     };
     return table;
 }
@@ -99,7 +162,7 @@ std::optional<std::map<std::string, double>> resolveParams(const ChainStageSpec&
         const bool isFrequency = endsWith(key, "frequency_hz") || endsWith(key, "crossover_hz");
         auto it = spec.parameters.find(key);
         if (it == spec.parameters.end()) {
-            out[key] = p.fallback;
+            if (!std::isnan(p.fallback)) out[key] = p.fallback;
             continue;
         }
         const double v = static_cast<double>(it->second);
@@ -123,6 +186,7 @@ std::optional<std::map<std::string, double>> resolveParams(const ChainStageSpec&
 
 class GainStage final : public ChainStage {
   public:
+    bool isCausalInPlace() const override { return true; } // STU-9
     explicit GainStage(double gainDb) : gain_(std::pow(10.0, gainDb / 20.0)) {}
     void push(PlanarBlock& io) override
     {
@@ -136,6 +200,7 @@ class GainStage final : public ChainStage {
 
 class IirStage final : public ChainStage {
   public:
+    bool isCausalInPlace() const override { return true; } // STU-9
     IirStage(std::vector<BiquadCoefficients> sections, int numChannels)
     {
         cascade_.setSections(std::move(sections), numChannels);
@@ -155,6 +220,7 @@ class IirStage final : public ChainStage {
 /// (sr t_ms))), then gain = (env / threshold)^(1/ratio - 1) above threshold.
 class CompressorStage final : public ChainStage {
   public:
+    bool isCausalInPlace() const override { return true; } // STU-9
     CompressorStage(const std::map<std::string, double>& p, double sampleRate, int numChannels)
     {
         const double thresholdDb = p.at("threshold_db");
@@ -299,6 +365,7 @@ class DeEsserStage final : public ChainStage {
 /// max(slow, 1e-6), 0, 1), gain = sustain + (attack - sustain) transient.
 class TransientShaperStage final : public ChainStage {
   public:
+    bool isCausalInPlace() const override { return true; } // STU-9
     TransientShaperStage(const std::map<std::string, double>& p, double sampleRate)
     {
         const auto coeff = [sampleRate](double ms) { return std::exp(-1.0 / (std::max(1.0, ms) * 0.001 * sampleRate)); };
@@ -335,6 +402,7 @@ class TransientShaperStage final : public ChainStage {
 /// file passes unchanged (front pair only - for stereo, the whole buffer).
 class StereoWidenerStage final : public ChainStage {
   public:
+    bool isCausalInPlace() const override { return true; } // STU-9
     explicit StereoWidenerStage(double width) : width_(width) {}
     void push(PlanarBlock& io) override
     {
@@ -513,6 +581,12 @@ double limiterTargetDbtp(const ChainStageSpec& limiter)
     return (p ? p->at("threshold_db") : -1.0) - 0.05;
 }
 
+std::optional<std::map<std::string, double>> resolveChainStageParams(const ChainStageSpec& spec, double sampleRate,
+                                                                     std::string& error)
+{
+    return resolveParams(spec, sampleRate, error);
+}
+
 std::unique_ptr<ChainStage> makeChainStage(const ChainStageSpec& spec, double sampleRate, int numChannels,
                                            std::string& error)
 {
@@ -549,6 +623,12 @@ std::unique_ptr<ChainStage> makeChainStage(const ChainStageSpec& spec, double sa
         return makeTapeSaturationStage(p.at("drive_db"), p.at("warmth"), p.at("mix"), p.at("output_trim_db"),
                                        sampleRate, numChannels);
     if (e == "StereoWidener") return std::make_unique<StereoWidenerStage>(p.at("width"));
+    if (e == "DynamicEQ") return makeDynamicEqStage(p, sampleRate, numChannels);
+    if (e == "MultibandCompressor") return makeMultibandCompressorStage(p, sampleRate, numChannels);
+    if (e == "MidSideProcessor") return makeMidSideStage(p, sampleRate, numChannels);
+    if (e == "Exciter") return makeExciterStage(p, sampleRate, numChannels);
+    if (e == "BassMonoMaker") return makeBassMonoMakerStage(p, sampleRate, numChannels);
+    if (e == "NoiseGate") return makeNoiseGateStage(p, sampleRate, numChannels);
     error = e + " needs the analysis engine";
     return nullptr;
 }
@@ -557,6 +637,7 @@ bool ChainProcessor::prepare(const std::vector<ChainStageSpec>& chain, double sa
                              std::string& error)
 {
     stages_.clear();
+    keyAttached_ = false;
     specs_ = chain;
     sampleRate_ = sampleRate;
     numChannels_ = numChannels;
@@ -575,8 +656,25 @@ bool ChainProcessor::prepare(const std::vector<ChainStageSpec>& chain, double sa
     return true;
 }
 
-void ChainProcessor::process(PlanarBlock block, const Sink& sink)
+bool ChainProcessor::wantsKey() const
 {
+    return std::any_of(stages_.begin(), stages_.end(), [](const auto& s) { return s->wantsKey(); });
+}
+
+bool ChainProcessor::attachKey(int numKeyChannels)
+{
+    if (numKeyChannels <= 0 || !wantsKey()) return false;
+    for (auto& s : stages_)
+        if (s->wantsKey()) s->attachKey(numKeyChannels);
+    keyAttached_ = true;
+    return true;
+}
+
+void ChainProcessor::process(PlanarBlock block, const Sink& sink, const PlanarBlock* key)
+{
+    if (keyAttached_ && key != nullptr)
+        for (auto& stage : stages_)
+            if (stage->wantsKey()) stage->pushKey(*key);
     for (auto& stage : stages_) {
         stage->push(block);
         if (block.numSamples() == 0) break;
@@ -586,6 +684,9 @@ void ChainProcessor::process(PlanarBlock block, const Sink& sink)
 
 void ChainProcessor::finish(const Sink& sink)
 {
+    if (keyAttached_)
+        for (auto& stage : stages_)
+            if (stage->wantsKey()) stage->endKey();
     for (size_t k = 0; k < stages_.size(); ++k) {
         PlanarBlock tail;
         stages_[k]->finish(tail);

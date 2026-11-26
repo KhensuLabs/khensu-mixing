@@ -112,7 +112,7 @@ class AnalysisController {
         hasResult_ = true;
     }
 
-    /// Merges a masking analysis (run on-demand from StemMaskingPanel, not
+    /// Merges a masking analysis (run on demand from the Stems card, not
     /// part of the main pipeline) into the current result so the next
     /// RecommendationEngine::generate() call includes MaskingRecommender's
     /// output. No-op if no analysis has run yet.

@@ -79,13 +79,13 @@ void RenderQueueStrip::paint(juce::Graphics& g)
         const int elapsedSec = (int)((now - job.startedMs) / 1000);
 
         g.setColour(KhensuTheme::accentTeal);
-        g.setFont(juce::Font(juce::FontOptions{12.f, juce::Font::bold}));
+        g.setFont(KhensuTheme::uiFont(type::secondary, juce::Font::bold));
         auto label = "Rendering: " + job.description;
         g.drawText(label, row.removeFromLeft(juce::jmax(100, getWidth() * 2 / 3)), juce::Justification::centredLeft,
                    true);
 
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(juce::Font(juce::FontOptions{11.f}));
+        g.setFont(KhensuTheme::uiFont(type::caption));
         g.drawText("(" + job.status + ", " + juce::String(elapsedSec) + "s)", row, juce::Justification::centredLeft,
                    true);
     }

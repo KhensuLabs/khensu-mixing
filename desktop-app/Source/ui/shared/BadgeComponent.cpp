@@ -13,18 +13,26 @@ void BadgeComponent::setBadge(const juce::String& text, BadgeStatus status)
 
 void BadgeComponent::paint(juce::Graphics& g)
 {
-    // UI-3: a neutral pill - the status lives in the small dot, never in a
-    // tinted fill or coloured text (colour means severity, not decoration).
+    // UI-3 / LG-8: full liquid-glass pill capsule; status lives in the luminous dot.
     auto b = getLocalBounds().toFloat().reduced(1.0f);
-    g.setColour(KhensuTheme::bgRaised);
-    g.fillRoundedRectangle(b, 6.0f);
-    g.setColour(KhensuTheme::borderSubtle);
-    g.drawRoundedRectangle(b, 6.0f, 1.0f);
+    const float pillR = b.getHeight() * 0.5f;
+    g.setColour(KhensuTheme::bgRaised.withAlpha(0.75f));
+    g.fillRoundedRectangle(b, pillR);
+    juce::ColourGradient rim(KhensuTheme::borderActive.brighter(0.25f), b.getTopLeft(), KhensuTheme::borderSubtle,
+                             b.getBottomRight(), false);
+    g.setGradientFill(rim);
+    g.drawRoundedRectangle(b, pillR, 1.0f);
 
     constexpr float dotR = 3.0f;
     const float dotX = b.getX() + KhensuTheme::sp3;
     const float dotY = b.getCentreY();
-    g.setColour(status_ == BadgeStatus::Neutral ? KhensuTheme::textTertiary : KhensuTheme::colourForStatus(status_));
+    const auto dotCol =
+        status_ == BadgeStatus::Neutral ? KhensuTheme::textTertiary : KhensuTheme::colourForStatus(status_);
+    if (status_ != BadgeStatus::Neutral) {
+        g.setColour(dotCol.withAlpha(0.28f));
+        g.fillEllipse(dotX - dotR - 2.0f, dotY - dotR - 2.0f, (dotR + 2.0f) * 2.0f, (dotR + 2.0f) * 2.0f);
+    }
+    g.setColour(dotCol);
     g.fillEllipse(dotX - dotR, dotY - dotR, dotR * 2.0f, dotR * 2.0f);
 
     auto textBounds = b.withLeft(dotX + dotR + KhensuTheme::sp2).withRight(b.getRight() - KhensuTheme::sp2);

@@ -43,19 +43,19 @@ ExplainMomentView::ExplainMomentView(IAppController& controller, juce::String fi
 {
     applyThemeColours();
     titleLabel_.setText(TRANS("Explain ") + clock(startS_) + " - " + clock(endS_), juce::dontSendNotification);
-    titleLabel_.setFont(KhensuTheme::labelFont(14.0f));
+    titleLabel_.setFont(KhensuTheme::labelFont(type::large));
     addAndMakeVisible(titleLabel_);
 
     text_.setMultiLine(true, true);
     text_.setReadOnly(true);
     text_.setScrollbarsShown(true);
     text_.setCaretVisible(false);
-    text_.setFont(KhensuTheme::bodyFont(12.5f));
+    text_.setFont(KhensuTheme::bodyFont(type::secondary));
     text_.setTitle(TRANS("Explanation of the selected passage"));
     text_.setText(TRANS("Measuring this passage against the whole track..."));
     addAndMakeVisible(text_);
 
-    noteLabel_.setFont(KhensuTheme::bodyFont(10.5f));
+    noteLabel_.setFont(KhensuTheme::bodyFont(type::caption));
     noteLabel_.setText(TRANS("Every sentence quotes a measurement; nothing here is guessed."),
                        juce::dontSendNotification);
     addAndMakeVisible(noteLabel_);
@@ -175,7 +175,7 @@ void ExplainMomentView::paint(juce::Graphics& g)
     // Ranked deviations, strongest first: bar length = score (1 = noticeable).
     auto area = getLocalBounds().reduced(10);
     area.removeFromTop(28 + 6 + 170 + 6);
-    g.setFont(KhensuTheme::bodyFont(11.0f));
+    g.setFont(KhensuTheme::bodyFont(type::caption));
     for (const auto& d : deviations_) {
         if (area.getHeight() < 16) break;
         auto row = area.removeFromTop(16);

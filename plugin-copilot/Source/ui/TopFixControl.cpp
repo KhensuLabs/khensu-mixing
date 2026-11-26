@@ -4,6 +4,8 @@
 #include <khensu/ui/KhensuPalette.h>
 #include <khensu/ui/StudioStyle.h>
 #include "ButtonRoles.h"
+#include "PluginLookAndFeel.h"
+#include "../FixBatch.h"
 #include "../PluginProcessor.h"
 
 #include <algorithm>
@@ -33,6 +35,11 @@ std::optional<Recommendation> selectTopFix(const std::vector<Recommendation>& re
         if (!mixerchain::mapRecommendationToDsp(rec, 1.0f, none).mappedKeys.empty()) return rec;
     return std::nullopt;
 }
+int countSafeFixes(const std::vector<Recommendation>& open)
+{
+    const auto none = [](const std::string&) { return 0.0f; }; // every band free
+    return static_cast<int>(combineFixes(open, 1.0f, none, true).appliedIds.size());
+}
 } // namespace copilot
 
 namespace {
@@ -44,18 +51,18 @@ TopFixControl::TopFixControl(KhensuCopilotProcessor& processor) : processor_(pro
     setTitle(TRANS("Top fix"));
     titleLabel_.setText(TRANS("TOP FIX"), juce::dontSendNotification);
     titleLabel_.setFont(ui::studio::labelFont());
-    titleLabel_.setColour(juce::Label::textColourId, ui::Palette::textMuted);
+    titleLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
     titleLabel_.setAccessible(false);
     addAndMakeVisible(titleLabel_);
 
     findingLabel_.setFont(ui::Palette::uiFont(ui::studio::kBodySize, juce::Font::bold));
-    findingLabel_.setColour(juce::Label::textColourId, ui::Palette::textPrimary);
+    findingLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textPrimary);
     findingLabel_.setMinimumHorizontalScale(0.85f);
     findingLabel_.setTitle(TRANS("Top fix finding"));
     addAndMakeVisible(findingLabel_);
 
     reasonLabel_.setFont(ui::Palette::uiFont(ui::studio::kLabelSize));
-    reasonLabel_.setColour(juce::Label::textColourId, ui::Palette::textMuted);
+    reasonLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
     reasonLabel_.setTitle(TRANS("Top fix status"));
     addAndMakeVisible(reasonLabel_);
 
@@ -69,6 +76,18 @@ TopFixControl::TopFixControl(KhensuCopilotProcessor& processor) : processor_(pro
         updateTexts();
     };
     addAndMakeVisible(applyButton_);
+
+    // ENH-10: every open finding whose fix is safe and maps, in one step.
+    applyAllButton_.setComponentID("applyAllFixesButton");
+    applyAllButton_.setTitle(TRANS("Apply all safe fixes"));
+    applyAllButton_.setTooltip(TRANS("Apply every open finding that is marked safe to apply automatically and that "
+                                     "the built-in chain can render, as one undo step, live under Amount. The "
+                                     "findings it leaves out are listed with the reason."));
+    applyAllButton_.onClick = [this] {
+        if (!openFindings_.empty() && onApplyAll) onApplyAll(openFindings_);
+        updateTexts();
+    };
+    addAndMakeVisible(applyAllButton_);
 
     amountKnob_.setComponentID("fixAmountKnob");
     amountKnob_.setTitle(TRANS("Fix amount"));
@@ -89,6 +108,8 @@ TopFixControl::~TopFixControl() = default;
 void TopFixControl::setRecommendations(const std::vector<Recommendation>& recs, copilot::IssueStateLookup stateOf)
 {
     topFix_ = copilot::selectTopFix(recs, stateOf);
+    openFindings_ = copilot::topFindings(recs, stateOf, recs.size());
+    safeFixCount_ = copilot::countSafeFixes(openFindings_);
     updateTexts();
 }
 
@@ -107,6 +128,9 @@ void TopFixControl::setCompact(bool compact)
 void TopFixControl::updateTexts()
 {
     applyButton_.setEnabled(topFix_.has_value());
+    applyAllButton_.setEnabled(safeFixCount_ > 0);
+    const auto allText = TRANS("Apply all safe") + " (" + juce::String(safeFixCount_) + ")";
+    if (applyAllButton_.getButtonText() != allText) applyAllButton_.setButtonText(allText);
     if (!topFix_.has_value()) {
         findingLabel_.setText(TRANS("No open finding the built-in chain can fix"), juce::dontSendNotification);
         reasonLabel_.setText(TRANS("Load a session to see its findings."), juce::dontSendNotification);
@@ -115,7 +139,10 @@ void TopFixControl::updateTexts()
     findingLabel_.setText(utf8(topFix_->what), juce::dontSendNotification);
     findingLabel_.setTooltip(utf8(topFix_->suggested_action));
     juce::String reason;
-    if (processor_.hasLiveFix() && processor_.getLiveFixId() == topFix_->id)
+    if (processor_.isLiveFix(topFix_->id) && processor_.getLiveFixCount() > 1)
+        reason = TRANS("Live with") + " " + juce::String(static_cast<int>(processor_.getLiveFixCount()) - 1) + " "
+                 + TRANS("other fixes - Amount re-applies them all as you turn it.");
+    else if (processor_.isLiveFix(topFix_->id))
         reason = TRANS("Live - Amount re-applies it as you turn it.");
     else if (auto blocked = KhensuCopilotProcessor::autoApplyBlockReason(*topFix_); blocked.isNotEmpty())
         reason = blocked;
@@ -126,7 +153,7 @@ void TopFixControl::updateTexts()
 
 void TopFixControl::paint(juce::Graphics& g)
 {
-    g.setColour(ui::studio::surface());
+    g.setColour(PluginLookAndFeel::bgPanel);
     g.fillRoundedRectangle(getLocalBounds().toFloat(), ui::studio::kRadius);
 }
 
@@ -137,6 +164,8 @@ void TopFixControl::resized()
     amountKnob_.setBounds(b.removeFromRight(knobW));
     b.removeFromRight(ui::studio::kGap);
     applyButton_.setBounds(b.removeFromRight(118).withSizeKeepingCentre(118, 32));
+    b.removeFromRight(ui::studio::kGap / 2);
+    applyAllButton_.setBounds(b.removeFromRight(132).withSizeKeepingCentre(132, 32));
     b.removeFromRight(ui::studio::kGap);
     if (!compact_) titleLabel_.setBounds(b.removeFromTop(14));
     const int rows = b.getHeight() >= 34 ? 2 : 1;
@@ -164,7 +193,7 @@ void TopFindingsList::paint(juce::Graphics& g)
 {
     auto b = getLocalBounds().reduced(ui::studio::kGap, 2);
     g.setFont(ui::studio::labelFont());
-    g.setColour(ui::Palette::textMuted);
+    g.setColour(PluginLookAndFeel::textMuted);
     g.drawText(TRANS("TOP FINDINGS"), b.removeFromTop(14), juce::Justification::centredLeft);
     if (findings_.empty()) {
         g.drawText(TRANS("No open findings - load a session from Khensu Mixing."), b, juce::Justification::centredLeft);
@@ -175,13 +204,13 @@ void TopFindingsList::paint(juce::Graphics& g)
         auto row = b.removeFromTop(rowH);
         if (row.getHeight() < 12) break;
         // Severity colours mean severity only (red / amber / blue).
-        const auto colour = f.severity >= 70.0f   ? ui::Palette::statusBad
-                            : f.severity >= 40.0f ? ui::Palette::statusWarn
-                                                  : ui::Palette::accentBlue;
+        const auto colour = f.severity >= 70.0f   ? PluginLookAndFeel::statusBad
+                            : f.severity >= 40.0f ? PluginLookAndFeel::statusWarn
+                                                  : PluginLookAndFeel::accentBlue;
         g.setColour(colour);
         g.fillEllipse(row.removeFromLeft(10).toFloat().withSizeKeepingCentre(7.0f, 7.0f));
         row.removeFromLeft(6);
-        g.setColour(ui::Palette::textPrimary);
+        g.setColour(PluginLookAndFeel::textPrimary);
         g.setFont(ui::Palette::uiFont(ui::studio::kBodySize));
         g.drawText(utf8(f.what), row, juce::Justification::centredLeft, true);
     }

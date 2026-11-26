@@ -74,6 +74,8 @@ class PlaybackService final : public IPlayback {
     void toggleAb() override;
     void setAbSide(bool showProcessed) override;
     juce::String abProcessedPath() const noexcept override { return source_.processedPath; }
+    void setAbReferencePath(const juce::String& path) override;
+    juce::String abReferencePath() const override { return source_.referencePath; }
     std::optional<float> abProcessedLufs() const noexcept override { return source_.processedLufs; }
     AbLevelOffset abLevelOffset() const override;
     void primeAbLoudness(const juce::StringArray& paths, std::function<void(bool allKnown)> onDone) override;
@@ -87,6 +89,24 @@ class PlaybackService final : public IPlayback {
     void addRealTimeMeterListener(void* key, MeterCallback cb) override { meterListeners_[key] = std::move(cb); }
     void removeRealTimeMeterListener(void* key) override { meterListeners_.erase(key); }
     PlaybackMeterTap* meterTap() noexcept override { return &engine_.meterTap(); }
+
+    // STU-5: monitoring (the engine's device output only).
+    void setMonitorMode(MonitorMode mode) noexcept override { engine_.setMonitorMode(toSoloMode(mode)); }
+    MonitorMode monitorMode() const noexcept override;
+    void setMonitorDim(bool dim) noexcept override { engine_.setMonitorDim(dim); }
+    bool monitorDim() const noexcept override { return engine_.monitorDim(); }
+    /// The shared monitoring DSP's mode for a transport mode (pure).
+    static dsp::MonitorSolo::Mode toSoloMode(MonitorMode mode) noexcept;
+
+    // STU-9: live preview.
+    void setLivePreviewChain(void* owner, const std::vector<ipc::HttpServiceBridge::EffectSpec>& chain,
+                             const juce::String& label) override;
+    void clearLivePreview(void* owner) override;
+    bool isLivePreviewOwner(void* owner) const override { return owner != nullptr && owner == previewOwner_; }
+    LivePreviewStatus livePreviewStatus() const override;
+    /// The plan of a chain as the preview status words it (pure; tests).
+    static LivePreviewStatus describePreview(const std::vector<dsp::RealtimeChain::StagePlan>& plan,
+                                             const juce::String& label);
 
     // ---- Owner API (AppController) ----
     void unloadAudioFileForPlayback() { engine_.clearSource(); }
@@ -109,6 +129,9 @@ class PlaybackService final : public IPlayback {
 
   private:
     void measureAbProcessedLufs(const juce::String& path);
+    void measureAbReferenceLufs(const juce::String& path);
+    /// The file A plays: a pinned version (STU-8), else the original.
+    juce::String aSidePath() const;
     /// Peaks of `file` for the waveform views, off the message thread.
     void startWaveformScan(const juce::File& file);
     /// UI-6: A and B are both loaded in the engine (A main, B alternate),
@@ -134,6 +157,8 @@ class PlaybackService final : public IPlayback {
     PlaybackSourceController source_;
     LufsCache lufsCache_;
     std::string loadedPath_;
+    void* previewOwner_ = nullptr; ///< STU-9: the surface whose chain is previewed
+    juce::String previewLabel_;
 
     mutable juce::CriticalSection waveformLock_;
     std::vector<float> waveformPeaks_;

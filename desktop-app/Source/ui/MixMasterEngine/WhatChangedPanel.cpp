@@ -31,10 +31,21 @@ WhatChangedPanel::WhatChangedPanel(IAppController& c) : PanelCard(c, "What Chang
                                  "down); red means it regressed. Computed from the cached analysis "
                                  "of both files - applying a render refreshes this automatically."));
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setText(TRANS("Apply a render (chat, EQ, macros, Humanize) to see its measured effect."),
                          juce::dontSendNotification);
     addAndMakeVisible(statusLabel_);
+    // VIS-8: the diff reads as one image with a text summary.
+    summary_.setTitle(TRANS("What changed between the versions"));
+    summary_.describe = [this] {
+        if (rows_.empty()) return TRANS("What changed: no comparison yet.");
+        juce::StringArray parts;
+        for (const auto& r : rows_)
+            parts.add(r.label + " " + r.before + " " + TRANS("to") + " " + r.after + (r.unit.isNotEmpty() ? " " + r.unit : juce::String()) +
+                      (r.direction > 0 ? " (" + TRANS("better") + ")" : r.direction < 0 ? " (" + TRANS("worse") + ")" : juce::String()));
+        return TRANS("What changed") + ": " + parts.joinIntoString("; ") + ".";
+    };
+    addAndMakeVisible(summary_);
 
     beforeCombo_.setTooltip(TRANS("Choose the baseline version to compare"));
     afterCombo_.setTooltip(TRANS("Choose the comparison version"));
@@ -261,14 +272,17 @@ void WhatChangedPanel::paint(juce::Graphics& g)
         for (const auto& r : rows_) {
             auto row = b.removeFromTop(rowH);
 
-            g.setFont(KhensuTheme::labelFont(9.5f));
+            g.setFont(KhensuTheme::labelFont(type::caption));
             g.setColour(KhensuTheme::textSecondary);
             g.drawText(r.label, row.removeFromLeft(150), juce::Justification::centredLeft, false);
 
+            // VIS-4: better / worse is written beside the change; the colour
+            // follows the severity system (green strength, amber a regression)
+            // and is never the only cue.
             const juce::Colour dc = r.direction > 0   ? KhensuTheme::accentGreen
-                                    : r.direction < 0 ? KhensuTheme::accentRed
+                                    : r.direction < 0 ? KhensuTheme::accentAmber
                                                       : KhensuTheme::textPrimary;
-            g.setFont(KhensuTheme::monoFont(9.5f));
+            g.setFont(KhensuTheme::monoFont(type::caption));
             g.setColour(KhensuTheme::textTertiary);
             g.drawText(r.before, row.removeFromLeft(64), juce::Justification::centredRight, false);
             g.setColour(dc);
@@ -277,15 +291,18 @@ void WhatChangedPanel::paint(juce::Graphics& g)
                        juce::Justification::centredLeft, false);
 
             if (std::isfinite(r.delta)) { // n/a when either side was unmeasurable
-                const juce::String deltaText = (r.delta >= 0.0f ? "+" : "") + juce::String(r.delta, r.unit == "" ? 0 : 1);
-                g.setColour(dc.withAlpha(0.8f));
-                g.drawText("(" + deltaText + ")", row, juce::Justification::centredLeft, false);
+                const juce::String number = r.unit.isEmpty() ? juce::String(juce::roundToInt(r.delta)) : juce::String(r.delta, 1);
+                const juce::String deltaText = (r.delta >= 0.0f ? "+" : "") + number;
+                const juce::String word = r.direction > 0 ? TRANS("better") : r.direction < 0 ? TRANS("worse") : juce::String();
+                g.setColour(dc.withAlpha(0.9f));
+                g.drawText("(" + deltaText + (word.isNotEmpty() ? ", " + word : juce::String()) + ")", row,
+                           juce::Justification::centredLeft, false);
             }
         }
     }
 
     if (!notesArea.isEmpty()) {
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText("MIX NOTES: " + juce::String((int)noteRows_.size()) + " changed",
                    notesArea.removeFromTop(kNoteLineH), juce::Justification::centredLeft, false);
@@ -294,7 +311,7 @@ void WhatChangedPanel::paint(juce::Graphics& g)
         for (const auto& n : noteRows_) {
             if (shown >= kMaxNoteLines) break;
             auto row = notesArea.removeFromTop(kNoteLineH);
-            g.setFont(KhensuTheme::labelFont(9.0f));
+            g.setFont(KhensuTheme::labelFont(type::caption));
             g.setColour(n.resolved ? KhensuTheme::accentGreen : KhensuTheme::accentAmber);
             g.drawText((n.resolved ? juce::String("Resolved: ") : juce::String("New: ")) + n.text, row,
                        juce::Justification::centredLeft, true);
@@ -318,6 +335,8 @@ void WhatChangedPanel::resized()
     beforeCombo_.setBounds(comboRow.removeFromLeft(140));
     comboRow.removeFromLeft(8);
     afterCombo_.setBounds(comboRow.removeFromLeft(140));
+    b.removeFromTop(KhensuTheme::sp1);
+    summary_.setBounds(b);
 }
 
 } // namespace khensu

@@ -55,6 +55,7 @@ add_executable(KhensuCoreTests
     shared-core/test_recommendation_outbox.cpp
     shared-core/test_lookahead_limiter.cpp
     shared-core/test_offline_chain_renderer.cpp  # OVH-9 native chain renderer + parity
+    shared-core/test_extended_chain_stages.cpp  # ENH-6 DynamicEQ / multiband / M/S / exciter / bass mono / gate
     shared-core/test_batch_result_aggregator.cpp
     shared-core/test_music_theory.cpp
     shared-core/test_music_theory_degree.cpp
@@ -66,6 +67,10 @@ add_executable(KhensuCoreTests
     shared-core/test_meter_ballistics.cpp  # UI-5 studio meter ballistics + stereo ring
     shared-core/test_recommendation_dsp_mapper.cpp  # OVH-8 findings -> plugin DSP
     shared-core/test_chain_preset.cpp  # FN2-5 shared chain preset format
+    shared-core/test_realtime_preview.cpp  # STU-5 monitoring DSP, STU-9 realtime chain
+    shared-core/test_peak_to_loudness.cpp  # STU-3 PSR
+    shared-core/test_daw_markers.cpp  # STU-4 DAW markers
+    shared-core/test_ump_sysex.cpp  # STU-13 MIDI-CI transport
 )
 
 target_link_libraries(KhensuCoreTests PRIVATE
@@ -132,15 +137,24 @@ add_executable(KhensuTests
     ui/PaletteThemeSyncTest.cpp
     ui/VizPaletteTest.cpp  # VIZ-F2
     ui/SongTimelineTest.cpp  # VIZ-2
+    ui/DawMarkerExportTest.cpp  # STU-4
+    ui/MidiCiResponderTest.cpp  # STU-13
     ui/HiResSpectrogramTest.cpp  # VIZ-S1
+    ui/VizMapsTest.cpp  # VIS-2/3/6/7, BUG-5
+    ui/StudioVizMotionTest.cpp  # STU-1/11/12
     ui/VizFeaturesTest.cpp  # VIZ-3a/4b/5/N2/N5
+    ui/ChartKitPlotsTest.cpp  # VIS-1/3/5/8 chart kit
+    ui/MultiLaneHeatmapTest.cpp  # VIS-1 issue heatmap on ChartKit
     ui/ThemeReadabilityTest.cpp  # UX-16
     ui/RenderHistoryTest.cpp
+    ui/PaletteSearchTest.cpp  # STU-7
+    ui/AbPinsTest.cpp  # STU-8
     ui/PushToTalkTest.cpp  # CE-AG-4
     ui/AppControllerSplitTest.cpp
     ui/BackgroundRunnerTest.cpp
     ui/SessionServiceTest.cpp
     ui/PlaybackServiceTest.cpp
+    ui/LivePreviewMonitorTest.cpp  # STU-5 / STU-9
     ui/RenderServiceTest.cpp
     ui/NativeFixLoopTest.cpp  # OVH-9 analyse -> fix -> check without the service
     ui/ReportBodyTest.cpp
@@ -150,6 +164,7 @@ add_executable(KhensuTests
     ui/MultitrackStemBusesTest.cpp
     ui/ProjectTracksTest.cpp
     ui/MasterAssistantTest.cpp
+    ui/ExportEnhancementsTest.cpp  # ENH-4/ENH-5/AUTO-2/UXR-1/UXR-2/BUG-2
     ui/CardFindingRowTest.cpp
     ui/PluginCaptureInboxTest.cpp
     ui/ServiceLifecycleTest.cpp
@@ -158,6 +173,7 @@ add_executable(KhensuTests
     ui/AnalysisControllerTest.cpp
     ui/FixVerificationTest.cpp
     ui/IssueServiceTest.cpp
+    ui/WorkflowEnhancementsTest.cpp  # ENH-1/ENH-2/AUTO-3/UXR-9/UXR-10
     ui/HeroSpectrumModelTest.cpp  # UI-1 / OVH-6
     ui/FixRefineTest.cpp  # NEW-4
     ui/IntakeGenreConfirmationTest.cpp
@@ -173,9 +189,11 @@ add_executable(KhensuTests
     ui/CrashReporterTest.cpp
     ui/DiagnosticsBundleTest.cpp  # CE-ENG-4
     ui/UpdateNoticeTest.cpp
+    ui/DecisionNoticesTest.cpp
     ui/ServiceReadyWaitTest.cpp
     ui/AnalysisPendingOverlayTest.cpp
     ui/AbPreferenceNudgeTest.cpp
+    ui/SettingsIntakeAutoTest.cpp  # AUTO-1 / AUTO-4 / AUTO-5 / BUG-6
     ui/GuardrailTextTest.cpp
     ui/AiVerdictTextTest.cpp
     ui/MasteringAgentPanelTest.cpp
@@ -219,16 +237,21 @@ add_executable(KhensuTests
     ui/FixChainMeasureTest.cpp  # MEAS-4: the fix chain per finding ([.fixchain], hidden)
     ui/FullPipelineMeasureTest.cpp  # FULL-1: every finding through the service ([.measurefull], hidden)
     ui/EssentialsSelectionTest.cpp  # UX-1 / VER-8
-    ui/CopilotGroupsTest.cpp  # UX-13 / CUT-8
+    ui/AnalysisRevealTest.cpp  # ENH-7 / BUG-1 / BUG-4
+    ui/CopilotGroupsTest.cpp  # UX-13 / CUT-8 / UXR-3 / ENH-8
+    ui/DisabledButtonStyleTest.cpp  # UXR-3
     ui/CoachMarkCardTest.cpp  # UX-15
     ui/IntakeTextTest.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/session/PlaybackEngine.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/session/LivePreviewStage.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/session/SessionService.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/session/PlaybackService.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/session/RecommendationChain.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/session/RenderService.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/session/ReportBody.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/session/IssueService.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/session/FixAllSafe.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/session/BounceWatcher.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/session/StemService.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/session/MultitrackStemBuses.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/session/ProjectTracks.cpp
@@ -255,13 +278,16 @@ add_executable(KhensuTests
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/Copilot/SectionIntensityPanel.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/PanelCard.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/IssueQueuePanel.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/PaletteSearch.cpp  # STU-7
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/HeroSpectrumView.cpp  # UI-1
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/RadarChartComponent.cpp  # VIS-1
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/SongTimelineView.cpp  # VIZ-2
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/HiResSpectrogramView.cpp  # VIZ-S1
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/FixDifferenceView.cpp  # VIZ-3a
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/LiveSpectrogramView.cpp  # VIZ-4a
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/StemViz.cpp  # VIZ-5
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/Dashboard/SongTimelineCard.cpp  # VIZ-2
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/Dashboard/MultiLaneHeatmap.cpp  # VIS-1 heatmap on ChartKit
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/SessionIntake/TargetSetupPanel.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/SessionIntake/TargetOverrideEditor.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/Milestones.cpp
@@ -276,10 +302,16 @@ add_executable(KhensuTests
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ExportDelivery/MasterAssistantPanel.cpp
     ${CMAKE_SOURCE_DIR}/shared-core/src/ui/KhensuPalette.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/settings/OnlineSettings.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/ReducedMotion.cpp  # VIS-7
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/VizMaps.cpp  # VIS-2 / VIS-6
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/MeterBridge.cpp  # BUG-5 layout test
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/SpectrogramImage.cpp  # VIS-2 test
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/KhensuTheme.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/KhensuLookAndFeel.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/PipelineProgressBar.cpp  # OVH-1 skipped stages
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/SessionIntake/DropZoneComponent.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/SessionIntake/RecentSessionsPanel.cpp  # AUTO-5
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/SessionIntake/RecurringIssuesPanel.cpp  # AUTO-5
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/SessionIntake/MultitrackModel.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/SessionIntake/MaskingMatrixComponent.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/ZoneMeterComponent.cpp
@@ -299,6 +331,7 @@ add_executable(KhensuTests
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/midi/MacroMappingEngine.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/ModalCardHost.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/AppNoticeBar.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/UndoToast.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/AnalysisPendingOverlay.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/CrashReporter.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/UpdateInstaller.cpp
@@ -307,11 +340,13 @@ add_executable(KhensuTests
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/PanelDockManager.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/AccessibilityCoverage.cpp
     # VER-6: the AI Detection, Reference Library and Settings screens
-    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/AiDetection/AiDetectionScreen.cpp
-    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/AiDetection/SourceSummaryView.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ProvenanceSource/AiDetectionScreen.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ProvenanceSource/SourceSummaryView.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ReferenceLibrary/ReferenceLibraryScreen.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ReferenceLibrary/ReferenceProfilesBar.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ReferenceLibrary/SimilarReferencesPanel.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ReferenceLibrary/ReferenceScanPanel.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/ReferenceLibrary/GenreFitChart.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/Settings/SettingsScreen.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/Settings/CalibrationPanel.cpp  # CUT-10
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/Settings/ComponentsPanel.cpp  # FEAT-10
@@ -321,6 +356,7 @@ add_executable(KhensuTests
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/ui/shared/ModelDetailsDialog.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/midi/MacroControlRouter.cpp
     ${CMAKE_SOURCE_DIR}/desktop-app/Source/midi/Midi2DeviceManager.cpp
+    ${CMAKE_SOURCE_DIR}/desktop-app/Source/midi/MidiCiResponder.cpp  # STU-13
 )
 
 # Provide a lightweight JuceHeader.h for the test executable.
@@ -397,6 +433,15 @@ add_executable(KhensuPluginTests
     plugin/PluginLiveFixEditorTest.cpp
     # UX2-6a / UX2-6b: knob readout + typed values, undo history
     plugin/PluginUndoHistoryTest.cpp
+    # ENH-10: reference track, monitoring solo, apply all, Unmask
+    plugin/CopilotReferenceMonitorTest.cpp
+    plugin/CopilotApplyAllUnmaskTest.cpp
+    # STU-10: six-band EQ, dynamic / M-S bands and the v5 stages
+    plugin/PluginV5StagesTest.cpp
+    # STU-17: a generated recipe onto all six EQ bands and the v5 stages
+    plugin/PluginRecipeMapTest.cpp
+    # STU-5 / STU-9: the desktop transport's real-time DSP, allocation-free
+    plugin/RealtimePreviewAllocationTest.cpp
 )
 
 target_include_directories(KhensuPluginTests PRIVATE

@@ -1,7 +1,10 @@
 // desktop-app/Source/ui/shared/HeroSpectrumView.cpp
 #include "HeroSpectrumView.h"
+#include "KhensuEmptyState.h"
 #include "ValueAnimator.h" // motion::easeOutCubic (UI-7)
 #include "ChartStyle.h"       // VIZ-U3 readout
+#include <khensu/ui/ChartScales.h> // VIS-3: the one frequency axis
+#include <khensu/ui/KhensuPalette.h>
 #include <khensu/ui/VizPalette.h>
 #include <algorithm>
 #include <cmath>
@@ -12,18 +15,19 @@ using hero_spectrum::Finding;
 using hero_spectrum::Shape;
 
 namespace {
-constexpr float kMinHz = 20.0f;
-constexpr float kMaxHz = 20000.0f;
+constexpr float kMinHz = static_cast<float>(ui::chart::scales::kFreqLoHz);
+constexpr float kMaxHz = static_cast<float>(ui::chart::scales::kFreqHiHz);
 constexpr float kHeaderH = 44.0f;
 constexpr float kAxisH = 18.0f;
 constexpr float kLeftW = 40.0f;
 constexpr float kRightW = 12.0f;
 constexpr float kFindingsLabelW = 96.0f;
 
-juce::String hzLabel(float hz)
+/// BUG-4: "Translation" for one finding, "Translation x3" for a kind of three.
+juce::String chipText(const juce::String& label, size_t count)
 {
-    if (hz >= 1000.0f) return juce::String(juce::roundToInt(hz / 1000.0f)) + "k";
-    return juce::String(juce::roundToInt(hz));
+    return count > 1 ? label + " " + juce::String(juce::CharPointer_UTF8("\xc3\x97")) + juce::String(static_cast<int>(count))
+                     : label;
 }
 
 juce::String severityWord(float severity)
@@ -60,6 +64,7 @@ void HeroSpectrumView::onVBlank()
 
 float HeroSpectrumView::abWeight() const noexcept
 {
+    if (ui::motion::reduced()) return abTo_; // VIS-7: snap
     const double t = juce::jlimit(0.0, 1.0, (juce::Time::getMillisecondCounterHiRes() - abStartMs_) / kAnimMs);
     return abFrom_ + (abTo_ - abFrom_) * motion::easeOutCubic(static_cast<float>(t));
 }
@@ -153,7 +158,7 @@ void HeroSpectrumView::timerCallback()
 
 float HeroSpectrumView::eased() const noexcept
 {
-    if (!isTimerRunning()) return 1.0f;
+    if (!isTimerRunning() || ui::motion::reduced()) return 1.0f; // VIS-7: snap
     const double t = juce::jlimit(0.0, 1.0, (juce::Time::getMillisecondCounterHiRes() - animStartMs_) / kAnimMs);
     return motion::easeOutCubic(static_cast<float>(t)); // the app's one curve (UI-7)
 }
@@ -252,22 +257,46 @@ std::vector<HeroSpectrumView::ChipCell> HeroSpectrumView::chipCells() const
         if (fa.settled != fb.settled) return !fa.settled;
         return fa.severity > fb.severity;
     });
-    const auto font = KhensuTheme::bodyFont(12.0f);
+    // BUG-4: one chip per kind of finding (its label), with a count - the
+    // translation checks used to show "Translation" three times.
+    std::vector<std::vector<int>> groups;
+    for (const int i : chips) {
+        const auto& label = model_.findings[static_cast<size_t>(i)].chipLabel;
+        auto it = std::find_if(groups.begin(), groups.end(), [&](const std::vector<int>& grp) {
+            return model_.findings[static_cast<size_t>(grp.front())].chipLabel == label;
+        });
+        if (it != groups.end())
+            it->push_back(i);
+        else
+            groups.push_back({i});
+    }
+    const auto font = KhensuTheme::bodyFont(type::secondary);
     const float gap = 6.0f, overflowW = 44.0f;
     float x = row.getX();
-    for (size_t k = 0; k < chips.size(); ++k) {
-        const auto& f = model_.findings[static_cast<size_t>(chips[k])];
-        const float w = juce::GlyphArrangement::getStringWidth(font, f.chipLabel) + 34.0f;
-        const bool last = k + 1 == chips.size();
+    for (size_t k = 0; k < groups.size(); ++k) {
+        const auto& f = model_.findings[static_cast<size_t>(groups[k].front())];
+        const float w = juce::GlyphArrangement::getStringWidth(font, chipText(f.chipLabel, groups[k].size())) + 34.0f;
+        const bool last = k + 1 == groups.size();
         if (x + w > row.getRight() - (last ? 0.0f : overflowW + gap)) {
-            cells.push_back({{x, row.getY() + 3.0f, overflowW, row.getHeight() - 6.0f}, -1,
-                             static_cast<int>(chips.size() - k)});
+            int hidden = 0;
+            for (size_t j = k; j < groups.size(); ++j)
+                hidden += static_cast<int>(groups[j].size());
+            cells.push_back({{x, row.getY() + 3.0f, overflowW, row.getHeight() - 6.0f}, -1, hidden, {}});
             break;
         }
-        cells.push_back({{x, row.getY() + 3.0f, w, row.getHeight() - 6.0f}, chips[k], 0});
+        cells.push_back({{x, row.getY() + 3.0f, w, row.getHeight() - 6.0f}, groups[k].front(), 0, groups[k]});
         x += w + gap;
     }
     return cells;
+}
+
+std::vector<std::pair<juce::String, int>> HeroSpectrumView::chipSummary() const
+{
+    std::vector<std::pair<juce::String, int>> out;
+    for (const auto& c : chipCells())
+        if (c.finding >= 0)
+            out.emplace_back(model_.findings[static_cast<size_t>(c.finding)].chipLabel, static_cast<int>(c.group.size()));
+    return out;
 }
 
 // ---- Hit testing -----------------------------------------------------------------
@@ -275,9 +304,16 @@ std::vector<HeroSpectrumView::ChipCell> HeroSpectrumView::chipCells() const
 std::string HeroSpectrumView::findingAt(juce::Point<float> pos) const
 {
     // The "Top findings" row: a chip selects its finding.
+    // BUG-4: a chip of several findings cycles - the one after the selected
+    // member, else the worst.
     for (const auto& c : chipCells())
-        if (c.bounds.contains(pos))
-            return c.finding >= 0 ? model_.findings[static_cast<size_t>(c.finding)].key() : std::string();
+        if (c.bounds.contains(pos)) {
+            if (c.finding < 0) return {};
+            for (size_t k = 0; k < c.group.size(); ++k)
+                if (model_.findings[static_cast<size_t>(c.group[k])].key() == selected_)
+                    return model_.findings[static_cast<size_t>(c.group[(k + 1) % c.group.size()])].key();
+            return model_.findings[static_cast<size_t>(c.finding)].key();
+        }
     const auto plot = plotArea();
     if (!plot.expanded(0.0f, 6.0f).contains(pos)) return {};
     // Markers first (the smallest targets), then the tilt line, then the
@@ -395,16 +431,19 @@ void HeroSpectrumView::paint(juce::Graphics& g)
         if (model_.hasSpectrum()) {
             juce::Graphics::ScopedSaveState clip(g);
             g.reduceClipRegion(plot.toNearestInt().expanded(0, 2));
+            // VIS-5: the problem bands at the back, the genre's target (the
+            // released-track spread / the tolerance fan) above them, the
+            // measured tilt line under the track's curve, the curve on top,
+            // then the markers and the bands' names.
+            paintFindings(g, plot, FindingLayer::Bands);
             paintSpread(g, plot);
-            paintFindings(g, plot);
             paintTarget(g, plot);
+            paintFindings(g, plot, FindingLayer::Tilt);
             paintReference(g, plot);
             paintSpectrum(g, plot);
+            paintFindings(g, plot, FindingLayer::Marks);
         } else {
-            g.setColour(KhensuTheme::textTertiary);
-            g.setFont(KhensuTheme::bodyFont(13.0f));
-            g.drawText(TRANS("The spectrum appears when the analysis finishes."), plot,
-                       juce::Justification::centred, true);
+            KhensuEmptyState::paintInto(g, plot.toNearestInt(), TRANS("The spectrum appears when the analysis finishes."), {}); // UXR-6
         }
     }
     paintTiles(g);
@@ -418,18 +457,18 @@ void HeroSpectrumView::paintHeader(juce::Graphics& g) const
     auto h = getLocalBounds().toFloat().removeFromTop(kHeaderH).reduced(14.0f, 6.0f);
     // Left: the measured tilt (largest) and the target it is held to.
     g.setColour(KhensuTheme::textTertiary);
-    g.setFont(KhensuTheme::labelFont(11.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     auto left = h.removeFromLeft(std::min(h.getWidth() * 0.55f, 420.0f));
     g.drawText(TRANS("Tonal balance"), left.removeFromTop(14.0f), juce::Justification::centredLeft, false);
     if (model_.hasSpectrum()) {
         const juce::String tilt = juce::String(model_.tiltMeasured, 1);
         g.setColour(KhensuTheme::textPrimary);
-        g.setFont(KhensuTheme::metricFont(17.0f).boldened());
-        const auto tiltFont = KhensuTheme::metricFont(17.0f).boldened();
+        g.setFont(KhensuTheme::metricFont(type::title).boldened());
+        const auto tiltFont = KhensuTheme::metricFont(type::title).boldened();
         const float tw = juce::GlyphArrangement::getStringWidth(tiltFont, tilt);
         g.drawText(tilt, left.removeFromLeft(tw + 2.0f), juce::Justification::centredLeft, false);
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(KhensuTheme::labelFont(11.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         juce::String rest = " " + TRANS("dB/oct tilt");
         if (model_.tiltTarget)
             rest << "   " << TRANS("target") << " " << juce::String(*model_.tiltTarget, 1) << " +/- "
@@ -460,9 +499,9 @@ void HeroSpectrumView::paintHeader(juce::Graphics& g) const
     if (model_.tiltTarget) keys.push_back({TRANS("Genre target"), KhensuTheme::accentTeal.withAlpha(0.7f), true});
     if (!preview_.empty()) keys.push_back({TRANS("Fix preview"), KhensuTheme::accentTeal, true});
     auto right = h;
-    g.setFont(KhensuTheme::labelFont(11.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     for (auto it = keys.rbegin(); it != keys.rend(); ++it) {
-        const float w = juce::GlyphArrangement::getStringWidth(KhensuTheme::labelFont(11.0f), it->text) + 28.0f;
+        const float w = juce::GlyphArrangement::getStringWidth(KhensuTheme::labelFont(type::caption), it->text) + 28.0f;
         auto cell = right.removeFromRight(w).withSizeKeepingCentre(w, 16.0f);
         right.removeFromRight(10.0f);
         auto sw = cell.removeFromLeft(18.0f).withSizeKeepingCentre(16.0f, 2.0f);
@@ -480,21 +519,31 @@ void HeroSpectrumView::paintHeader(juce::Graphics& g) const
 
 void HeroSpectrumView::paintGrid(juce::Graphics& g, juce::Rectangle<float> plot) const
 {
-    g.setFont(KhensuTheme::labelFont(11.0f));
-    for (const float hz : {50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f}) {
-        const float x = xForHz(hz);
-        g.setColour(KhensuTheme::borderSubtle.withMultipliedAlpha(0.6f));
+    // VIS-3: the one frequency axis (the same ticks and labels as every
+    // ChartKit spectrum); VIS-5: the level axis in dB.
+    const auto style = desktopChartStyle();
+    g.setFont(ui::Palette::uiFont(style.fontSize));
+    const auto freq = ui::chart::scales::frequency();
+    const auto ticks = freq.ticks(std::max(2, static_cast<int>(plot.getWidth() / 70.0f)));
+    for (size_t i = 0; i < ticks.size(); ++i) {
+        const float x = xForHz(static_cast<float>(ticks[i]));
+        g.setColour(style.grid);
         g.drawVerticalLine(juce::roundToInt(x), plot.getY(), plot.getBottom());
-        g.setColour(KhensuTheme::textTertiary);
-        g.drawText(hzLabel(hz), juce::Rectangle<float>(x - 20.0f, plot.getBottom() + 2.0f, 40.0f, kAxisH - 2.0f),
-                   juce::Justification::centredTop, false);
+        const bool last = i + 1 == ticks.size();
+        const auto text = freq.label(ticks[i], last); // the last one carries the unit
+        const float w = last ? 56.0f : 40.0f;
+        auto r = juce::Rectangle<float>(x - w * 0.5f, plot.getBottom() + 2.0f, w, kAxisH - 2.0f);
+        if (r.getRight() > static_cast<float>(getWidth()) - 2.0f) r.setX(static_cast<float>(getWidth()) - 2.0f - w);
+        g.setColour(style.muted);
+        g.drawText(text, r, juce::Justification::centredTop, false);
     }
     for (float db = dbTop_; db >= dbBottom_ - 0.01f; db -= 12.0f) {
         const float y = yForDb(db);
-        g.setColour(KhensuTheme::borderSubtle.withMultipliedAlpha(0.6f));
+        g.setColour(style.grid);
         g.drawHorizontalLine(juce::roundToInt(y), plot.getX(), plot.getRight());
-        g.setColour(KhensuTheme::textTertiary);
-        g.drawText(juce::String(juce::roundToInt(db)),
+        g.setColour(style.muted);
+        const auto n = juce::String(juce::roundToInt(db));
+        g.drawText(db >= dbTop_ - 0.01f ? n + " dB" : n,
                    juce::Rectangle<float>(plot.getX() - kLeftW, y - 7.0f, kLeftW - 6.0f, 14.0f),
                    juce::Justification::centredRight, false);
     }
@@ -546,14 +595,16 @@ void HeroSpectrumView::paintSpectrum(juce::Graphics& g, juce::Rectangle<float> p
     }
     const auto main = curvePath(plot, &after, 1.0f);
 
-    // The fill under the curve (a whisper of the curve's colour).
+    // LG-15: richer vertical under-curve gradient fill beneath the spectrum.
     juce::Path fill(main);
     fill.lineTo(xForHz(model_.spectrum.back().hz), plot.getBottom());
     fill.lineTo(xForHz(model_.spectrum.front().hz), plot.getBottom());
     fill.closeSubPath();
     const auto curveColour = anyAfter ? KhensuTheme::accentTeal : KhensuTheme::textPrimary;
-    g.setGradientFill(juce::ColourGradient(curveColour.withAlpha(0.16f), 0.0f, plot.getY(),
-                                           curveColour.withAlpha(0.0f), 0.0f, plot.getBottom(), false));
+    juce::ColourGradient fillGrad(curveColour.withAlpha(0.22f), 0.0f, plot.getY(), curveColour.withAlpha(0.0f), 0.0f,
+                                  plot.getBottom(), false);
+    fillGrad.addColour(0.55, curveColour.withAlpha(0.06f));
+    g.setGradientFill(fillGrad);
     g.fillPath(fill);
 
     if (anyAfter) { // the original, as a ghost under the current version
@@ -564,11 +615,14 @@ void HeroSpectrumView::paintSpectrum(juce::Graphics& g, juce::Rectangle<float> p
         g.setColour(KhensuTheme::textTertiary);
         g.fillPath(dashed);
     }
-    g.setColour(curveColour.withAlpha(0.92f));
-    g.strokePath(main, juce::PathStrokeType(1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    // LG-15: double-pass glowing spectrum trace (soft luminous bloom + crisp core).
+    g.setColour(curveColour.withAlpha(0.18f));
+    g.strokePath(main, juce::PathStrokeType(5.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setColour(curveColour.withAlpha(0.95f));
+    g.strokePath(main, juce::PathStrokeType(2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     if (model_.hasSpread() && !anyAfter) {
         // Where the track leaves the middle 50 % of released tracks, the line
-        // takes the diverging colour: red = more energy than released tracks,
+        // takes the diverging colour: orange = more energy than released tracks,
         // blue = less; full strength at the edge of the middle 80 %.
         const auto& pts = model_.spectrum;
         for (size_t i = 1; i < pts.size(); ++i) {
@@ -578,7 +632,7 @@ void HeroSpectrumView::paintSpectrum(juce::Graphics& g, juce::Rectangle<float> p
             const auto pole = juce::Colour(stray > 0.0f ? ui::viz::kDivergingWarm : ui::viz::kDivergingCool);
             g.setColour(curveColour.interpolatedWith(pole.brighter(0.25f), std::abs(stray)));
             g.drawLine(xForHz(pts[i - 1].hz), yForDb(pts[i - 1].db), xForHz(pts[i].hz), yForDb(pts[i].db),
-                       2.4f);
+                       2.8f);
         }
     }
 
@@ -595,7 +649,7 @@ void HeroSpectrumView::paintSpectrum(juce::Graphics& g, juce::Rectangle<float> p
     }
 }
 
-void HeroSpectrumView::paintFindings(juce::Graphics& g, juce::Rectangle<float> plot) const
+void HeroSpectrumView::paintFindings(juce::Graphics& g, juce::Rectangle<float> plot, FindingLayer layer) const
 {
     // Settled first so open findings draw over them; the selection last.
     std::vector<const Finding*> order;
@@ -614,8 +668,7 @@ void HeroSpectrumView::paintFindings(juce::Graphics& g, juce::Rectangle<float> p
         // A resolved mark stays as a faint outline: where the problem was.
         const float presence = 0.25f + 0.75f * remain;
         const auto c = colourFor(*f);
-        switch (f->shape) {
-        case Shape::Band: {
+        if (f->shape == Shape::Band && layer == FindingLayer::Bands) {
             const float x0 = xForHz(f->lowHz), x1 = xForHz(f->highHz);
             auto col = juce::Rectangle<float>(x0, plot.getY(), std::max(2.0f, x1 - x0), plot.getHeight());
             g.setColour(c.withAlpha((sel ? 0.20f : hov ? 0.15f : 0.09f) * presence));
@@ -629,9 +682,22 @@ void HeroSpectrumView::paintFindings(juce::Graphics& g, juce::Rectangle<float> p
                 g.drawVerticalLine(juce::roundToInt(x0), plot.getY(), plot.getBottom());
                 g.drawVerticalLine(juce::roundToInt(x1), plot.getY(), plot.getBottom());
             }
-            break;
-        }
-        case Shape::Marker: {
+        } else if (f->shape == Shape::Band && layer == FindingLayer::Marks) {
+            // VIS-5: the band names itself, with how far it sits off the target.
+            const float x0 = xForHz(f->lowHz), x1 = xForHz(f->highHz);
+            const auto text = bandLabel(*f, x1 - x0 - 4.0f);
+            if (text.isEmpty()) continue;
+            const auto font = KhensuTheme::labelFont(type::caption);
+            const float w = juce::GlyphArrangement::getStringWidth(font, text) + 10.0f;
+            const auto tag = juce::Rectangle<float>((x0 + x1 - w) * 0.5f, plot.getBottom() - 22.0f, w, 17.0f);
+            g.setColour(KhensuTheme::bgOverlay.withAlpha(0.85f * presence));
+            g.fillRoundedRectangle(tag, 3.0f);
+            g.setColour(c.withAlpha(presence));
+            g.fillRect(tag.withHeight(2.0f).reduced(3.0f, 0.0f));
+            g.setColour((f->settled ? KhensuTheme::textSecondary : KhensuTheme::textPrimary).withAlpha(presence));
+            g.setFont(font);
+            g.drawText(text, tag.withTrimmedTop(1.0f), juce::Justification::centred, false);
+        } else if (f->shape == Shape::Marker && layer == FindingLayer::Marks) {
             const float x = xForHz(f->hz);
             float db = 0.0f;
             for (size_t i = 0; i + 1 < model_.spectrum.size(); ++i)
@@ -651,28 +717,24 @@ void HeroSpectrumView::paintFindings(juce::Graphics& g, juce::Rectangle<float> p
                 g.setColour(KhensuTheme::textPrimary);
                 g.strokePath(tri, juce::PathStrokeType(1.0f));
             }
-            break;
-        }
-        case Shape::Tilt: {
+        } else if (f->shape == Shape::Tilt && layer == FindingLayer::Tilt) {
             // The measured slope, through the same 1 kHz pivot as the target.
+            // VIS-5: under the track's curve and thinner than it.
             juce::Path line;
             line.startNewSubPath(plot.getX(), yForDb(model_.tiltMeasured * std::log2(kMinHz / 1000.0f)));
             line.lineTo(plot.getRight(), yForDb(model_.tiltMeasured * std::log2(kMaxHz / 1000.0f)));
-            g.setColour(c.withAlpha(0.9f * presence));
-            g.strokePath(line, juce::PathStrokeType((sel || hov ? 2.6f : 1.8f) * (0.5f + 0.5f * remain)));
-            break;
-        }
-        case Shape::Chip:
-            break;
+            g.setColour(c.withAlpha(0.8f * presence));
+            g.strokePath(line, juce::PathStrokeType((sel || hov ? 2.0f : 1.4f) * (0.5f + 0.5f * remain)));
         }
     }
+    if (layer != FindingLayer::Marks) return;
     // The selected finding names itself on the graph.
     for (const auto* f : order)
         if (f->key() == selected_ && f->shape != Shape::Chip) {
             const float x = f->shape == Shape::Band ? (xForHz(f->lowHz) + xForHz(f->highHz)) * 0.5f
                             : f->shape == Shape::Marker ? xForHz(f->hz)
                                                         : plot.getRight() - 140.0f;
-            const auto font = KhensuTheme::labelFont(11.0f);
+            const auto font = KhensuTheme::labelFont(type::caption);
             const juce::String text = severityWord(f->severity) + "  " + f->title;
             const float w = std::min(320.0f, juce::GlyphArrangement::getStringWidth(font, text) + 16.0f);
             auto tag = juce::Rectangle<float>(juce::jlimit(plot.getX(), plot.getRight() - w, x - w * 0.5f),
@@ -685,6 +747,74 @@ void HeroSpectrumView::paintFindings(juce::Graphics& g, juce::Rectangle<float> p
             g.setFont(font);
             g.drawText(text, tag.reduced(6.0f, 0.0f), juce::Justification::centredLeft, true);
         }
+}
+
+std::optional<float> HeroSpectrumView::bandDeviationDb(const Finding& f) const
+{
+    // The track's level across the band against what it is held to: the
+    // released tracks' median when measured, else the genre's tilt line.
+    if (!model_.hasSpectrum() || !(f.highHz > f.lowHz)) return std::nullopt;
+    double sum = 0.0;
+    int n = 0;
+    for (const auto& p : model_.spectrum) {
+        if (p.hz < f.lowHz || p.hz > f.highHz) continue;
+        float ref = 0.0f;
+        if (const auto sp = hero_spectrum::spreadAt(model_, p.hz)) ref = (*sp)[GenreSpread::kP50];
+        else if (model_.tiltTarget) ref = *model_.tiltTarget * std::log2(p.hz / 1000.0f);
+        else return std::nullopt;
+        sum += static_cast<double>(p.db - ref);
+        ++n;
+    }
+    if (n == 0) return std::nullopt;
+    return static_cast<float>(sum / n);
+}
+
+juce::String HeroSpectrumView::bandLabel(const Finding& f, float maxWidth) const
+{
+    const auto font = KhensuTheme::labelFont(type::caption);
+    const auto name = f.chipLabel.isNotEmpty() ? f.chipLabel : f.title;
+    juce::String db;
+    if (const auto d = bandDeviationDb(f); d && std::abs(*d) >= 0.5f)
+        db = (*d > 0.0f ? "+" : "") + juce::String(*d, 1) + " dB";
+    // The name and the number when they fit; else the number; else the name
+    // alone; else nothing (the hover names it).
+    for (const auto& candidate : {db.isNotEmpty() ? name + " " + db : name, db, name})
+        if (candidate.isNotEmpty() && juce::GlyphArrangement::getStringWidth(font, candidate) + 10.0f <= maxWidth)
+            return candidate;
+    return {};
+}
+
+juce::String HeroSpectrumView::summary() const
+{
+    // VIS-8: "Tonal balance: tilt -3.1 dB/oct (target -4.5 +/- 1.5), 2 problem
+    // bands: Low end +6.0 dB and Air -4.2 dB; resonances at 3.2 kHz."
+    if (!model_.hasSpectrum()) return TRANS("Tonal balance: not measured yet.");
+    juce::String s = TRANS("Tonal balance") + ": " + TRANS("tilt") + " " + juce::String(model_.tiltMeasured, 1) + " dB/oct";
+    if (model_.tiltTarget)
+        s << " (" << TRANS("target") << " " << juce::String(*model_.tiltTarget, 1) << " +/- "
+          << juce::String(model_.tiltTolerance, 1) << ")";
+    juce::StringArray bands, marks;
+    for (const auto& f : model_.findings) {
+        if (f.settled) continue;
+        if (f.shape == Shape::Band) {
+            auto t = f.chipLabel.isNotEmpty() ? f.chipLabel : f.title;
+            if (const auto d = bandDeviationDb(f)) t << " " << (*d > 0.0f ? "+" : "") << juce::String(*d, 1) << " dB";
+            bands.add(t);
+        } else if (f.shape == Shape::Marker) {
+            ui::chart::Axis fx;
+            fx.format = ui::chart::Format::Hz;
+            marks.add(fx.label(f.hz, true));
+        }
+    }
+    s << ", " << bands.size() << " " << (bands.size() == 1 ? TRANS("problem band") : TRANS("problem bands"));
+    if (!bands.isEmpty()) s << ": " << ui::chart::joinWords(bands);
+    if (!marks.isEmpty()) s << "; " << TRANS("resonances at") << " " << ui::chart::joinWords(marks);
+    return s + ".";
+}
+
+std::unique_ptr<juce::AccessibilityHandler> HeroSpectrumView::createAccessibilityHandler()
+{
+    return ui::chart::makeChartAccessibilityHandler(*this, [this] { return summary(); });
 }
 
 void HeroSpectrumView::paintSpread(juce::Graphics& g, juce::Rectangle<float> plot) const
@@ -745,13 +875,13 @@ void HeroSpectrumView::paintTiles(juce::Graphics& g) const
         auto inner = b.reduced(12.0f, 7.0f);
         auto top = inner.removeFromTop(14.0f);
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::labelFont(11.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText(gauge.label, top, juce::Justification::centredLeft, false);
         if (gauge.windowText.isNotEmpty() && inner.getWidth() > 150.0f)
             g.drawText(gauge.windowText, top, juce::Justification::centredRight, false);
         // VIZ-P6: undefined is "-" in neutral, never a coloured value.
         g.setColour(gauge.defined ? KhensuTheme::textPrimary : KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::metricFont(17.0f));
+        g.setFont(KhensuTheme::metricFont(type::title));
         g.drawText(gauge.defined ? gauge.value : juce::String("-"), inner.removeFromTop(22.0f),
                    juce::Justification::centredLeft, false);
 
@@ -806,7 +936,7 @@ void HeroSpectrumView::paintTiles(juce::Graphics& g) const
             g.fillRoundedRectangle({x - 1.5f, strip.getY() - 1.0f, 3.0f, strip.getHeight() + 2.0f}, 1.5f);
         }
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::labelFont(11.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         const juce::String caption = !gauge.defined ? TRANS("Not measured on this file")
                                      : gauge.caption.isNotEmpty() ? gauge.caption
                                      : gauge.windowText.isNotEmpty() ? TRANS("Target") + " " + gauge.windowText
@@ -820,7 +950,7 @@ void HeroSpectrumView::paintStrip(juce::Graphics& g) const
     // VIZ-U1: the "Top findings" row - every finding that has no frequency.
     auto row = findingsArea();
     g.setColour(KhensuTheme::textTertiary);
-    g.setFont(KhensuTheme::labelFont(11.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.drawText(TRANS("Top findings"), row.removeFromLeft(kFindingsLabelW), juce::Justification::centredLeft, false);
     const auto cells = chipCells();
     if (cells.empty()) {
@@ -834,13 +964,23 @@ void HeroSpectrumView::paintStrip(juce::Graphics& g) const
             g.setColour(KhensuTheme::bgRaised.withAlpha(0.6f));
             g.fillRoundedRectangle(b, 6.0f);
             g.setColour(KhensuTheme::textSecondary);
-            g.setFont(KhensuTheme::bodyFont(12.0f));
+            g.setFont(KhensuTheme::bodyFont(type::secondary));
             g.drawText("+" + juce::String(cell.hiddenCount), b, juce::Justification::centred, false);
             continue;
         }
-        const auto& f = model_.findings[static_cast<size_t>(cell.finding)];
-        const bool sel = f.key() == selected_;
-        const bool hov = f.key() == hovered_;
+        // BUG-4: the chip stands for its whole group; the selected member's
+        // state shows when one is selected.
+        size_t shown = 0;
+        bool sel = false, hov = false;
+        for (size_t k = 0; k < cell.group.size(); ++k) {
+            const auto key = model_.findings[static_cast<size_t>(cell.group[k])].key();
+            if (key == selected_) {
+                sel = true;
+                shown = k;
+            }
+            if (key == hovered_) hov = true;
+        }
+        const auto& f = model_.findings[static_cast<size_t>(cell.group.empty() ? cell.finding : cell.group[shown])];
         g.setColour(KhensuTheme::bgRaised.withAlpha(sel ? 0.95f : hov ? 0.8f : 0.6f));
         g.fillRoundedRectangle(b, 6.0f);
         if (sel) {
@@ -851,8 +991,9 @@ void HeroSpectrumView::paintStrip(juce::Graphics& g) const
         g.setColour(colourFor(f).withAlpha(0.3f + 0.7f * remain));
         g.fillEllipse(b.removeFromLeft(22.0f).withSizeKeepingCentre(7.0f, 7.0f));
         g.setColour(f.settled ? KhensuTheme::textSecondary : KhensuTheme::textPrimary);
-        g.setFont(KhensuTheme::bodyFont(12.0f));
-        g.drawText(f.chipLabel, b.withTrimmedRight(8.0f), juce::Justification::centredLeft, false);
+        g.setFont(KhensuTheme::bodyFont(type::secondary));
+        g.drawText(chipText(f.chipLabel, cell.group.size()), b.withTrimmedRight(8.0f),
+                   juce::Justification::centredLeft, false);
     }
 }
 
@@ -901,7 +1042,7 @@ void HeroSpectrumView::paintHover(juce::Graphics& g) const
     for (const auto& x : model_.findings)
         if (x.key() == hovered_) f = &x;
     if (f == nullptr) return;
-    const auto font = KhensuTheme::bodyFont(13.0f);
+    const auto font = KhensuTheme::bodyFont(type::body);
     juce::String text = f->title;
     const float w = std::min(360.0f, juce::GlyphArrangement::getStringWidth(font, text) + 24.0f);
     juce::AttributedString as;
@@ -914,15 +1055,24 @@ void HeroSpectrumView::paintHover(juce::Graphics& g) const
     const auto bounds = getLocalBounds().toFloat();
     if (bubble.getRight() > bounds.getRight()) bubble.setX(hoverPos_.x - 14.0f - w);
     if (bubble.getBottom() > bounds.getBottom()) bubble.setY(hoverPos_.y - 14.0f - h);
-    g.setColour(KhensuTheme::shadowColour);
-    g.fillRoundedRectangle(bubble.translated(0.0f, 2.0f), 6.0f);
-    g.setColour(KhensuTheme::bgOverlay);
-    g.fillRoundedRectangle(bubble, 6.0f);
-    g.setColour(KhensuTheme::borderActive);
-    g.drawRoundedRectangle(bubble.reduced(0.5f), 6.0f, 1.0f);
+    // LG-15: frosted liquid-glass hover tooltip bubble.
+    constexpr float kBubbleR = 10.0f;
+    g.setColour(KhensuTheme::shadowColour.withMultipliedAlpha(1.1f));
+    g.fillRoundedRectangle(bubble.translated(0.0f, 4.0f).expanded(1.0f), kBubbleR + 1.0f);
+    g.setColour(KhensuTheme::bgOverlay.withAlpha(0.90f));
+    g.fillRoundedRectangle(bubble, kBubbleR);
+    juce::ColourGradient bubbleSheen(KhensuTheme::highlight.withMultipliedAlpha(2.0f), bubble.getCentreX(),
+                                     bubble.getY(), KhensuTheme::highlight.withAlpha(0.0f), bubble.getCentreX(),
+                                     bubble.getY() + bubble.getHeight() * 0.45f, false);
+    g.setGradientFill(bubbleSheen);
+    g.fillRoundedRectangle(bubble, kBubbleR);
+    juce::ColourGradient bubbleRim(KhensuTheme::borderActive.brighter(0.35f), bubble.getTopLeft(),
+                                   KhensuTheme::borderSubtle, bubble.getBottomRight(), false);
+    g.setGradientFill(bubbleRim);
+    g.drawRoundedRectangle(bubble.reduced(0.5f), kBubbleR, 1.0f);
     auto inner = bubble.reduced(12.0f, 8.0f);
     g.setColour(colourFor(*f));
-    g.setFont(KhensuTheme::labelFont(11.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.drawText(f->settled ? TRANS("Settled") : severityWord(f->severity) + " - " + TRANS("click to select"),
                inner.removeFromTop(14.0f), juce::Justification::centredLeft, false);
     layout.draw(g, inner);

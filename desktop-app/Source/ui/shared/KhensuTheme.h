@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <functional>
 #include "BadgeComponent.h" // for BadgeStatus enum
+#include <khensu/ui/TypeScale.h> // UXR-8: type:: font sizes
 
 namespace khensu {
 
@@ -117,21 +118,22 @@ struct KhensuTheme {
     // routes through uiFont()/monoFont() or the named helpers below.
     static const juce::String& uiTypefaceName();
     /// UX-16: the smallest text any font call returns (body text minimum).
-    static constexpr float kMinTextPx = 11.0f;
+    static constexpr float kMinTextPx = type::caption;
     static juce::Font uiFont(float size, int style = juce::Font::plain);
 
     // Named type scale (pt sizes) - use these instead of ad-hoc literals so
     // the hierarchy stays consistent. UI-4: four steps - 28 metric, 17 title,
     // 13 body, 11 label - so a measured value is the largest text on its card.
-    static constexpr float kFontMetric = 28.0f; // hero numeric readouts
-    static constexpr float kFontH1 = 17.0f;     // screen / card titles
-    static constexpr float kFontH2 = 13.0f;     // sub-headers (body size, semibold)
-    static constexpr float kFontBody = 13.0f;   // body copy
-    static constexpr float kFontLabel = 11.0f;  // labels / axes
-    static constexpr float kFontCaption = 11.0f; // captions (the 11 px floor)
+    // UXR-8: these are aliases of the type:: scale (khensu/ui/TypeScale.h).
+    static constexpr float kFontMetric = type::display; // hero numeric readouts
+    static constexpr float kFontH1 = type::title;       // screen / card titles
+    static constexpr float kFontH2 = type::body;        // sub-headers (body size, semibold)
+    static constexpr float kFontBody = type::body;      // body copy
+    static constexpr float kFontLabel = type::caption;  // labels / axes
+    static constexpr float kFontCaption = type::caption; // captions (the 11 px floor)
 
     static juce::Font bodyFont(float size = kFontBody);
-    static juce::Font labelFont(float size = 13.0f);
+    static juce::Font labelFont(float size = type::body);
     static juce::Font metricFont(float size = kFontMetric); // tabular figures
     /// Every number on screen (UI-4): a face whose digits are all one width,
     /// so a changing value never jitters and columns of figures line up.

@@ -6,6 +6,7 @@
 #pragma once
 #include "../../../desktop-app/Source/IAppController.h"
 #include "../../../desktop-app/Source/RenderJobManager.h"
+#include "../../../desktop-app/Source/midi/MacroControlRouter.h"
 #include "../../../desktop-app/Source/midi/Midi2DeviceManager.h"
 #include "NullServices.h"
 #include <khensu/analysis/AnalysisResult.h>
@@ -200,6 +201,12 @@ class FakeAppController : public IAppController, // not final: a test may overri
         if (midi_ == nullptr) midi_ = std::make_unique<Midi2DeviceManager>();
         return *midi_;
     }
+    /// A real router over that manager (STU-13: Settings reads its MIDI-CI state).
+    MacroControlRouter& macroRouter() noexcept override
+    {
+        if (router_ == nullptr) router_ = std::make_unique<MacroControlRouter>(*this, midi2DeviceManager());
+        return *router_;
+    }
     /// Non-owning view of NullSessions' in-memory manager, so a screen that
     /// counts the outbox (Settings) reads an empty one instead of null.
     std::shared_ptr<SessionManager> sessionManagerPtr() const noexcept override
@@ -236,6 +243,7 @@ class FakeAppController : public IAppController, // not final: a test may overri
   private:
     RenderJobManager renderJobs_;
     std::unique_ptr<Midi2DeviceManager> midi_;
+    std::unique_ptr<MacroControlRouter> router_; ///< after midi_: destroyed first
 };
 
 } // namespace khensu::test

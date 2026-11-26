@@ -61,7 +61,7 @@ void MetricTileComponent::paint(juce::Graphics& g)
     // Draw value right-aligned, unit below/right
     int valueW = (int)(getWidth() * 0.72f);
     g.drawText(value_, valueArea.removeFromLeft(valueW), juce::Justification::centredLeft, false);
-    g.setFont(KhensuTheme::labelFont(11.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText(unit_, valueArea, juce::Justification::bottomLeft, false);
 

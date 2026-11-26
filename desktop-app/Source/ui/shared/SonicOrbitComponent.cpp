@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/shared/SonicOrbitComponent.cpp
 #include "SonicOrbitComponent.h"
+#include "ReducedMotion.h"
 #include "PanelRunState.h"
 #include <juce_opengl/juce_opengl.h>
 #include "KhensuLookAndFeel.h"
@@ -11,6 +12,7 @@
 #include <cmath>
 #include <numeric>
 #include <khensu/targets/GenreDatabase.h>
+#include "GenreConstellation.h"
 
 namespace khensu {
 
@@ -41,6 +43,14 @@ SonicOrbitComponent::SonicOrbitComponent(IAppController& controller) : controlle
     openGLContext_.attachTo(*this);
 
     loadGenrePointCloud();
+    // The spring-driven look-at point and distance start where the camera is.
+    // Each jumpTo applies all four, so read the start pose first.
+    const float x0 = camera_.targetX, y0 = camera_.targetY, z0 = camera_.targetZ, zoom0 = camera_.zoom;
+    camZoom_.jumpTo(zoom0);
+    camX_.jumpTo(x0);
+    camY_.jumpTo(y0);
+    camZ_.jumpTo(z0);
+    setTooltip(TRANS("Drag to orbit, scroll to zoom. Hover a point to name the nearest genre."));
     startTimer(33); // ~30 FPS animation rate
 }
 
@@ -66,19 +76,84 @@ void SonicOrbitComponent::loadGenrePointCloud()
         // Z: Loudness mapping
         float z = juce::jlimit(-1.0f, 1.0f, (g.lufs_target + 15.0f) / 9.0f);
 
-        // Visual coloring based on genre family
-        juce::Colour colour = KhensuTheme::textTertiary.withAlpha(0.5f);
-        if (g.parent == "pop")
-            colour = KhensuTheme::accentTeal.withAlpha(0.6f);
-        else if (g.parent == "hip-hop")
-            colour = KhensuTheme::accentBlue.withAlpha(0.6f);
-        else if (g.parent == "electronic")
-            colour = KhensuTheme::accentRed.withAlpha(0.6f);
-        else if (g.parent == "rock" || g.parent == "metal")
-            colour = KhensuTheme::accentAmber.withAlpha(0.6f);
-
-        genrePointCloud3D_.push_back({x, y, z, colour, g.name, false});
+        // STU-12: every genre, coloured by family from the categorical viz
+        // palette (resolved again when drawn, so a theme change re-tints it).
+        const int family = constellation::genreFamilyIndex(g.parent);
+        genrePointCloud3D_.push_back({x, y, z, KhensuTheme::vizCategory(family),
+                                      juce::String(juce::CharPointer_UTF8(g.name.c_str())), false, family, g.id});
     }
+}
+
+juce::String SonicOrbitComponent::sessionGenreId() const
+{
+    // The genre the user stated for the session, else the detected one.
+    const auto* session = controller_.getActiveSession();
+    if (session != nullptr && !session->target.primary_genre.empty())
+        return juce::String(session->target.primary_genre);
+    return juce::String(lastAnalysisResult_.python_data.genre_detected);
+}
+
+int SonicOrbitComponent::genreIndexById(const juce::String& id) const
+{
+    if (id.isEmpty()) return -1;
+    const auto key = id.toLowerCase().toStdString();
+    for (size_t i = 0; i < genrePointCloud3D_.size(); ++i)
+        if (genrePointCloud3D_[i].id == key) return static_cast<int>(i);
+    for (size_t i = 0; i < genrePointCloud3D_.size(); ++i) // a detected label may be the display name
+        if (genrePointCloud3D_[i].label.equalsIgnoreCase(id)) return static_cast<int>(i);
+    return -1;
+}
+
+void SonicOrbitComponent::flyTo(float x, float y, float z, float zoom)
+{
+    // Springs (STU-11); with reduced motion ValueAnimator lands at once.
+    camX_.setTarget(x);
+    camY_.setTarget(y);
+    camZ_.setTarget(z);
+    camZoom_.setTarget(juce::jlimit(1.5f, 8.0f, zoom));
+}
+
+void SonicOrbitComponent::applyCameraAnimation()
+{
+    camera_.targetX = camX_.value();
+    camera_.targetY = camY_.value();
+    camera_.targetZ = camZ_.value();
+    camera_.zoom = camZoom_.value();
+    projectPoints();
+    repaint();
+}
+
+void SonicOrbitComponent::flyToMyGenre()
+{
+    const auto id = sessionGenreId();
+    const int idx = genreIndexById(id);
+    if (idx < 0) {
+        flyNote_ = id.isEmpty() ? TRANS("No genre yet - choose one on Intake.")
+                                : TRANS("This genre is not in the catalog.");
+        repaint();
+        return;
+    }
+    flyNote_.clear();
+    if (renderHistoryMode_) setRenderHistoryMode(false);
+    const auto& p = genrePointCloud3D_[static_cast<size_t>(idx)];
+    flyTo(p.x, p.y, p.z, 1.8f);
+}
+
+void SonicOrbitComponent::flyToTrajectory()
+{
+    flyNote_.clear();
+    frameTrajectoryWhenLoaded_ = true;
+    if (renderHistoryMode_)
+        loadRenderHistoryPoints(); // the render tree may have grown since
+    else
+        setRenderHistoryMode(true);
+}
+
+void SonicOrbitComponent::resetView()
+{
+    flyNote_.clear();
+    camera_.pitch = 0.35f;
+    flyTo(0.0f, 0.0f, 0.0f, 3.5f);
 }
 
 void SonicOrbitComponent::setAnalysisData(const AnalysisResult& r)
@@ -145,10 +220,17 @@ void SonicOrbitComponent::setRenderHistoryMode(bool enabled)
 
 void SonicOrbitComponent::loadRenderHistoryPoints()
 {
-    const auto history = controller_.renders().getAppliedRenderHistory();
+    // STU-12: the session's trajectory - the original, then each version on
+    // the render tree's path to the current one (the applied history when
+    // there is no tree). With no renders yet it is the original alone.
+    auto& renders = controller_.renders();
+    std::vector<juce::String> paths = constellation::trajectoryPaths(
+        renders.renderTree(), renders.currentRenderTreeNode(), renders.getAppliedRenderHistory(),
+        controller_.activeSourcePath());
     renderHistoryPoints3D_.clear();
 
-    if (history.empty()) {
+    if (paths.empty()) {
+        frameTrajectoryWhenLoaded_ = false;
         projectPoints();
         repaint();
         return;
@@ -157,7 +239,6 @@ void SonicOrbitComponent::loadRenderHistoryPoints()
     renderHistoryLoading_ = true;
     repaint();
 
-    std::vector<juce::String> paths(history.begin(), history.end());
     fetchQuietly(*this, controller_, [paths]() {
         std::vector<Point3D> pts;
         AudioAnalyzer analyzer;
@@ -178,7 +259,7 @@ void SonicOrbitComponent::loadRenderHistoryPoints()
             const float t = n > 1 ? (float)i / (float)(n - 1) : 1.0f;
             const juce::Colour colour = KhensuTheme::textTertiary.interpolatedWith(KhensuTheme::accentTeal, t);
 
-            pts.push_back({x, y, z, colour, "Render " + juce::String(i + 1), false});
+            pts.push_back({x, y, z, colour, i == 0 ? TRANS("Original") : TRANS("Version") + " " + juce::String(i), false});
         }
         pts.push_back({0.0f, 0.0f, 0.2f, KhensuTheme::accentAmber, "Reference Target", true});
 
@@ -186,9 +267,17 @@ void SonicOrbitComponent::loadRenderHistoryPoints()
     }, [](SonicOrbitComponent& self, std::vector<Point3D>&& pts) {
         self.renderHistoryPoints3D_ = std::move(pts);
         if (self.renderHistoryMode_) {
+            if (self.frameTrajectoryWhenLoaded_) {
+                std::vector<juce::Vector3D<float>> line;
+                for (const auto& p : self.renderHistoryPoints3D_)
+                    if (!p.isReference) line.push_back({p.x, p.y, p.z});
+                const auto f = constellation::framing(line);
+                self.flyTo(f.x, f.y, f.z, f.zoom);
+            }
             self.projectPoints();
             self.repaint();
         }
+        self.frameTrajectoryWhenLoaded_ = false;
     }, [](SonicOrbitComponent& self) { self.renderHistoryLoading_ = false; });
 }
 
@@ -215,11 +304,15 @@ void SonicOrbitComponent::projectPoints()
 
 void SonicOrbitComponent::timerCallback()
 {
-    // Camera3D::getViewMatrix() always looks at the origin - the amber
-    // "Reference Target" point placed there in setAnalysisData()/
-    // loadRenderHistoryPoints() is the fixed object the view orbits around.
+    // The camera orbits its look-at point - the origin, where the amber
+    // "Reference Target" sits, until a fly-to (STU-12) moves it.
     // Auto-rotate only when the user isn't actively panning it themselves.
-    if (!dragging_) {
+    // VIS-7: with reduced motion the orbit holds still (the user can still
+    // drag it) and the timer drops to a slow refresh for new data.
+    const bool still = ui::motion::reduced();
+    const int wantedMs = still ? 500 : 33;
+    if (getTimerInterval() != wantedMs) startTimer(wantedMs);
+    if (!dragging_ && !still) {
         camera_.yaw += 0.006f;
         if (camera_.yaw > juce::MathConstants<float>::twoPi) camera_.yaw -= juce::MathConstants<float>::twoPi;
     }
@@ -248,9 +341,72 @@ void SonicOrbitComponent::mouseUp(const juce::MouseEvent&) { dragging_ = false; 
 
 void SonicOrbitComponent::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel)
 {
-    camera_.zoom = juce::jlimit(1.5f, 8.0f, camera_.zoom - wheel.deltaY * 1.5f);
-    projectPoints();
+    // Through the zoom spring's jumpTo, so a later fly-to starts from here.
+    camZoom_.jumpTo(juce::jlimit(1.5f, 8.0f, camera_.zoom - wheel.deltaY * 1.5f));
+}
+
+void SonicOrbitComponent::mouseMove(const juce::MouseEvent& e)
+{
+    // STU-12: name the genre nearest the pointer.
+    const float w = static_cast<float>(getWidth()), h = static_cast<float>(getHeight());
+    std::vector<juce::Point<float>> screen;
+    screen.reserve(genrePointCloud3D_.size());
+    for (const auto& p : genrePointCloud3D_)
+        screen.push_back(camera_.project({p.x, p.y, p.z}, w, h));
+    const int hit = showPointCloud_ ? constellation::nearestPoint(screen, e.position, 24.0f) : -1;
+    if (hit == hoveredGenre_) return;
+    hoveredGenre_ = hit;
+    if (hit >= 0) {
+        const auto& p = genrePointCloud3D_[static_cast<size_t>(hit)];
+        setTooltip(TRANS("Nearest genre:") + " " + p.label + " (" +
+                   juce::translate(constellation::familyNames()[static_cast<size_t>(p.family)]) + ")");
+    } else {
+        setTooltip(TRANS("Drag to orbit, scroll to zoom. Hover a point to name the nearest genre."));
+    }
     repaint();
+}
+
+void SonicOrbitComponent::mouseExit(const juce::MouseEvent&)
+{
+    if (hoveredGenre_ < 0) return;
+    hoveredGenre_ = -1;
+    repaint();
+}
+
+void SonicOrbitComponent::paintFamilyLegend(juce::Graphics& g, juce::Rectangle<int> area) const
+{
+    // One swatch per family, wrapped over as many rows as the width needs,
+    // growing upward from the bottom edge of `area`.
+    g.setFont(KhensuTheme::labelFont(type::caption));
+    const auto& names = constellation::familyNames();
+    constexpr int rowH = 14;
+    auto itemWidth = [&g](const juce::String& label) {
+        return 22 + juce::roundToInt(juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), label));
+    };
+    int rows = 1, x = area.getX();
+    for (const auto* n : names) {
+        const int itemW = itemWidth(juce::translate(n));
+        if (x + itemW > area.getRight() && x > area.getX()) {
+            ++rows;
+            x = area.getX();
+        }
+        x += itemW;
+    }
+    x = area.getX();
+    int y = area.getBottom() - rowH * rows;
+    for (int slot = 0; slot < constellation::kFamilyCount; ++slot) {
+        const auto label = juce::translate(names[static_cast<size_t>(slot)]);
+        const int itemW = itemWidth(label);
+        if (x + itemW > area.getRight() && x > area.getX()) {
+            x = area.getX();
+            y += rowH;
+        }
+        g.setColour(KhensuTheme::vizCategory(slot));
+        g.fillEllipse(static_cast<float>(x), static_cast<float>(y) + 3.5f, 7.0f, 7.0f);
+        g.setColour(KhensuTheme::textSecondary);
+        g.drawText(label, x + 10, y, itemW - 10, rowH, juce::Justification::centredLeft, false);
+        x += itemW;
+    }
 }
 
 void SonicOrbitComponent::newOpenGLContextCreated()
@@ -375,8 +531,8 @@ void SonicOrbitComponent::renderOpenGL()
         std::vector<Vertex> cloudVerts;
         cloudVerts.reserve(genrePointCloud3D_.size());
         for (const auto& p : genrePointCloud3D_) {
-            cloudVerts.push_back(
-                {p.x, p.y, p.z, p.colour.getFloatRed(), p.colour.getFloatGreen(), p.colour.getFloatBlue(), 0.3f});
+            const auto c = KhensuTheme::vizCategory(p.family); // STU-12: family colour, current theme
+            cloudVerts.push_back({p.x, p.y, p.z, c.getFloatRed(), c.getFloatGreen(), c.getFloatBlue(), 0.55f});
         }
         drawVertices(cloudVerts, GL_POINTS, 4.0f, shaderProgram_.get());
     }
@@ -420,7 +576,7 @@ void SonicOrbitComponent::paint(juce::Graphics& g)
     const auto& active = renderHistoryMode_ ? renderHistoryPoints3D_ : points3D_;
     if (active.empty()) {
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(KhensuTheme::bodyFont(12.0f));
+        g.setFont(KhensuTheme::bodyFont(type::secondary));
         g.drawText(renderHistoryLoading_ ? "Analyzing render history..."
                    : renderHistoryMode_  ? "No applied renders yet in this session."
                                          : "Awaiting track analysis...",
@@ -429,7 +585,7 @@ void SonicOrbitComponent::paint(juce::Graphics& g)
     }
 
     // HUD Header Title
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary.withAlpha(0.8f));
     g.drawText(renderHistoryMode_ ? "RENDER HISTORY (GL 3D)" : "TIMBRE SPACE (GL 3D)",
                b.removeFromTop(20).reduced(6, 0), juce::Justification::centredLeft, false);
@@ -439,7 +595,7 @@ void SonicOrbitComponent::paint(juce::Graphics& g)
     auto pY = camera_.project({0.0f, 1.2f, 0.0f}, w, h);
     auto pZ = camera_.project({0.0f, 0.0f, 1.2f}, w, h);
 
-    g.setFont(KhensuTheme::labelFont(8.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText("ST WIDTH", (int)pX.x - 25, (int)pX.y - 6, 50, 12, juce::Justification::centred);
     g.drawText("DYNAMICS", (int)pY.x - 25, (int)pY.y - 6, 50, 12, juce::Justification::centred);
@@ -471,9 +627,37 @@ void SonicOrbitComponent::paint(juce::Graphics& g)
         }
 
         // Draw HUD Labels next to projected points
-        g.setFont(KhensuTheme::labelFont(8.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(p.isReference ? KhensuTheme::accentAmber : KhensuTheme::textPrimary.withAlpha(0.85f));
         g.drawText(p.label, (int)(p.x - 50.0f), (int)(p.y + 6.0f), 100, 10, juce::Justification::centred);
+    }
+
+    // STU-12: the session's genre ringed, the hovered genre named, and the
+    // family legend; a fly-to that could not go says why.
+    if (showPointCloud_) {
+        auto ring = [&](int idx, juce::Colour c, bool label) {
+            if (idx < 0 || idx >= static_cast<int>(genrePointCloud3D_.size())) return;
+            const auto& gp = genrePointCloud3D_[static_cast<size_t>(idx)];
+            const auto sp = camera_.project({gp.x, gp.y, gp.z}, w, h);
+            g.setColour(c);
+            g.drawEllipse(sp.x - 6.0f, sp.y - 6.0f, 12.0f, 12.0f, 1.5f);
+            if (label) {
+                g.setFont(KhensuTheme::labelFont(type::caption));
+                g.drawText(gp.label, juce::roundToInt(sp.x) - 60, juce::roundToInt(sp.y) - 20, 120, 12,
+                           juce::Justification::centred, false);
+            }
+        };
+        ring(genreIndexById(sessionGenreId()), KhensuTheme::vizTrack, true);
+        if (hoveredGenre_ >= 0)
+            ring(hoveredGenre_, KhensuTheme::vizCategory(genrePointCloud3D_[static_cast<size_t>(hoveredGenre_)].family),
+                 true);
+        paintFamilyLegend(g, getLocalBounds().reduced(6, 4).withTrimmedBottom(14));
+    }
+    if (flyNote_.isNotEmpty()) {
+        g.setFont(KhensuTheme::labelFont(type::caption));
+        g.setColour(KhensuTheme::textSecondary);
+        g.drawText(flyNote_, getLocalBounds().reduced(6, 0).withTrimmedTop(20).removeFromTop(14),
+                   juce::Justification::centredLeft, false);
     }
 
 #if JUCE_DEBUG
@@ -485,7 +669,7 @@ void SonicOrbitComponent::paint(juce::Graphics& g)
         juce::String timing = "GL " + juce::String(frameTimer_.getAverageFrameMs(), 1) + "ms avg / " +
                               juce::String(frameTimer_.getPeakFrameMs(), 1) + "ms peak (" +
                               juce::String(juce::roundToInt(frameTimer_.getAverageFps())) + " fps)";
-        g.setFont(KhensuTheme::labelFont(8.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textTertiary.withAlpha(0.6f));
         g.drawText(timing, getLocalBounds().removeFromBottom(14).reduced(6, 0), juce::Justification::centredRight,
                    false);

@@ -17,6 +17,10 @@ signal for the denoiser, and ``noise_floor``: the denoiser's reduction of
 the hiss (the octave bands from 4 kHz up, where the signal is hiss only),
 which the C++ test checks the native render reproduces within 0.1 dB.
 
+ENH-6 added the keyed DynamicEQ: ``key_signals`` are recipes for key signals
+(a stand-in for a vocal stem) and a case with ``key_signal`` renders its chain
+with that key (the service's ``render_key``, the native ``keyPath``).
+
 Run from the repository root with the service venv:
 
     local-services/.venv/Scripts/python scripts/gen_render_parity_fixtures.py
@@ -122,6 +126,58 @@ CHAINS = [
         {"effect": "StereoWidener", "parameters": {"width": 0.8}},
         {"effect": "Gain", "parameters": {"gain_db": 2.0}},
         {"effect": "Limiter", "parameters": {"threshold_db": -1.0}}]},
+    # ENH-6: the stages the native renderer gained (DynamicEQ self-keyed
+    # here; KEYED_CASES below key it on a second signal).
+    {"name": "dynamic_eq_bell", "chain": [
+        {"effect": "DynamicEQ", "parameters": {"frequency_hz": 1000.0, "q": 1.0, "threshold_db": -40.0,
+                                               "ratio": 4.0, "attack_ms": 5.0, "release_ms": 120.0,
+                                               "max_reduction_db": 9.0}}]},
+    {"name": "dynamic_eq_narrow", "chain": [
+        {"effect": "DynamicEQ", "parameters": {"frequency_hz": 440.0, "q": 6.0, "threshold_db": -36.0,
+                                               "ratio": 8.0, "attack_ms": 2.0, "release_ms": 60.0}}]},
+    # ENH-6: a shelf-shaped dynamic EQ (shape 2: high shelf from 2 kHz).
+    {"name": "dynamic_eq_high_shelf", "chain": [
+        {"effect": "DynamicEQ", "parameters": {"frequency_hz": 2000.0, "shape": 2.0, "threshold_db": -40.0,
+                                               "ratio": 4.0, "attack_ms": 5.0, "release_ms": 120.0,
+                                               "max_reduction_db": 9.0}}]},
+    {"name": "multiband_compressor", "chain": [
+        {"effect": "MultibandCompressor", "parameters": {
+            "low_crossover_hz": 150.0, "high_crossover_hz": 2500.0,
+            "low_threshold_db": -30.0, "low_ratio": 4.0, "mid_threshold_db": -30.0, "mid_ratio": 3.0,
+            "high_threshold_db": -30.0, "high_ratio": 2.0, "attack_ms": 5.0, "release_ms": 100.0,
+            "makeup_db": 2.0}}]},
+    {"name": "mid_side", "chain": [
+        {"effect": "MidSideProcessor", "parameters": {"mid_gain_db": -1.5, "side_gain_db": 3.0}}]},
+    {"name": "exciter", "chain": [
+        {"effect": "Exciter", "parameters": {"frequency_hz": 4000.0, "drive": 5.0, "even_harmonics": 0.4,
+                                             "mix": 0.4}}]},
+    {"name": "bass_mono_maker", "chain": [{"effect": "BassMonoMaker", "parameters": {"crossover_hz": 150.0}}]},
+    {"name": "noise_gate", "chain": [
+        {"effect": "NoiseGate", "parameters": {"threshold_db": -12.0, "ratio": 4.0, "attack_ms": 1.0,
+                                               "release_ms": 80.0}}]},
+]
+
+# ENH-6: key signals (a vocal-like stand-in: a 1 kHz tone plus noise that is
+# loud where the track is quiet and silent where it is loud), and the cases
+# rendered with one as the DynamicEQ's key. The key is mono, at the input's
+# rate and length, so the service and the native renderer read it the same way.
+KEY_SIGNALS = [
+    {"name": "key_vocal_mono_44k1", "sample_rate": 44100, "duration_sec": 4.0,
+     "channels": [{"tones": [{"freq": 1000.0, "amp": 0.3}],
+                   "noise_seed": 31, "noise_amp": 0.1,
+                   "gain_steps": [[0.0, 1.0], [1.0, 0.0], [2.5, 1.0]]}]},
+]
+
+KEYED_CASES = [
+    {"signal": "noise_tones_stereo_44k1", "key_signal": "key_vocal_mono_44k1", "name": "dynamic_eq_keyed_bell",
+     "chain": [{"effect": "DynamicEQ", "parameters": {"frequency_hz": 1000.0, "q": 1.0, "threshold_db": -30.0,
+                                                      "ratio": 4.0, "attack_ms": 5.0, "release_ms": 120.0,
+                                                      "max_reduction_db": 9.0, "use_key": 1.0}}]},
+    {"signal": "noise_tones_stereo_44k1", "key_signal": "key_vocal_mono_44k1",
+     "name": "dynamic_eq_keyed_low_shelf",
+     "chain": [{"effect": "DynamicEQ", "parameters": {"frequency_hz": 1500.0, "shape": 1.0, "threshold_db": -30.0,
+                                                      "ratio": 4.0, "attack_ms": 5.0, "release_ms": 120.0,
+                                                      "max_reduction_db": 6.0, "use_key": 1.0}}]},
 ]
 
 # The denoiser's job, measured: the hiss bands (no tone above 4 kHz).
@@ -132,10 +188,12 @@ def _finite(v):
     return None if v is None or not np.isfinite(v) else float(v)
 
 
-def render(x: np.ndarray, sr: int, chain: list[dict]) -> np.ndarray:
-    """The service's render of ``chain`` (apply_pedalboard_chain minus file IO)."""
+def render(x: np.ndarray, sr: int, chain: list[dict], key: np.ndarray | None = None) -> np.ndarray:
+    """The service's render of ``chain`` (apply_pedalboard_chain minus file IO);
+    ``key`` is the render key (load_render_key's aligned signal)."""
     audio = x.astype(np.float64) if x.shape[0] > 1 else x[0].astype(np.float64)
-    processed, _applied, skipped, _h, _s = dsp._run_serial_chain(audio, sr, chain)
+    render_key = None if key is None else dsp._align_key(key.astype(np.float64), audio.shape[-1])
+    processed, _applied, skipped, _h, _s = dsp._run_serial_chain(audio, sr, chain, render_key=render_key)
     assert not skipped, skipped
     processed = dsp._apply_output_gain(processed, False, dsp.chain_output_ceiling_dbtp(chain))
     return np.atleast_2d(processed)
@@ -170,6 +228,15 @@ def build() -> dict:
             if spec["name"] == NOISE_FLOOR["signal"] and chain["name"] == NOISE_FLOOR["chain_name"]:
                 noise_floor["input_floor_db"] = floor_db(x.astype(np.float64), sr, NOISE_FLOOR["from_hz"])
                 noise_floor["output_floor_db"] = floor_db(y, sr, NOISE_FLOOR["from_hz"])
+    by_name = {spec["name"]: spec for spec in SIGNALS}
+    keys = {spec["name"]: spec for spec in KEY_SIGNALS}
+    for case in KEYED_CASES:
+        spec, key_spec = by_name[case["signal"]], keys[case["key_signal"]]
+        sr = int(spec["sample_rate"])
+        assert int(key_spec["sample_rate"]) == sr
+        y = render(_meters.synthesize(spec), sr, case["chain"], key=_meters.synthesize(key_spec))
+        cases.append({"signal": case["signal"], "key_signal": case["key_signal"], "chain_name": case["name"],
+                      "chain": case["chain"], "expected": measure(y, sr)})
     return {
         "generator": "scripts/gen_render_parity_fixtures.py",
         "loudness_tolerance": 0.05,
@@ -177,6 +244,7 @@ def build() -> dict:
         "true_peak_tolerance_db": 0.1,
         "noise_floor_tolerance_db": 0.1,
         "signals": SIGNALS,
+        "key_signals": KEY_SIGNALS,
         "cases": cases,
         "noise_floor": noise_floor,
     }

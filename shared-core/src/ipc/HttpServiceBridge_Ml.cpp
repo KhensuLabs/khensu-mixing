@@ -83,6 +83,7 @@ std::vector<std::pair<juce::String, juce::String>> MlApi::diagnosticsSnapshots()
         {"security-events.json", routes::get_diagnostics_security_events.path},
         {"analysis-cache.json", routes::get_analysis_cache.path},
         {"model-registry.json", routes::get_analyze_models_registry.path},
+        {"genre-examples.json", routes::get_genre_examples.path}, // AUTO-4: counts only, no audio
     };
     std::vector<std::pair<juce::String, juce::String>> out;
     for (const auto& [name, path] : wanted) {
@@ -90,6 +91,31 @@ std::vector<std::pair<juce::String, juce::String>> MlApi::diagnosticsSnapshots()
         out.emplace_back(name, res.is_ok() ? juce::JSON::toString(res.value()) : juce::String());
     }
     return out;
+}
+
+khensu::Result<juce::var, BridgeError> MlApi::diagnosticsMemory()
+{
+    return getJson(khensu::api::routes::get_diagnostics_memory.path, objectResponse(5000));
+}
+
+khensu::Result<juce::var, BridgeError> MlApi::diagnosticsQueues()
+{
+    return getJson(khensu::api::routes::get_diagnostics_queues.path, objectResponse(5000));
+}
+
+khensu::Result<juce::var, BridgeError> MlApi::diagnosticsSecurityEvents()
+{
+    return getJson(khensu::api::routes::get_diagnostics_security_events.path, objectResponse(5000));
+}
+
+khensu::Result<juce::var, BridgeError> MlApi::analysisCacheStats()
+{
+    return getJson(khensu::api::routes::get_analysis_cache.path, objectResponse(10000));
+}
+
+khensu::Result<juce::var, BridgeError> MlApi::modelRegistry()
+{
+    return getJson(khensu::api::routes::get_analyze_models_registry.path, objectResponse(5000));
 }
 
 khensu::Result<juce::var, BridgeError> MlApi::tasteModelStatus()

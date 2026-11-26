@@ -2,6 +2,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "KhensuTheme.h" // ThemeListener
+#include "PaletteSearch.h"
 #include <khensu/common/ThreadContext.h>
 #include <vector>
 #include <functional>
@@ -21,6 +22,9 @@ class CommandPaletteOverlay final : public juce::Component {
         juce::String category;        ///< right-aligned tag, e.g. "Go" / "Do"
         juce::String keywords;        ///< extra searchable text (not shown)
         std::function<void()> action; ///< run on selection
+        /// STU-7: a command, or a card / finding / genre to jump to - results
+        /// are grouped and capped by kind (PaletteSearch.h).
+        palette_search::Kind kind = palette_search::Kind::Command;
     };
 
     explicit CommandPaletteOverlay(std::vector<Command> commands);

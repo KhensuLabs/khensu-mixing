@@ -270,6 +270,26 @@ void PanelCard::mouseDrag(const juce::MouseEvent& e)
         container->startDragging(dragId_, this);
 }
 
+void PanelCard::mouseMove(const juce::MouseEvent& e)
+{
+    cursorHovered_ = true;
+    cursorPos_ = e.position;
+    repaint();
+}
+
+void PanelCard::mouseEnter(const juce::MouseEvent& e)
+{
+    cursorHovered_ = true;
+    cursorPos_ = e.position;
+    repaint();
+}
+
+void PanelCard::mouseExit(const juce::MouseEvent&)
+{
+    cursorHovered_ = false;
+    repaint();
+}
+
 juce::Rectangle<int> PanelCard::bodyArea() const
 {
     auto area = getLocalBounds().withTrimmedTop(kHeaderH).reduced(12, 8);
@@ -294,6 +314,13 @@ void PanelCard::paint(juce::Graphics& g)
                                           root->getLocalArea(this, getLocalBounds()));
     else // not parented into a real window yet
         KhensuLookAndFeel::drawGlassPanel(g, getLocalBounds(), GlassPanelVariant::Default);
+
+    // LG-9: interactive cursor-tracking specular sheen across the card's glass rim.
+    if (cursorHovered_) {
+        const auto b = getLocalBounds().toFloat().reduced(0.5f);
+        const float radius = juce::jmin(12.0f, juce::jmin(b.getWidth(), b.getHeight()) * 0.35f);
+        KhensuLookAndFeel::drawCursorSheen(g, b, radius, cursorPos_, 0.85f);
+    }
 
     // Section header label
     auto headerBounds = getLocalBounds().removeFromTop(kHeaderH).reduced(KhensuTheme::sp4, 0);
@@ -323,7 +350,7 @@ void PanelCard::paint(juce::Graphics& g)
         g.setColour(dotColour);
         g.fillEllipse(dotArea.toFloat());
         chipArea.removeFromLeft(4);
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(dotColour);
         g.drawText(label, chipArea, juce::Justification::centredLeft, true);
     }

@@ -18,15 +18,15 @@ void LyricIntelligibilityPanel::WordRow::paint(juce::Graphics& g)
     const int min = (int)startSec / 60, sec = (int)startSec % 60;
     juce::String timeStr = juce::String(min) + ":" + juce::String(sec).paddedLeft('0', 2);
 
-    g.setFont(juce::Font(juce::FontOptions{"Consolas", 10.0f, juce::Font::plain}));
+    g.setFont(KhensuTheme::monoFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText(timeStr, b.removeFromLeft(46), juce::Justification::centredLeft, false);
 
-    g.setFont(khensu::KhensuTheme::uiFont(11.0f, likelyMasked ? juce::Font::bold : juce::Font::plain));
+    g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, likelyMasked ? juce::Font::bold : juce::Font::plain));
     g.setColour(likelyMasked ? KhensuTheme::accentAmber : KhensuTheme::textSecondary);
     g.drawText(word, b.removeFromLeft(b.getWidth() - 60), juce::Justification::centredLeft, false);
 
-    g.setFont(juce::Font(juce::FontOptions{"Consolas", 9.5f, juce::Font::plain}));
+    g.setFont(KhensuTheme::monoFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText(juce::String(maskingRatio, 2) + "x", b, juce::Justification::centredRight, false);
 }
@@ -37,7 +37,7 @@ void LyricIntelligibilityPanel::HeatStrip::paint(juce::Graphics& g)
     g.setColour(KhensuTheme::bgSurface);
     g.fillRoundedRectangle(b, 3.0f);
     if (segs.empty() || duration <= 0.0f) {
-        g.setFont(KhensuTheme::labelFont(8.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText("INTELLIGIBILITY MAP", b.toNearestInt(), juce::Justification::centred, false);
         return;
@@ -76,7 +76,7 @@ LyricIntelligibilityPanel::LyricIntelligibilityPanel(IAppController& c) : PanelC
     analyzeButton_.onClick = [this] { runAnalysis(); };
     addAndMakeVisible(analyzeButton_);
 
-    run_.label().setFont(KhensuTheme::bodyFont(11.0f));
+    run_.label().setFont(KhensuTheme::bodyFont(type::caption));
     run_.onRetry([this] { runAnalysis(); });
     run_.setIdle(TRANS("Load audio, then click Analyze Lyrics."));
 

@@ -192,6 +192,10 @@ _PARAM_CLAMPS: dict[str, dict[str, tuple[float, float]]] = {
         "attack_ms": (0.1, 200.0),
         "release_ms": (5.0, 2000.0),
         "max_reduction_db": (0.0, 24.0),
+        # ENH-6: 0 bell, 1 low shelf, 2 high shelf; 1 = detect on the render's
+        # key signal (a stem) - the native stage's semantics.
+        "shape": (0.0, 2.0),
+        "use_key": (0.0, 1.0),
     },
     "Doubler": {
         "delay_ms": (10.0, 60.0),

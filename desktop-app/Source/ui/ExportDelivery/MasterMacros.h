@@ -82,4 +82,115 @@ inline Chain apply(const Chain& base, const Macros& m)
     return out;
 }
 
+// ---- ENH-5: mastering styles and saved macro sets ---------------------------
+
+/// The mastering agent's style (the service's `style`): Balanced is the
+/// genre's own targets, exactly the agent before styles existed.
+enum class Style { Warm = 0, Balanced, Open, Loud };
+
+inline const char* styleId(Style s) noexcept
+{
+    switch (s) {
+    case Style::Warm: return "warm";
+    case Style::Open: return "open";
+    case Style::Loud: return "loud";
+    case Style::Balanced: break;
+    }
+    return "balanced";
+}
+
+inline Style styleFromId(const juce::String& id) noexcept
+{
+    if (id == "warm") return Style::Warm;
+    if (id == "open") return Style::Open;
+    if (id == "loud") return Style::Loud;
+    return Style::Balanced;
+}
+
+/// A named set: the style, its strength (0..1) and the five macros.
+struct MacroSet {
+    juce::String name;
+    Style style = Style::Balanced;
+    float strength = 0.5f;
+    Macros macros;
+};
+
+/// The preference key the saved sets live under (one JSON object, so a
+/// delete is a rewrite and needs no store API of its own).
+inline constexpr const char* kSetsPreferenceKey = "master_macro_sets";
+
+inline juce::var toVar(const MacroSet& s)
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty("style", juce::String(styleId(s.style)));
+    o->setProperty("strength", s.strength);
+    o->setProperty("loudness_db", s.macros.loudnessDb);
+    o->setProperty("tone", s.macros.tone);
+    o->setProperty("width_pct", s.macros.widthPct);
+    o->setProperty("punch", s.macros.punch);
+    o->setProperty("ceiling_dbtp", s.macros.ceilingDbtp);
+    return juce::var(o);
+}
+
+inline MacroSet fromVar(const juce::String& name, const juce::var& v)
+{
+    MacroSet s;
+    s.name = name;
+    auto num = [&v](const char* key, float def, float lo, float hi) {
+        const auto x = v[key];
+        const float f = (x.isDouble() || x.isInt() || x.isInt64()) ? static_cast<float>(static_cast<double>(x)) : def;
+        return std::clamp(f, lo, hi);
+    };
+    s.style = styleFromId(v["style"].toString());
+    s.strength = num("strength", 0.5f, 0.0f, 1.0f);
+    s.macros.loudnessDb = num("loudness_db", 0.0f, -6.0f, 6.0f);
+    s.macros.tone = num("tone", 1.0f, 0.0f, 1.5f);
+    s.macros.widthPct = num("width_pct", 0.0f, -50.0f, 50.0f);
+    s.macros.punch = num("punch", 1.0f, 0.0f, 1.5f);
+    s.macros.ceilingDbtp = num("ceiling_dbtp", -1.0f, -3.0f, -0.1f);
+    return s;
+}
+
+/// Every saved set in `json` (the preference value), sorted by name.
+inline std::vector<MacroSet> parseSets(const juce::String& json)
+{
+    std::vector<MacroSet> out;
+    const auto v = juce::JSON::parse(json);
+    if (auto* obj = v.getDynamicObject())
+        for (const auto& p : obj->getProperties())
+            if (p.name.toString().trim().isNotEmpty()) out.push_back(fromVar(p.name.toString(), p.value));
+    std::sort(out.begin(), out.end(),
+              [](const MacroSet& a, const MacroSet& b) { return a.name.compareIgnoreCase(b.name) < 0; });
+    return out;
+}
+
+inline juce::String serializeSets(const std::vector<MacroSet>& sets)
+{
+    auto* o = new juce::DynamicObject();
+    for (const auto& s : sets)
+        if (s.name.trim().isNotEmpty()) o->setProperty(s.name.trim(), toVar(s));
+    return juce::JSON::toString(juce::var(o), true);
+}
+
+/// `sets` with `set` added, replacing one of the same name (case-insensitive).
+inline std::vector<MacroSet> withSet(std::vector<MacroSet> sets, MacroSet set)
+{
+    set.name = set.name.trim();
+    sets.erase(std::remove_if(sets.begin(), sets.end(),
+                              [&set](const MacroSet& s) { return s.name.equalsIgnoreCase(set.name); }),
+               sets.end());
+    sets.push_back(std::move(set));
+    std::sort(sets.begin(), sets.end(),
+              [](const MacroSet& a, const MacroSet& b) { return a.name.compareIgnoreCase(b.name) < 0; });
+    return sets;
+}
+
+inline std::vector<MacroSet> withoutSet(std::vector<MacroSet> sets, const juce::String& name)
+{
+    sets.erase(std::remove_if(sets.begin(), sets.end(),
+                              [&name](const MacroSet& s) { return s.name.equalsIgnoreCase(name.trim()); }),
+               sets.end());
+    return sets;
+}
+
 } // namespace khensu::master_macros

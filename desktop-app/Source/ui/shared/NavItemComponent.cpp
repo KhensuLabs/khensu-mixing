@@ -62,22 +62,28 @@ void NavItemComponent::paint(juce::Graphics& g)
     auto b = getLocalBounds();
     // The row's own surface, inset so neighbouring rows don't touch (UX2-4).
     const auto row = b.toFloat().reduced(static_cast<float>(KhensuTheme::sp2), 2.0f);
-    constexpr float radius = 6.0f;
+    const float radius = juce::jmin(10.0f, row.getHeight() * 0.42f);
 
-    // Hover: a calm tint of the row, no outline.
-    if (hovered_ && !active_ && isEnabled()) {
-        g.setColour(KhensuTheme::textPrimary.withAlpha(0.05f));
-        g.fillRoundedRectangle(row, radius);
+    // LG-9: frosted hover tint + interactive cursor-tracking sheen.
+    if (hovered_ && isEnabled()) {
+        if (!active_) {
+            g.setColour(KhensuTheme::textPrimary.withAlpha(0.055f));
+            g.fillRoundedRectangle(row, radius);
+        }
+        KhensuLookAndFeel::drawCursorSheen(g, row, radius, cursorPos_, active_ ? 0.65f : 0.9f);
     }
 
-    // Active (UI-3 / UX2-4): a quiet raised row and the one accent - a 3 px
-    // teal bar at the sidebar's edge and the icon in teal. The label stays in
-    // primary text (bold), so the accent marks the place, not the words.
-    if (active_) {
-        g.setColour(KhensuTheme::bgOverlay);
+    // LG-11: when parented inside SidebarComponent, the sidebar paints the
+    // spring-animated sliding liquid-glass capsule behind us. When standalone
+    // (e.g. unit tests), draw the liquid capsule directly so it stays complete.
+    if (active_ && getParentComponent() == nullptr) {
+        juce::ColourGradient capsuleFill(KhensuTheme::accentTeal.withAlpha(0.18f), row.getX(), row.getCentreY(),
+                                         KhensuTheme::bgOverlay.withAlpha(0.75f), row.getRight(), row.getCentreY(),
+                                         false);
+        g.setGradientFill(capsuleFill);
         g.fillRoundedRectangle(row, radius);
         g.setColour(KhensuTheme::accentTeal);
-        g.fillRoundedRectangle(0.0f, row.getY() + 7.0f, 3.0f, row.getHeight() - 14.0f, 1.5f);
+        g.fillRoundedRectangle(1.0f, row.getY() + 6.0f, 3.0f, row.getHeight() - 12.0f, 1.5f);
     }
 
     const juce::Colour textColour = !isEnabled() ? KhensuTheme::textTertiary

@@ -26,7 +26,7 @@ class CardFindingRow final : public juce::Component {
     CardFindingRow(IAppController& controller, std::vector<std::string> codes)
         : controller_(controller), codes_(std::move(codes))
     {
-        label_.setFont(KhensuTheme::labelFont(11.0f));
+        label_.setFont(KhensuTheme::labelFont(type::caption));
         label_.setMinimumHorizontalScale(0.8f);
         addAndMakeVisible(label_);
         hearButton_.setTooltip(TRANS("Loop the part of the track this finding is about."));

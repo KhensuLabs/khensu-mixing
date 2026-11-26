@@ -29,6 +29,17 @@ StreamingNormalizationPanel::StreamingNormalizationPanel(IAppController& c) : Pa
 
     analyzeButton_.onClick = [this] { runAnalysis(); };
     addAndMakeVisible(analyzeButton_);
+    // VIS-8: the table reads as one image with a text summary.
+    summary_.setTitle(TRANS("Streaming loudness preview"));
+    summary_.describe = [this] {
+        if (rows_.empty()) return measurable_ ? TRANS("Streaming loudness preview: not run yet.") : note_;
+        juce::StringArray parts;
+        for (const auto& r : rows_)
+            parts.add(r.name + " " + (r.gain >= 0 ? "+" : "") + juce::String(r.gain, 1) + " dB, " + TRANS("headroom") + " " +
+                      juce::String(r.headroom, 1) + " dB" + (r.limiter ? " " + TRANS("limited") : juce::String()));
+        return TRANS("Playback gain per platform") + ": " + parts.joinIntoString("; ") + ".";
+    };
+    addAndMakeVisible(summary_);
     run_.onRetry([this] { runAnalysis(); });
     run_.setIdle(TRANS("Runs at intake; re-run any time."));
 }
@@ -98,7 +109,7 @@ void StreamingNormalizationPanel::paint(juce::Graphics& g)
     b.removeFromTop(28);
 
     auto header = b.removeFromTop(16);
-    g.setFont(KhensuTheme::labelFont(9.0f).boldened());
+    g.setFont(KhensuTheme::labelFont(type::caption).boldened());
     g.setColour(KhensuTheme::textSecondary);
     g.drawText("PLATFORM", header.removeFromLeft(120), juce::Justification::centredLeft, false);
     g.drawText("GAIN", header.removeFromLeft(64), juce::Justification::centredRight, false);
@@ -109,21 +120,21 @@ void StreamingNormalizationPanel::paint(juce::Graphics& g)
     const int rowH = juce::jmax(15, b.getHeight() / (int)juce::jmax((size_t)1, rows_.size()));
     for (const auto& r : rows_) {
         auto row = b.removeFromTop(rowH);
-        g.setFont(KhensuTheme::labelFont(10.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(r.name, row.removeFromLeft(120), juce::Justification::centredLeft, false);
-        g.setFont(KhensuTheme::monoFont(9.5f));
-        g.setColour(r.gain < -0.05f  ? KhensuTheme::accentAmber
-                    : r.gain > 0.05f ? KhensuTheme::accentTeal
-                                     : KhensuTheme::textTertiary);
-        g.drawText((r.gain >= 0 ? "+" : "") + juce::String(r.gain, 1), row.removeFromLeft(64),
+        g.setFont(KhensuTheme::monoFont(type::caption));
+        // VIS-4: the gain is data (signed, neutral); the headroom verdict is
+        // written ("OK" / "clips" / "limited") - red marks only a problem.
+        g.setColour(std::abs(r.gain) < 0.05f ? KhensuTheme::textTertiary : KhensuTheme::textPrimary);
+        g.drawText((r.gain >= 0 ? "+" : "") + juce::String(r.gain, 1) + " dB", row.removeFromLeft(64),
                    juce::Justification::centredRight, false);
         g.setColour(KhensuTheme::textSecondary);
         g.drawText(juce::String(r.lufs, 1), row.removeFromLeft(58), juce::Justification::centredRight, false);
         const bool bad = r.headroom < 0.0f || r.limiter;
-        g.setColour(bad ? KhensuTheme::accentRed : KhensuTheme::accentGreen);
-        g.drawText((r.limiter ? juce::String("LIM ") : juce::String()) + (r.headroom >= 0 ? "+" : "") +
-                       juce::String(r.headroom, 1) + " dB",
+        g.setColour(bad ? KhensuTheme::accentRed : KhensuTheme::textSecondary);
+        g.drawText((r.headroom >= 0 ? "+" : "") + juce::String(r.headroom, 1) + " dB " +
+                       (r.limiter ? TRANS("limited") : bad ? TRANS("clips") : TRANS("OK")),
                    row, juce::Justification::centredRight, false);
     }
 }
@@ -139,6 +150,7 @@ void StreamingNormalizationPanel::resized()
     auto errArea = bodyArea();
     errArea.removeFromTop(28);
     run_.errorState().setBounds(errArea);
+    summary_.setBounds(errArea);
 }
 
 } // namespace khensu

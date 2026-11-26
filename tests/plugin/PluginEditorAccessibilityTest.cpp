@@ -78,11 +78,13 @@ TEST_CASE("Copilot editor exposes a deterministic header-to-footer focus order",
     REQUIRE(iBypass >= 0);
     CHECK(iLoad < iBypass);
 
-    // Tab buttons live inside the tabs container and follow the header.
-    auto& bar = dynamic_cast<juce::TabbedComponent*>(tabs)->getTabbedButtonBar();
-    REQUIRE(bar.getNumTabs() >= 5);
-    const int iFirstTab = indexOf(order, bar.getTabButton(0));
-    const int iLastTab = indexOf(order, bar.getTabButton(bar.getNumTabs() - 1));
+    // Section buttons (VIS-9: segments) live inside the tabs container and
+    // follow the header.
+    auto* sections = dynamic_cast<khensu::PluginSegmentedTabs*>(tabs);
+    REQUIRE(sections != nullptr);
+    REQUIRE(sections->getNumTabs() >= 5);
+    const int iFirstTab = indexOf(order, sections->getSegmentButton(0));
+    const int iLastTab = indexOf(order, sections->getSegmentButton(sections->getNumTabs() - 1));
     REQUIRE(iFirstTab >= 0);
     CHECK(iBypass < iFirstTab);
     CHECK(iFirstTab < iLastTab);
@@ -203,10 +205,61 @@ TEST_CASE("Apply reports inline with Undo instead of a dialog in the host (UX-10
     CHECK(ed.applyStripTextForTesting().startsWith("Undone"));
 }
 
-TEST_CASE("The copilot editor has five tabs (UX-18)", "[plugin][ux18]")
+TEST_CASE("The copilot editor's sections are named like the desktop (UX-18, VIS-9)", "[plugin][ux18][vis9]")
 {
     EditorFixture f;
-    auto* tabs = dynamic_cast<juce::TabbedComponent*>(f.editor->findChildWithID("tabs"));
+    auto* tabs = dynamic_cast<khensu::PluginSegmentedTabs*>(f.editor->findChildWithID("tabs"));
     REQUIRE(tabs != nullptr);
-    CHECK(tabs->getTabNames() == juce::StringArray{"Suggest", "DSP", "Plugins", "Mix", "Chat"});
+    // Segmented sections, not a JUCE TabbedComponent; "Issues" as on the
+    // desktop, and "Mix Hub" so it does not read as the desktop's Mix / Master.
+    CHECK(tabs->getTabNames() == juce::StringArray{"Issues", "DSP", "Plugins", "Mix Hub", "Chat", "Reference"});
+    CHECK(f.editor->getTabNames() == tabs->getTabNames());
+    // A click on a segment selects its section.
+    auto* hub = tabs->getSegmentButton(3);
+    REQUIRE(hub != nullptr);
+    hub->triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+    CHECK(f.editor->getCurrentTabIndex() == 3);
+    // Every segment has a spoken name.
+    for (int i = 0; i < tabs->getNumTabs(); ++i) CHECK(tabs->getSegmentButton(i)->getTitle().isNotEmpty());
+}
+
+TEST_CASE("High contrast switches the editor palette and is saved per instance (VIS-9)", "[plugin][vis9]")
+{
+    EditorFixture f;
+    using P = khensu::PluginLookAndFeel;
+    CHECK(P::currentPalette() == P::Palette::Dark);
+    const auto darkText = P::textPrimary;
+    f.editor->setHighContrast(true);
+    CHECK(P::currentPalette() == P::Palette::HighContrast);
+    CHECK(f.proc.getUiPalette() == 1);
+    CHECK(P::textPrimary == P::tokensFor(P::Palette::HighContrast)[3]);
+    CHECK(P::textPrimary != darkText);
+    // High contrast is at least as readable as Dark.
+    CHECK(contrastRatio(P::textPrimary, P::bgDark) >= 15.0);
+    CHECK(contrastRatio(P::textMuted, P::bgDark) >= 7.0);
+    CHECK(contrastRatio(P::accentTeal, P::bgDark) >= 7.0);
+    // Cached colours on the editor moved over: no label still holds Dark's
+    // primary text colour.
+    std::function<int(juce::Component&)> countDark = [&](juce::Component& c) {
+        int n = 0;
+        if (auto* label = dynamic_cast<juce::Label*>(&c))
+            if (label->isColourSpecified(juce::Label::textColourId)
+                && (label->findColour(juce::Label::textColourId).getARGB() & 0xffffffu) == (darkText.getARGB() & 0xffffffu))
+                ++n;
+        for (auto* child : c.getChildren()) n += countDark(*child);
+        return n;
+    };
+    CHECK(countDark(*f.editor) == 0);
+
+    // Saved with the instance and restored.
+    juce::MemoryBlock state;
+    f.proc.getStateInformation(state);
+    KhensuCopilotProcessor restored;
+    restored.setStateInformation(state.getData(), (int)state.getSize());
+    CHECK(restored.getUiPalette() == 1);
+
+    f.editor->setHighContrast(false);
+    CHECK(P::currentPalette() == P::Palette::Dark);
+    CHECK(P::textPrimary == darkText);
 }

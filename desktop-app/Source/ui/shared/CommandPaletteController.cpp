@@ -97,6 +97,8 @@ void CommandPaletteController::buildCommands()
                          verb(Verb::Analyse)});
     commands_.push_back({TRANS("Fix top issue") + "  (F)", "Do", "guided wizard repair recommendation render",
                          verb(Verb::FixTopIssue)});
+    commands_.push_back({TRANS("Fix all safe") + "  (Shift+F)", "Do",
+                         "fix every validated safe issue batch all render one version", verb(Verb::FixAllSafe)});
     commands_.push_back({TRANS("Toggle A/B (original / fix)") + "  (B)", "Do", "compare ab before after render",
                          verb(Verb::ToggleAb)});
     commands_.push_back({TRANS("Export") + "  (Ctrl+E)", "Go", "deliver bounce master platform render",
@@ -122,6 +124,12 @@ void CommandPaletteController::buildCommands()
     commands_.push_back({TRANS("Show or hide the session health strip"), "Do",
                          "break fatigue ears timer coach session health hud",
                          [this]() { host_.toggleSessionHealthStrip(); }});
+    commands_.push_back({TRANS("Watch the session's file for new bounces (on / off)"), "Do",
+                         "bounce watch reload daw export file changed auto analyse",
+                         [this]() { host_.toggleBounceWatch(false); }});
+    commands_.push_back({TRANS("Watch its folder for newer bounces like song_v2 (on / off)"), "Do",
+                         "bounce watch folder version v2 take daw export auto analyse",
+                         [this]() { host_.toggleBounceWatch(true); }});
     commands_.push_back({TRANS("Check for updates"), "Do", "new version release upgrade download installer github",
                          [this]() { host_.checkForAppUpdates(); }});
     commands_.push_back({TRANS("Cycle theme (Dark / High Contrast / Light)"), "Do",
@@ -212,6 +220,19 @@ void CommandPaletteController::buildCommands()
                                      });
                                  }));
                          }});
+
+    // STU-7: cards, the session's open findings and genres - shown once the
+    // query is two characters or more, capped per kind (PaletteSearch.h).
+    using palette_search::Kind;
+    const auto addTargets = [this](std::vector<ICommandPaletteHost::SearchTarget> targets, Kind kind,
+                                   std::function<void(const std::string&)> go) {
+        for (auto& t : targets)
+            commands_.push_back({t.title, palette_search::kindTag(kind), t.keywords,
+                                 [go, id = t.id] { go(id); }, kind});
+    };
+    addTargets(host_.searchableCards(), Kind::Card, [this](const std::string& id) { host_.revealCard(id); });
+    addTargets(host_.searchableFindings(), Kind::Finding, [this](const std::string& id) { host_.openFinding(id); });
+    addTargets(host_.searchableGenres(), Kind::Genre, [this](const std::string& id) { host_.showGenre(id); });
 }
 
 } // namespace khensu

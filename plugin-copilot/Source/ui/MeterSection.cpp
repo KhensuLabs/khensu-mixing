@@ -1,5 +1,6 @@
 // plugin-copilot/Source/ui/MeterSection.cpp
 #include "MeterSection.h"
+#include "PluginLookAndFeel.h"
 #include <khensu/ui/KhensuPalette.h>
 #include <khensu/ui/StudioStyle.h>
 #include "../PluginProcessor.h"
@@ -46,10 +47,10 @@ void MeterSection::pullTelemetry()
 
 void MeterSection::paint(juce::Graphics& g)
 {
-    g.setColour(ui::studio::surface());
+    g.setColour(PluginLookAndFeel::bgPanel);
     g.fillRoundedRectangle(getLocalBounds().toFloat(), ui::studio::kRadius);
     // Hairline dividers between the meters.
-    g.setColour(ui::studio::hairline());
+    g.setColour(PluginLookAndFeel::textPrimary.withAlpha(0.10f));
     for (auto* c : {static_cast<juce::Component*>(&truePeak_), static_cast<juce::Component*>(&correlation_)})
         if (c->isVisible() && c->getX() > 0) g.fillRect(c->getX() - 4, 10, 1, getHeight() - 20);
 }

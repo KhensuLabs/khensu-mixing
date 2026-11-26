@@ -5,12 +5,20 @@
 // pan on the zoomable axis and double-click to reset. A chart derives from
 // ChartView, sets its axes and draws its data in paintData() through px()/py()
 // - it never computes its own tick positions or tooltip.
-// Colours come from a Style: Style::fromPalette() (the plugin, Dark theme);
+// Colours come from a Style: Style::fromPalette() (the current ui::Palette
+// theme, followed until setStyle() - STU-6);
 // the desktop passes its live KhensuTheme tokens (ui/shared/ChartStyle.h) so a
 // theme change re-tints every chart.
+// VIS-1 / VIS-8: every chart is an accessible image whose description is a
+// text summary built from its data (summary()); the units are written on the
+// axes (the y unit beside the top tick, the x unit on the last tick); a time
+// chart can draw a playhead (setPlayhead) and seek on click (onClick). The
+// standard axes (one frequency axis, the dB / LUFS ranges) are in
+// ChartScales.h; bar, stacked-area and radar charts in ChartKitPlots.h.
 // THREAD_CONTEXT(UIThread)
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <utility>
@@ -19,7 +27,7 @@
 namespace khensu::ui::chart {
 
 enum class Scale { Linear, Log };
-enum class Format { Number, Hz, Time, Percent };
+enum class Format { Number, Hz, Time, Percent, Category };
 
 /// One axis: its visible range, scale and how a value is written.
 struct Axis {
@@ -28,6 +36,10 @@ struct Axis {
     Format format = Format::Number;
     juce::String unit; ///< "dB", "LUFS", ... (Hz / s / % come from the format)
     int decimals = 1;
+    /// Format::Category: the name of each integer position (0, 1, 2 ...).
+    std::vector<juce::String> categories;
+    /// Runs the other way (a category axis listed top-down).
+    bool inverted = false;
 
     /// 0..1 across the visible range (log for Scale::Log; values <= 0 clamp).
     double norm(double v) const noexcept;
@@ -41,8 +53,10 @@ struct Axis {
 
 struct Style {
     juce::Colour grid, axis, text, muted, crosshair, tooltipBg, tooltipText, tooltipBorder;
+    juce::Colour playhead; ///< the transport position on a time chart
     float fontSize = 11.0f;
-    /// The plugin's Dark-theme values (khensu::ui::Palette).
+    /// The current khensu::ui::Palette theme's values (STU-6). A chart that
+    /// never had setStyle() called re-reads them when the palette changes.
     static Style fromPalette();
 };
 
@@ -59,6 +73,24 @@ struct Readout {
     std::vector<std::pair<juce::String, juce::Colour>> lines;
 };
 
+/// VIS-8: an accessibility handler that presents `component` as an image
+/// whose description is `describe()` (falling back to its description).
+std::unique_ptr<juce::AccessibilityHandler> makeChartAccessibilityHandler(juce::Component& component,
+                                                                          std::function<juce::String()> describe);
+
+/// VIS-8: for a chart painted by a component that is not a ChartView (a
+/// panel that draws its own plot): a transparent, click-through child laid
+/// over the plot that screen readers announce as an image with the summary.
+class ChartSummary final : public juce::Component {
+  public:
+    ChartSummary();
+    std::function<juce::String()> describe;
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
+};
+
+/// "a, b and c" - for summaries.
+juce::String joinWords(const juce::StringArray& items);
+
 class ChartView : public juce::Component, public juce::SettableTooltipClient {
   public:
     ChartView();
@@ -66,8 +98,13 @@ class ChartView : public juce::Component, public juce::SettableTooltipClient {
 
     Axis x, y;
 
+    /// Fixes the style; until called, the chart follows the shared Palette.
     void setStyle(Style s);
-    const Style& style() const noexcept { return style_; }
+    const Style& style() const
+    {
+        syncPaletteStyle();
+        return style_;
+    }
     void setLegend(std::vector<LegendItem> items);
     /// The full x range zoom returns to; set with the data. Zoom is on x only.
     void setXRange(double lo, double hi);
@@ -77,7 +114,26 @@ class ChartView : public juce::Component, public juce::SettableTooltipClient {
 
     void setMargins(int left, int top, int right, int bottom);
     void setShowAxes(bool xAxis, bool yAxis) noexcept { showX_ = xAxis; showY_ = yAxis; }
-    void setShowGrid(bool show) noexcept { showGrid_ = show; }
+    void setShowGrid(bool show) noexcept { showGrid_ = show; gridX_ = gridY_ = show; }
+    /// Gridlines on the x ticks and / or the y ticks only (bar charts keep
+    /// the value lines and drop the category lines).
+    void setGridLines(bool xLines, bool yLines) noexcept { gridX_ = xLines; gridY_ = yLines; showGrid_ = xLines || yLines; }
+
+    /// A second y scale on the right (a curve with its own unit). Off by default.
+    Axis y2;
+    void setSecondaryAxis(bool show) noexcept { showY2_ = show; }
+    float py2(double v) const noexcept;
+
+    /// VIS-8: the text a screen reader reads for this chart. Set it with the
+    /// data; when empty, autoSummary() (built from the data) is used.
+    void setSummary(juce::String text);
+    juce::String summary() const;
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
+
+    /// A time chart's transport position (x units); < 0 hides it. Repaints
+    /// only the strips it leaves and enters.
+    void setPlayhead(double xValue);
+    double playhead() const noexcept { return playhead_; }
 
     juce::Rectangle<float> plotArea() const noexcept;
     float px(double v) const noexcept;
@@ -87,6 +143,8 @@ class ChartView : public juce::Component, public juce::SettableTooltipClient {
 
     /// A click (not a drag) in the plot, with the x value under it.
     std::function<void(double x)> onClick;
+    /// The same click with both values (charts whose categories run on y).
+    std::function<void(double x, double y)> onClickAt;
 
     /// The hover position (x, y values), when the mouse is over the plot.
     std::optional<std::pair<double, double>> hover() const noexcept { return hover_; }
@@ -123,6 +181,10 @@ class ChartView : public juce::Component, public juce::SettableTooltipClient {
     virtual Readout readoutAt(double xValue, double yValue);
     /// Called when the hover moves (charts that link a playhead use it).
     virtual void hoverChanged() {}
+    /// The hover mark under the readout; the default is a crosshair.
+    virtual void paintHoverMark(juce::Graphics& g, juce::Rectangle<float> plot, float px, float py);
+    /// VIS-8: the summary built from the data (used when none was set).
+    virtual juce::String autoSummary() const { return {}; }
 
     juce::Font font(float scale = 1.0f) const;
 
@@ -131,9 +193,17 @@ class ChartView : public juce::Component, public juce::SettableTooltipClient {
     void paintAxes(juce::Graphics& g, juce::Rectangle<float> plot) const;
     void paintLegend(juce::Graphics& g, juce::Rectangle<float> plot) const;
     void paintCrosshair(juce::Graphics& g, juce::Rectangle<float> plot);
+    /// STU-6: re-reads Style::fromPalette() when the palette's theme changed
+    /// and no setStyle() fixed the style.
+    void syncPaletteStyle() const;
 
-    Style style_;
+    mutable Style style_;
+    mutable std::uint32_t paletteVersion_ = 0;
+    bool paletteStyle_ = true;
     std::vector<LegendItem> legend_;
+    juce::String summary_;
+    double playhead_ = -1.0;
+    bool showY2_ = false, gridX_ = true, gridY_ = true;
     double fullLo_ = 0.0, fullHi_ = 1.0;
     bool zoomable_ = false;
     int ml_ = 40, mt_ = 8, mr_ = 10, mb_ = 20;

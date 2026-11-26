@@ -108,6 +108,18 @@ struct MaskingConflict {
 std::vector<MaskingConflict> findMaskingConflicts(const std::vector<TrackFrame>& frames,
                                                   const MaskingOptions& options = {}, size_t maxResults = 8);
 
+/// ENH-10 (4): the complementary cut "Unmask" writes into the other track of
+/// a masking pair - a bell at the overlap, as deep as the overlap is close
+/// (levels within 0 dB of each other: the full kMaxUnmaskCutDb; at the edge
+/// of the masking window: 1 dB), as wide as the overlapping band range.
+inline constexpr float kMaxUnmaskCutDb = 4.0f;
+struct UnmaskCut {
+    float freqHz = 1000.0f;
+    float gainDb = -1.0f; ///< negative, -1 .. -kMaxUnmaskCutDb
+    float q = 1.0f;       ///< 0.7 .. 4
+};
+UnmaskCut unmaskCutFor(const MaskingConflict& conflict, const MaskingOptions& options = {});
+
 /// Formats a frequency for display: "60 Hz", "250 Hz", "2.5 kHz".
 juce::String formatHz(float hz);
 

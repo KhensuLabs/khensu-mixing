@@ -4,6 +4,8 @@
 #include "../shared/KhensuTheme.h"
 #include "../shared/JobPoller.h"
 #include "../shared/ServiceErrorHint.h"
+#include "../shared/ButtonRole.h"
+#include "MasterMacros.h"
 #include <khensu/ipc/HttpServiceBridge.h>
 #include <thread>
 #include <khensu/ipc/generated/ApiSchema.h>
@@ -33,8 +35,6 @@ void BatchRenderPanel::applyThemeColours()
 {
     chooseButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.2f));
     chooseButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
-    runButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal);
-    runButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::bgVoid);
     cancelButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentRed.withAlpha(0.35f));
     overrideButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentAmber.withAlpha(0.25f));
     overrideButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentAmber);
@@ -52,10 +52,36 @@ BatchRenderPanel::BatchRenderPanel(PanelCardController& c, const juce::String& b
                                  "sources. Files are processed independently: a corrupt or unreadable take "
                                  "is reported per-file and the rest of the batch still renders."));
 
+    // ENH-4: the mode picker.
+    modeBox_.addItem(TRANS("Same chain for every file"), kSameChainMode);
+    modeBox_.addItem(TRANS("Each file on its own (analyse, fix, master)"), kPerFileMode);
+    modeBox_.setSelectedId(kSameChainMode, juce::dontSendNotification);
+    modeBox_.setTitle(TRANS("Batch mode"));
+    modeBox_.setTooltip(TRANS("Same chain: your last applied chain on every file. Each file on its own: every file "
+                              "is analysed and its own findings with a verified fix are fixed (each move kept only "
+                              "when it helped), then mastered if you ask."));
+    modeBox_.onChange = [this] { setPerFileMode(perFileMode()); };
+    addAndMakeVisible(modeBox_);
+    masterToggle_.setToggleState(true, juce::dontSendNotification);
+    masterToggle_.setTooltip(TRANS("After fixing, master each file toward the session's genre (or neutral targets "
+                                   "without a confirmed genre) in the chosen style."));
+    addChildComponent(masterToggle_);
+    for (int i = 0; i < 4; ++i)
+        styleBox_.addItem(juce::translate(i == 0 ? NEEDS_TRANS("Warm") : i == 1 ? NEEDS_TRANS("Balanced")
+                                                    : i == 2 ? NEEDS_TRANS("Open") : NEEDS_TRANS("Loud")),
+                          i + 1);
+    styleBox_.setSelectedId(2, juce::dontSendNotification);
+    styleBox_.setTitle(TRANS("Mastering style"));
+    styleBox_.setTooltip(TRANS("The mastering style for every file (Balanced: the genre's own targets)."));
+    masterToggle_.onClick = [this] { styleBox_.setEnabled(masterToggle_.getToggleState()); };
+    addChildComponent(styleBox_);
+    addChildComponent(smartResults_);
+
     chooseButton_.onClick = [this] { chooseFolder(); };
     addAndMakeVisible(chooseButton_);
 
     runButton_.onClick = [this] { run(); };
+    button_role::markPrimary(runButton_);
     runButton_.setEnabled(false);
     addAndMakeVisible(runButton_);
 
@@ -63,7 +89,7 @@ BatchRenderPanel::BatchRenderPanel(PanelCardController& c, const juce::String& b
     cancelButton_.setVisible(false);
     addChildComponent(cancelButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(KhensuTheme::kFontCaption));
     addAndMakeVisible(statusLabel_);
 
     overrideButton_.setTooltip(TRANS("The guardrail rejected an output and quarantined it. Override it with an "
@@ -72,7 +98,7 @@ BatchRenderPanel::BatchRenderPanel(PanelCardController& c, const juce::String& b
     overrideButton_.setVisible(false);
     addChildComponent(overrideButton_);
 
-    resultsLabel_.setFont(KhensuTheme::labelFont(9.5f));
+    resultsLabel_.setFont(KhensuTheme::labelFont(KhensuTheme::kFontCaption));
     resultsLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(resultsLabel_);
 
@@ -106,6 +132,20 @@ void BatchRenderPanel::visibilityChanged()
 
 void BatchRenderPanel::refreshReadiness()
 {
+    if (perFileMode()) {
+        if (folder_ == juce::File{}) {
+            statusLabel_.setText(TRANS("Pick a folder: each file is analysed, fixed and mastered on its own."),
+                                 juce::dontSendNotification);
+            runButton_.setEnabled(false);
+            return;
+        }
+        statusLabel_.setText(TRANS("%f: %n audio file(s), each on its own terms.")
+                                 .replace("%f", folder_.getFileName())
+                                 .replace("%n", juce::String(audioFileCount_)),
+                             juce::dontSendNotification);
+        runButton_.setEnabled(audioFileCount_ > 0);
+        return;
+    }
     const auto& chain = controller_.renderJobs().lastChain();
 
     if (folder_ == juce::File{}) {
@@ -159,6 +199,7 @@ void BatchRenderPanel::chooseFolder()
 void BatchRenderPanel::run()
 {
     if (!currentJobId_.isEmpty() || startInFlight_ || folder_ == juce::File{}) return;
+    if (perFileMode()) return runPerFile();
     const auto chain = controller_.renderJobs().lastChain();
     // Non-empty only when that chain was model-proposed (Copilot chat).
     const juce::String decisionHash = controller_.renderJobs().lastChainDecisionHash();
@@ -344,6 +385,23 @@ void BatchRenderPanel::finishRun(const ipc::HttpServiceBridge::BatchRenderJobSta
 void BatchRenderPanel::cancelRun()
 {
     if (currentJobId_.isEmpty() && !startInFlight_) return;
+    if (smartJobId_.isNotEmpty() || (startInFlight_ && perFileMode())) {
+        if (pollStop_) pollStop_->store(true);
+        if (startInFlight_) cancelRequestedWhileStarting_ = true;
+        if (smartJobId_.isNotEmpty()) {
+            const auto jobId = smartJobId_;
+            controller_.runLongInBackground([jobId, url = bridgeUrl()] { ipc::HttpServiceBridge(url).cancelSmartBatch(jobId); });
+        }
+        smartJobId_ = {};
+        currentJobId_ = {};
+        chooseButton_.setEnabled(true);
+        modeBox_.setEnabled(true);
+        cancelButton_.setVisible(false);
+        resized();
+        statusLabel_.setText(TRANS("Cancelled - the file in progress stops at its next step."), juce::dontSendNotification);
+        runButton_.setEnabled(audioFileCount_ > 0);
+        return;
+    }
     if (pollStop_) pollStop_->store(true); // the poller cancels server-side
 
     if (startInFlight_) {
@@ -372,7 +430,16 @@ void BatchRenderPanel::resized()
 {
     PanelCard::resized();
     auto b = bodyArea();
-    auto controls = b.removeFromTop(24);
+    auto modeRow = b.removeFromTop(KhensuTheme::buttonHSmall);
+    modeBox_.setBounds(modeRow.removeFromLeft(juce::jmin(300, modeRow.getWidth() / 2)));
+    if (masterToggle_.isVisible()) {
+        modeRow.removeFromLeft(8);
+        masterToggle_.setBounds(modeRow.removeFromLeft(110));
+        modeRow.removeFromLeft(4);
+        styleBox_.setBounds(modeRow.removeFromLeft(juce::jmin(120, modeRow.getWidth())));
+    }
+    b.removeFromTop(4);
+    auto controls = b.removeFromTop(KhensuTheme::buttonHSmall);
     chooseButton_.setBounds(controls.removeFromLeft(120));
     controls.removeFromLeft(6);
     runButton_.setBounds(controls.removeFromLeft(120));
@@ -387,7 +454,184 @@ void BatchRenderPanel::resized()
     b.removeFromTop(4);
     statusLabel_.setBounds(b.removeFromTop(16));
     b.removeFromTop(2);
-    resultsLabel_.setBounds(b);
+    resultsLabel_.setBounds(perFileMode() ? juce::Rectangle<int>() : b);
+    smartResults_.setBounds(perFileMode() ? b : juce::Rectangle<int>());
+}
+
+// ---- ENH-4: each file on its own -------------------------------------------
+
+void BatchRenderPanel::setPerFileMode(bool perFile)
+{
+    if (modeBox_.getSelectedId() != (perFile ? kPerFileMode : kSameChainMode))
+        modeBox_.setSelectedId(perFile ? kPerFileMode : kSameChainMode, juce::dontSendNotification);
+    masterToggle_.setVisible(perFile);
+    styleBox_.setVisible(perFile);
+    smartResults_.setVisible(perFile);
+    resultsLabel_.setVisible(!perFile);
+    refreshReadiness();
+    resized();
+}
+
+DeliveryResult BatchRenderPanel::smartResultsTable(const ipc::HttpServiceBridge::SmartBatchStatus& s)
+{
+    auto lufs = [](const std::optional<double>& v) { return v ? juce::String(*v, 1) : juce::String("-"); };
+    DeliveryResult table;
+    for (const auto& r : s.results) {
+        const juce::String name = juce::File(r.filePath).getFileName();
+        if (r.status == "failed") {
+            table.add(DeliveryResult::Status::Fail, name, TRANS("failed"), r.error);
+            continue;
+        }
+        const auto status = r.status == "completed"
+                                ? (r.findingsAfter > 0 ? DeliveryResult::Status::Warn : DeliveryResult::Status::Pass)
+                                : DeliveryResult::Status::Info;
+        juce::String value = lufs(r.beforeLufs) + " -> " + lufs(r.afterLufs) + " LUFS, TP " + lufs(r.beforeTruePeak) +
+                             " -> " + lufs(r.afterTruePeak);
+        if (r.status == "unchanged") value = TRANS("unchanged") + " (" + lufs(r.beforeLufs) + " LUFS)";
+        table.add(status, name, value,
+                  TRANS("cleared %c of %b").replace("%c", juce::String(r.findingsCleared))
+                          .replace("%b", juce::String(r.findingsBefore)) +
+                      (r.mastered ? ", " + TRANS("mastered") : juce::String()));
+    }
+    for (const auto& r : s.results)
+        if (r.findingsAfter > 0 && r.remaining.size() > 0)
+            table.notes.add(juce::File(r.filePath).getFileName() + ": " + TRANS("still open") + " - " +
+                            r.remaining.joinIntoString(", "));
+    if (s.outputDir.isNotEmpty()) table.notes.add(TRANS("Written to") + " " + s.outputDir);
+    return table;
+}
+
+void BatchRenderPanel::runPerFile()
+{
+    ipc::HttpServiceBridge::SmartBatchRequest req;
+    for (const auto& f : folder_.findChildFiles(juce::File::findFiles, false, kAudioWildcards))
+        req.filePaths.push_back(f.getFullPathName());
+    if (req.filePaths.empty()) return refreshReadiness();
+    std::sort(req.filePaths.begin(), req.filePaths.end());
+    req.fix = true;
+    req.master = masterToggle_.getToggleState();
+    req.style = master_macros::styleId(static_cast<master_macros::Style>(juce::jlimit(0, 3, styleBox_.getSelectedId() - 1)));
+    // The session's genre only when its targets are confirmed; else neutral.
+    if (const auto* s = controller_.getActiveSession();
+        req.master && s != nullptr && controller_.analysis().genreRelativeActionAllowed()) {
+        req.genreId = juce::String(s->target.primary_genre);
+        req.genreActionAllowed = req.genreId.isNotEmpty();
+    }
+
+    runButton_.setEnabled(false);
+    chooseButton_.setEnabled(false);
+    modeBox_.setEnabled(false);
+    cancelButton_.setVisible(true);
+    resized();
+    statusLabel_.setText(TRANS("Starting: each file is analysed, fixed%m on its own...")
+                             .replace("%m", req.master ? TRANS(" and mastered") : juce::String()),
+                         juce::dontSendNotification);
+    smartResults_.setResult({});
+    startInFlight_ = true;
+    cancelRequestedWhileStarting_ = false;
+    juce::Component::SafePointer<BatchRenderPanel> self(this);
+    controller_.runLongInBackground([self, req, url = bridgeUrl()] {
+        auto started = ipc::HttpServiceBridge(url).startSmartBatch(req);
+        juce::MessageManager::callAsync([self, started = std::move(started)] {
+            if (self == nullptr) return;
+            self->startInFlight_ = false;
+            // Not session-scoped: the batch belongs to its folder and job id.
+            if (self->cancelRequestedWhileStarting_) {
+                self->cancelRequestedWhileStarting_ = false;
+                if (started.is_ok()) {
+                    const auto jobId = started.value().jobId;
+                    self->controller_.runInBackground(
+                        [jobId, url = self->bridgeUrl()] { ipc::HttpServiceBridge(url).cancelSmartBatch(jobId); });
+                }
+                return;
+            }
+            if (started.is_err()) {
+                self->chooseButton_.setEnabled(true);
+                self->modeBox_.setEnabled(true);
+                self->cancelButton_.setVisible(false);
+                self->resized();
+                self->statusLabel_.setText(TRANS("Error: ") + serviceErrorLine(started.error()),
+                                           juce::dontSendNotification);
+                self->runButton_.setEnabled(self->audioFileCount_ > 0);
+                return;
+            }
+            self->smartJobId_ = started.value().jobId;
+            self->currentJobId_ = self->smartJobId_;
+            self->pollSmartJob(self->smartJobId_);
+        });
+    });
+}
+
+void BatchRenderPanel::pollSmartJob(const juce::String& jobId)
+{
+    if (pollStop_) pollStop_->store(true);
+    auto stop = std::make_shared<std::atomic<bool>>(false);
+    pollStop_ = stop;
+    juce::Component::SafePointer<BatchRenderPanel> self(this);
+    controller_.runLongInBackground([self, jobId, stop, url = bridgeUrl()]() {
+        ipc::HttpServiceBridge bridge(url);
+        using Poller = JobPoller<ipc::HttpServiceBridge::SmartBatchStatus>;
+        Poller::Hooks hooks;
+        hooks.poll = [&bridge](const std::string& id) { return bridge.getSmartBatchStatus(juce::String(id)); };
+        hooks.cancel = [&bridge](const std::string& id) { bridge.cancelSmartBatch(juce::String(id)); };
+        hooks.isTerminal = [](const auto& st) { return !khensu::api::isActiveStatus(st.status); };
+        hooks.onProgress = [self, jobId](const auto& st) {
+            juce::String t = TRANS("File %i of %n").replace("%i", juce::String(juce::jmin(st.done + 1, st.total)))
+                                 .replace("%n", juce::String(st.total));
+            if (st.current.isNotEmpty())
+                t << " (" << st.current << ")" << (st.stage.isNotEmpty() ? ": " + st.stage : juce::String());
+            auto table = smartResultsTable(st);
+            juce::MessageManager::callAsync([self, jobId, t, table]() {
+                if (self == nullptr || jobId != self->smartJobId_) return;
+                self->statusLabel_.setText(t, juce::dontSendNotification);
+                self->smartResults_.setResult(table); // rows appear as each file finishes
+            });
+        };
+        hooks.shouldStop = [stop] { return stop->load(); };
+        Poller::Options opts;
+        opts.pollIntervalMs = kPollIntervalMs;
+        opts.maxConsecutiveErrors = kMaxConsecutivePollErrors;
+        opts.deadlineSeconds = 8 * 60 * 60; // analysing + fixing + mastering a big folder takes a while
+        const auto out = Poller::run(hooks, opts, jobId.toStdString());
+        juce::MessageManager::callAsync([self, jobId, out]() {
+            if (self == nullptr || jobId != self->smartJobId_) return; // cancelled meanwhile
+            self->smartJobId_ = {};
+            self->currentJobId_ = {};
+            self->chooseButton_.setEnabled(true);
+            self->modeBox_.setEnabled(true);
+            self->cancelButton_.setVisible(false);
+            self->resized();
+            if (!out.finished() || !out.status.has_value()) {
+                self->statusLabel_.setText(out.describe(), juce::dontSendNotification);
+                self->refreshReadiness();
+                return;
+            }
+            self->finishSmartRun(*out.status);
+        });
+    });
+}
+
+void BatchRenderPanel::finishSmartRun(const ipc::HttpServiceBridge::SmartBatchStatus& s)
+{
+    smartResults_.setResult(smartResultsTable(s));
+    runButton_.setEnabled(audioFileCount_ > 0);
+    if (s.status == khensu::api::job_status::cancelled) {
+        statusLabel_.setText(TRANS("Cancelled."), juce::dontSendNotification);
+        return;
+    }
+    if (s.status != khensu::api::job_status::completed) {
+        statusLabel_.setText(TRANS("Batch failed: ") + (s.error.isNotEmpty() ? s.error : s.status),
+                             juce::dontSendNotification);
+        return;
+    }
+    int changed = 0;
+    for (const auto& r : s.results)
+        if (r.status == "completed") ++changed;
+    statusLabel_.setText(TRANS("%c of %n file(s) improved, %f failed.")
+                             .replace("%c", juce::String(changed))
+                             .replace("%n", juce::String(s.total))
+                             .replace("%f", juce::String(s.failed)),
+                         juce::dontSendNotification);
 }
 
 void BatchRenderPanel::offerOverride()

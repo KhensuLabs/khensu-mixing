@@ -130,18 +130,18 @@ void NativeMeterTiles::paint(juce::Graphics& g)
 
         auto inner = r.reduced(8.0f, 4.0f);
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::bodyFont(11.0f));
+        g.setFont(KhensuTheme::bodyFont(type::caption));
         g.drawText(tiles[i].label, inner.removeFromTop(14.0f), juce::Justification::centredLeft, true);
 
         const bool truePeakHot = ready && i == 1 && std::isfinite(l.truePeakDbtp) && l.truePeakDbtp > -1.0;
         g.setColour(truePeakHot ? KhensuTheme::accentAmber : KhensuTheme::textPrimary);
-        g.setFont(KhensuTheme::metricFont(18.0f));
+        g.setFont(KhensuTheme::metricFont(type::title));
         const auto valueText = tiles[i].unit.isEmpty() ? tiles[i].value : tiles[i].value + " " + tiles[i].unit;
         g.drawText(valueText, inner, juce::Justification::centredLeft, true);
     }
 
     g.setColour(KhensuTheme::textTertiary);
-    g.setFont(KhensuTheme::bodyFont(10.5f));
+    g.setFont(KhensuTheme::bodyFont(type::caption));
     juce::String text;
     if (state_ == State::Measuring)
         text = TRANS("Measuring on this machine...");

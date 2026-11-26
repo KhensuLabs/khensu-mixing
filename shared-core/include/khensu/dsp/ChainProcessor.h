@@ -27,10 +27,13 @@
 //                                   resample_poly, tanh blend, DC blocker
 //                                   (TapeSaturator.h)
 //   StereoWidener (FN2-2a)          dsp_spatial._apply_stereo_widener: M/S
+//   DynamicEQ, MultibandCompressor, MidSideProcessor, Exciter, BassMonoMaker,
+//   NoiseGate (ENH-6)               see ExtendedChainStages.h; DynamicEQ can
+//                                   key on a second signal (attachKey)
 //
 // So every effect buildRecommendationChain emits renders natively. Everything
-// else (reverbs, multiband, ...) needs the engine: prepare() refuses the chain
-// and names them. Stages with lookahead (DeEsser, Limiter, SpectralDenoise,
+// else (reverbs, ...) needs the engine: prepare() refuses the chain and names
+// them. Stages with lookahead (DeEsser, Limiter, SpectralDenoise,
 // TapeSaturation) hold samples back and release them in finish(), so the
 // output is exactly as long as the input and sample-aligned with it.
 //
@@ -43,6 +46,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -74,6 +78,12 @@ double chainOutputCeilingDbtp(const std::vector<ChainStageSpec>& chain);
 /// The Limiter's own target: its ceiling less the 0.05 dB safety margin
 /// (tp_limiter._MARGIN_DB) - what its residual trim aims for.
 double limiterTargetDbtp(const ChainStageSpec& limiter);
+/// STU-18: every parameter of a native stage as the stage reads it (given
+/// values clamped, frequencies held below 0.45 x `sampleRate`, the rest the
+/// defaults) - for a live stand-in (RealtimeChain) that must read the same
+/// numbers. nullopt + `error` where makeChainStage would fail.
+std::optional<std::map<std::string, double>> resolveChainStageParams(const ChainStageSpec& spec, double sampleRate,
+                                                                     std::string& error);
 
 /// One processor of the chain.
 class ChainStage {
@@ -85,6 +95,12 @@ class ChainStage {
     /// After the last push: `tail` (empty on entry) receives what is left.
     virtual void finish(PlanarBlock& tail) { tail.clear(); }
 
+    /// STU-9: true when push() processes the block in place - same length
+    /// out as in, no lookahead, no whole-signal profile and no allocation -
+    /// so the stage can run block by block on the audio thread
+    /// (RealtimeChain) and match the offline render sample for sample.
+    virtual bool isCausalInPlace() const { return false; }
+
     /// True when the stage must see the whole signal before processing it
     /// (profile() with every block, then endProfile(), then push()).
     virtual bool needsProfile() const { return false; }
@@ -93,6 +109,17 @@ class ChainStage {
     /// Takes the finished profile of `other` (the same effect, parameters
     /// and format) - for the fresh copies a later stage's profile pass runs.
     virtual void adoptProfile(const ChainStage& /*other*/) {}
+
+    /// ENH-6: a stage that can detect on a KEY signal (a keyed DynamicEQ).
+    /// Without attachKey() it keys on its own input.
+    virtual bool wantsKey() const { return false; }
+    /// Before the first push: the key arrives with `numKeyChannels` channels.
+    virtual void attachKey(int /*numKeyChannels*/) {}
+    /// The key at the file positions of the input block the chain was just
+    /// given (it reaches the stage before that input does).
+    virtual void pushKey(const PlanarBlock& /*key*/) {}
+    /// No more key (before the chain's finish()).
+    virtual void endKey() {}
 };
 
 /// Builds the stage for `spec` at `sampleRate`; nullptr with `error` set when
@@ -109,7 +136,16 @@ class ChainProcessor {
     bool prepare(const std::vector<ChainStageSpec>& chain, double sampleRate, int numChannels, std::string& error);
     /// Runs `block` through the chain and hands the output to `sink` (it may
     /// be empty or shorter than the input while a lookahead fills).
-    void process(PlanarBlock block, const Sink& sink);
+    /// ENH-6: `key` (when attachKey() was called) is the key signal at the
+    /// same file positions as `block` - the same length.
+    void process(PlanarBlock block, const Sink& sink, const PlanarBlock* key = nullptr);
+    /// ENH-6: routes a key signal with `numKeyChannels` channels to every
+    /// stage that keys on one (after prepare(), before the first process()).
+    /// False when no stage uses a key. A profile pass's copies of the stages
+    /// in front of a profiled stage stay self-keyed.
+    bool attachKey(int numKeyChannels);
+    /// Whether a stage of the chain asks for a key (DynamicEQ use_key = 1).
+    bool wantsKey() const;
     /// Flushes every stage's held-back samples through the rest of the chain.
     void finish(const Sink& sink);
     int numChannels() const noexcept { return numChannels_; }
@@ -130,6 +166,7 @@ class ChainProcessor {
     std::vector<ChainStageSpec> specs_;
     double sampleRate_ = 0.0;
     int numChannels_ = 0;
+    bool keyAttached_ = false;
 };
 
 } // namespace khensu::dsp

@@ -24,7 +24,7 @@ class ExperimentalTag final : public juce::Component, public juce::SettableToolt
         setTooltip("Experimental: built, but not yet checked in real use. " + check);
     }
 
-    static juce::Font font() { return Palette::uiFont(10.0f); }
+    static juce::Font font() { return Palette::uiFont(type::caption); }
     static int preferredWidth() { return juce::GlyphArrangement::getStringWidthInt(font(), "Experimental") + 14; }
     static constexpr int kHeight = 16;
 

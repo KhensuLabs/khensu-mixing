@@ -17,7 +17,7 @@ WeightProfileOverlay::WeightProfileOverlay(const ScoreWeightProfile& initial, co
     addAndMakeVisible(card_);
 
     titleLabel_.setText(TRANS("Score Weight Profile -- ") + genreLabel, juce::dontSendNotification);
-    titleLabel_.setFont(khensu::KhensuTheme::uiFont(15.0f, juce::Font::bold));
+    titleLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::subtitle, juce::Font::bold));
     card_.addAndMakeVisible(titleLabel_);
 
     viewport_.setViewedComponent(&rowsContainer_, false);
@@ -64,7 +64,7 @@ void WeightProfileOverlay::addRow(const juce::String& label, float ScoreWeightPr
     auto row = std::make_unique<Row>();
     row->field = field;
     row->label.setText(label, juce::dontSendNotification);
-    row->label.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    row->label.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     row->label.setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
     rowsContainer_.addAndMakeVisible(row->label);
 

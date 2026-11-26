@@ -30,11 +30,11 @@ struct SessionCard final : public juce::Component, public juce::SettableTooltipC
         KhensuLookAndFeel::drawGlassPanel(g, getLocalBounds(), GlassPanelVariant::Raised);
         auto b = getLocalBounds().reduced(KhensuTheme::sp2, KhensuTheme::sp2);
 
-        g.setFont(KhensuTheme::bodyFont(13.0f));
+        g.setFont(KhensuTheme::bodyFont(type::body));
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(name_, b.removeFromTop(22), juce::Justification::centredLeft, true);
 
-        g.setFont(KhensuTheme::labelFont(10.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(subtitle_, b.removeFromTop(16), juce::Justification::centredLeft, true);
         if (note_.isNotEmpty()) { // WF-12: the version note
@@ -65,7 +65,7 @@ RecentSessionsPanel::RecentSessionsPanel()
 {
     applyThemeColours();
     headerLabel.setText(TRANS("RECENT SESSIONS"), juce::dontSendNotification);
-    headerLabel.setFont(khensu::KhensuTheme::uiFont(13.0f, juce::Font::bold));
+    headerLabel.setFont(khensu::KhensuTheme::uiFont(khensu::type::body, juce::Font::bold));
     addAndMakeVisible(headerLabel);
 
     scrollView_.setScrollBarsShown(false, true); // vertical off, horizontal on
@@ -81,9 +81,7 @@ void RecentSessionsPanel::setSessions(const std::vector<Session>& sessions)
     cards_.clear();
     cardContainer_.removeAllChildren();
 
-    // Build new card components and position them horizontally
-    static constexpr int kCardW = 160;
-    int x = 0;
+    // Build new card components; layoutCards() places them.
     for (size_t i = 0; i < sessions_.size(); ++i) {
         const Session& s = sessions_[i];
         std::string id = s.id;
@@ -93,16 +91,26 @@ void RecentSessionsPanel::setSessions(const std::vector<Session>& sessions)
                 if (onSessionChosen) onSessionChosen(id);
             },
             [this, s] { showCardMenu(s); }));
+        card->setTitle(juce::String(s.name));
         cardContainer_.addAndMakeVisible(card);
-        card->setBounds(x, 0, kCardW, cardContainer_.getHeight());
+    }
+    scrollView_.setViewedComponent(&cardContainer_, false);
+    layoutCards();
+    repaint();
+}
+
+void RecentSessionsPanel::layoutCards()
+{
+    static constexpr int kCardW = 160;
+    // The horizontal scrollbar takes its strip under the cards.
+    const int h = juce::jmax(0, scrollView_.getHeight() - scrollView_.getScrollBarThickness());
+    int x = 0;
+    for (auto* card : cards_) {
+        card->setBounds(x, 0, kCardW, h);
         x += kCardW + KhensuTheme::cardGap;
     }
-
-    int totalW = (x > 0) ? (x - KhensuTheme::cardGap) : 0;
-    cardContainer_.setSize(juce::jmax(totalW, scrollView_.getWidth()), scrollView_.getViewHeight());
-
-    scrollView_.setViewedComponent(&cardContainer_, false);
-    repaint();
+    const int totalW = (x > 0) ? (x - KhensuTheme::cardGap) : 0;
+    cardContainer_.setSize(juce::jmax(totalW, scrollView_.getWidth()), h);
 }
 
 void RecentSessionsPanel::showCardMenu(const Session& s)
@@ -139,12 +147,14 @@ void RecentSessionsPanel::paint(juce::Graphics& g)
     g.setGradientFill(borderGrad);
     g.drawRoundedRectangle(bounds, 8.0f, 1.2f);
 
-    if (loadFailed_ && sessions_.empty()) {
+    if (sessions_.empty()) {
         auto textArea = getLocalBounds().reduced(KhensuTheme::sp2, KhensuTheme::sp2);
         textArea.removeFromTop(24); // below the header label
-        g.setFont(KhensuTheme::labelFont(11.0f));
-        g.setColour(KhensuTheme::accentAmber);
-        g.drawText("Couldn't load recent sessions - the session database may be locked or unavailable.",
+        g.setFont(KhensuTheme::labelFont(type::caption));
+        g.setColour(loadFailed_ ? KhensuTheme::accentAmber : KhensuTheme::textTertiary);
+        g.drawText(loadFailed_ ? TRANS("Couldn't load recent sessions - the session database may be locked or "
+                                       "unavailable.")
+                               : TRANS("No sessions yet. Drop a track above to start one."),
                    textArea, juce::Justification::centredLeft, true);
     }
 }
@@ -156,17 +166,7 @@ void RecentSessionsPanel::resized()
     b.removeFromTop(KhensuTheme::sp1);
     scrollView_.setBounds(b);
 
-    // Re-layout card heights to match new viewport height
-    if (!cards_.isEmpty()) {
-        static constexpr int kCardW = 160;
-        int x = 0;
-        for (auto* card : cards_) {
-            card->setBounds(x, 0, kCardW, b.getHeight());
-            x += kCardW + KhensuTheme::cardGap;
-        }
-        int totalW = (x > 0) ? (x - KhensuTheme::cardGap) : 0;
-        cardContainer_.setSize(juce::jmax(totalW, scrollView_.getWidth()), b.getHeight());
-    }
+    layoutCards();
 }
 
 } // namespace khensu

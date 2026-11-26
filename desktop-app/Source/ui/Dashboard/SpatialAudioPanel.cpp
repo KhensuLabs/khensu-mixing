@@ -74,7 +74,7 @@ juce::Colour bandColour(SpatialAudioAssessment::Band band)
 
 void drawScoreBar(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& label, float score)
 {
-    g.setFont(KhensuTheme::labelFont(9.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textSecondary);
     g.drawText(label, area.removeFromTop(12), juce::Justification::centredLeft, false);
 
@@ -100,11 +100,11 @@ void SpatialAudioPanel::drawScoreColumn(juce::Graphics& g, juce::Rectangle<int> 
     }
 
     g.setColour(bandColour(assessment_.band));
-    g.setFont(KhensuTheme::labelFont(22.0f));
+    g.setFont(KhensuTheme::labelFont(type::heading));
     g.drawText(juce::String((int)std::round(assessment_.overallScore)), area.removeFromTop(30),
                juce::Justification::centredLeft, false);
 
-    g.setFont(KhensuTheme::labelFont(11.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.drawText(toString(assessment_.band), area.removeFromTop(18), juce::Justification::centredLeft, false);
     area.removeFromTop(8);
 
@@ -122,7 +122,7 @@ void SpatialAudioPanel::drawScoreColumn(juce::Graphics& g, juce::Rectangle<int> 
     area.removeFromTop(10);
 
     g.setColour(KhensuTheme::textTertiary);
-    g.setFont(KhensuTheme::bodyFont(10.5f));
+    g.setFont(KhensuTheme::bodyFont(type::caption));
     g.drawFittedText(assessment_.summary, area, juce::Justification::topLeft, 6);
 }
 
@@ -207,7 +207,7 @@ void SpatialAudioPanel::drawScene3D(juce::Graphics& g, juce::Rectangle<int> area
         g.drawEllipse(pt.x - 7.0f, pt.y - 7.0f, 14.0f, 14.0f, 1.0f);
 
         g.setColour(KhensuTheme::textPrimary);
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText(juce::String(obj.label), (int)pt.x - 45, (int)pt.y + 8, 90, 12, juce::Justification::centred);
     }
 }

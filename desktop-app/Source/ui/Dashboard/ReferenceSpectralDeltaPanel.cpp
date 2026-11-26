@@ -1,10 +1,12 @@
 // desktop-app/Source/ui/Dashboard/ReferenceSpectralDeltaPanel.cpp
 #include <functional>
 #include <limits>
+#include <cmath>
 #include "ReferenceSpectralDeltaPanel.h"
 #include "../../IAppController.h"
 #include "../shared/KhensuTheme.h"
 #include "../shared/HeatmapImage.h"
+#include "../shared/VizMaps.h"
 #include <khensu/ipc/HttpServiceBridge.h>
 #include "../shared/PanelRunState.h"
 #include <khensu/ipc/generated/ApiSchema.h>
@@ -12,30 +14,6 @@
 namespace khensu {
 
 namespace {
-/// VIZ-U3: the value under `pos` in a [frame][band] grid drawn over `area`
-/// (band 0 at the bottom), with its time and frequency.
-juce::String gridReadout(const std::vector<std::vector<float>>& grid, const std::vector<float>& edgesHz, float durationSec,
-                         juce::Rectangle<float> area, juce::Point<float> pos, const std::function<juce::String(float)>& value)
-{
-    if (grid.empty() || grid[0].empty() || !area.contains(pos)) return {};
-    const auto f = (size_t)juce::jlimit(0, (int)grid.size() - 1, (int)((pos.x - area.getX()) / area.getWidth() * (float)grid.size()));
-    const int bands = (int)grid[f].size();
-    if (bands == 0) return {};
-    const auto b = (size_t)juce::jlimit(0, bands - 1, (int)((area.getBottom() - pos.y) / area.getHeight() * (float)bands));
-    juce::String where;
-    if (durationSec > 0.0f) {
-        const int t = juce::roundToInt(durationSec * ((float)f + 0.5f) / (float)grid.size());
-        where << t / 60 << ":" << juce::String(t % 60).paddedLeft('0', 2);
-    }
-    if (b + 1 < edgesHz.size()) {
-        const float hz = std::sqrt(edgesHz[b] * edgesHz[b + 1]);
-        where << (where.isEmpty() ? "" : ", ")
-              << (hz >= 1000.0f ? juce::String(hz / 1000.0f, 1) + " kHz" : juce::String(juce::roundToInt(hz)) + " Hz");
-    }
-    const float v = grid[f][b];
-    return where + ": " + (std::isfinite(v) ? value(v) : TRANS("no data"));
-}
-
 std::vector<std::vector<float>> gridOf(const juce::var& rows)
 {
     std::vector<std::vector<float>> grid;
@@ -65,10 +43,10 @@ namespace af = api::fields; // generated service field names (ApiSchema.h)
 
 static juce::Colour deltaColour(float db)
 {
-    // Diverging around 0 dB: amber = target is HOT vs ref (+), blue = SHY (-).
-    const float v = juce::jlimit(-12.0f, 12.0f, db) / 12.0f;
-    if (v > 0.0f) return KhensuTheme::bgVoid.interpolatedWith(KhensuTheme::accentAmber, v);
-    return KhensuTheme::bgVoid.interpolatedWith(KhensuTheme::accentBlue, -v);
+    // VIS-2: the one diverging map around 0 dB - orange = the mix is hotter
+    // than the reference (+), blue = shy (-); +-12 dB is the full colour.
+    if (!std::isfinite(db)) return juce::Colours::transparentBlack;
+    return ui::viz::themedDiverging(juce::jlimit(-12.0f, 12.0f, db) / 12.0f);
 }
 
 // Every cached palette colour on this component, in one place (UI-01).
@@ -80,7 +58,7 @@ ReferenceSpectralDeltaPanel::ReferenceSpectralDeltaPanel(IAppController& c) : Pa
 {
     applyThemeColours();
     setExplainer(TRANS("Reference Spectral Delta"), TRANS("How your mix's tonal balance deviates from a reference across frequency "
-                                             "AND time - amber where your mix is hotter than the reference, blue "
+                                             "AND time - orange where your mix is hotter than the reference, blue "
                                              "where it's shy, at each moment. A dynamic view of the match, beyond the "
                                              "static match-EQ callout. Load (or reuse) a reference track to compare."));
 
@@ -145,11 +123,11 @@ void ReferenceSpectralDeltaPanel::runAnalysis()
                             r.push_back((float)(double)c);
                     grid.push_back(std::move(r));
                 }
-            self.img_ = buildGridImage(grid, deltaColour);
-            self.grid_ = grid;
             self.edgesHz_ = floatsOf(v[af::ReferenceSpectralDeltaResponse::band_edges_hz]);
+            self.img_ = buildGridImageOnAxis(grid, self.edgesHz_, deltaColour);
+            self.grid_ = grid;
             self.durationSec_ = (float)(double)v[af::ReferenceSpectralDeltaResponse::duration_sec];
-            return TRANS("Amber = hot vs ref, blue = shy.");
+            return TRANS("Orange = hot vs ref, blue = shy.");
         },
         std::move(options));
 }
@@ -165,19 +143,22 @@ void ReferenceSpectralDeltaPanel::paint(juce::Graphics& g)
     }
     auto b = bodyArea();
     b.removeFromTop(28);
+    // VIS-2 / VIS-3: the standard frequency axis on the left, the colour bar on the right.
+    const int labelW = 30;
+    auto legend = b.removeFromRight(static_cast<int>(ui::viz::kColourBarW)).toFloat();
+    b.removeFromLeft(labelW);
     g.setColour(KhensuTheme::bgVoid.withAlpha(0.5f));
     g.fillRect(b);
     g.drawImage(img_, b.toFloat(), juce::RectanglePlacement::stretchToFit);
     gridArea_ = b.toFloat();
-    g.setColour(KhensuTheme::textTertiary.withAlpha(0.7f));
-    g.setFont(KhensuTheme::labelFont(8.0f));
-    g.drawText("20k", b.getX() + 2, b.getY() + 1, 30, 10, juce::Justification::centredLeft, false);
-    g.drawText("20", b.getX() + 2, b.getBottom() - 11, 30, 10, juce::Justification::centredLeft, false);
+    ui::viz::paintFrequencyTicks(g, gridArea_, static_cast<float>(labelW), true);
+    ui::viz::paintDivergingBar(g, legend.withTrimmedLeft(6.0f).withTrimmedTop(4.0f).withTrimmedBottom(4.0f),
+                               "+12 dB", "0", "-12");
 }
 
 void ReferenceSpectralDeltaPanel::mouseMove(const juce::MouseEvent& e)
 {
-    setTooltip(gridReadout(grid_, edgesHz_, durationSec_, gridArea_, e.position, [](float v) {
+    setTooltip(gridReadoutOnAxis(grid_, edgesHz_, durationSec_, gridArea_, e.position, [](float v) {
         return (v >= 0.0f ? "+" : "") + juce::String(v, 1) + " dB " + TRANS("vs the reference");
     }));
 }

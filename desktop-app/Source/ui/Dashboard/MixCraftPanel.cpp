@@ -1,6 +1,7 @@
 // desktop-app/Source/ui/Dashboard/MixCraftPanel.cpp
 #include "MixCraftPanel.h"
 #include "../shared/KhensuLookAndFeel.h"
+#include "../shared/KhensuEmptyState.h"
 #include "../shared/KhensuTheme.h"
 #include "VerdictModel.h"
 
@@ -109,10 +110,7 @@ void MixCraftPanel::paint(juce::Graphics& g)
     if (!hasData_) {
         g.drawText(TRANS("What each part of the mix adds to the readiness score."), subtitle,
                    juce::Justification::centredLeft, true);
-        g.setFont(KhensuTheme::bodyFont());
-        g.setColour(KhensuTheme::textTertiary);
-        g.drawText(TRANS("Load a track to see the category breakdown."), b.removeFromTop(kRowH),
-                   juce::Justification::centredLeft, true);
+        KhensuEmptyState::paintInto(g, b, TRANS("Load a track to see the category breakdown."), {}); // UXR-6
         return;
     }
 

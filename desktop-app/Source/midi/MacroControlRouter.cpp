@@ -13,7 +13,10 @@ juce::StringArray vocalMacroTargets()
 } // namespace
 
 MacroControlRouter::MacroControlRouter(IAppController& controller, Midi2DeviceManager& midi)
-    : controller_(controller), midi_(midi), engine_(vocalMacroTargets())
+    : controller_(controller), midi_(midi), engine_(vocalMacroTargets()),
+      ci_(&midi, engine_, [this](const juce::String& target) {
+          return static_cast<double>(controller_.vocalEdit().getVocalMacroValue(target));
+      })
 {
     midi_.addListener(*this);
     osc_.addListener(this);
@@ -111,6 +114,7 @@ void MacroControlRouter::save()
     root->setProperty("mappings", engine_.toVar());
     root->setProperty("osc_port", oscPort_);
     root->setProperty("osc_allow_network", oscNetwork_);
+    root->setProperty("midi_ci", ci_.isEnabled());
     controller_.sessions().sessionManager().setUserPreference(kPrefKey, juce::JSON::toString(juce::var(root), true).toStdString());
 }
 
@@ -122,6 +126,7 @@ void MacroControlRouter::load()
     engine_.fromVar(v["mappings"]);
     const int port = static_cast<int>(v["osc_port"]);
     if (port > 0) enableOsc(port, static_cast<bool>(v["osc_allow_network"]));
+    ci_.setEnabled(static_cast<bool>(v["midi_ci"]));
     if (onChange) onChange();
 }
 

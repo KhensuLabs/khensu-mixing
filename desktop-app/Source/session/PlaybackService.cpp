@@ -2,6 +2,7 @@
 // Moved from AppController_Playback.cpp (ENG-1 stage C); behaviour unchanged.
 #include "PlaybackService.h"
 #include "SessionService.h"
+#include "RenderService.h" // nativeChain (STU-9)
 #include "../AbPreferenceMath.h"
 #include "../BackgroundReadKey.h"
 #include "../IBackgroundWork.h"
@@ -191,7 +192,7 @@ void PlaybackService::updatePlaybackGain() noexcept
     // genre-target guess (AUDIT-038).
     PlaybackSourceController::GainContext ctx;
     if (analysis_.hasAnalysis()) ctx.originalLufs = analysis_.currentAnalysis().loudness.lufs_integrated;
-    ctx.originalPath = sessions_.activeSourcePath();
+    ctx.originalPath = sessions_.activeSourcePath(); // gainFor swaps in a pinned A (STU-8)
     if (abPairLoaded()) {
         // UI-6: both decks are live - each gets its own matched gain, so
         // the crossfade moves between two levelled signals.
@@ -215,12 +216,12 @@ AbLevelOffset PlaybackService::abLevelOffset() const
 bool PlaybackService::abPairLoaded() const
 {
     return engine_.hasAlternate() && pairB_.isNotEmpty() && pairB_ == source_.processedPath
-           && pairA_ == sessions_.activeSourcePath();
+           && pairA_ == aSidePath();
 }
 
 bool PlaybackService::loadAbPair()
 {
-    const juce::String original = sessions_.activeSourcePath();
+    const juce::String original = aSidePath(); // STU-8: a pinned A, else the original
     const juce::String processed = source_.processedPath;
     loadAudioFileForPlayback(juce::File(original)); // main deck = A (clears any old pair)
     if (processed.isEmpty() || engine_.loadAlternate(juce::File(processed)) <= 0.0) return false;
@@ -280,7 +281,7 @@ void PlaybackService::soloStem(const juce::String& stemName)
     // "Processed").
     const bool wantB = source_.showingProcessed && hasAbComparison();
     const juce::File target = stemName.isEmpty()
-                                  ? juce::File(wantB ? source_.processedPath : sessions_.activeSourcePath())
+                                  ? juce::File(wantB ? source_.processedPath : aSidePath())
                                   : stems_.getStemFile(stemName);
     if (!target.existsAsFile()) return;
 
@@ -397,6 +398,48 @@ void PlaybackService::rememberLufs(const juce::String& path, float lufs)
         source_.processedLufsUnavailable = false;
         updatePlaybackGain();
     }
+    // ... or a pinned A (STU-8).
+    if (source_.referencePath == path && !source_.referenceLufs.has_value()) {
+        source_.referenceLufs = lufs;
+        source_.referenceLufsUnavailable = false;
+        updatePlaybackGain();
+    }
+}
+
+juce::String PlaybackService::aSidePath() const { return source_.aSidePath(sessions_.activeSourcePath()); }
+
+void PlaybackService::setAbReferencePath(const juce::String& path)
+{
+    // The original pinned as A is the default A: nothing is pinned.
+    const juce::String pin = path == sessions_.activeSourcePath() ? juce::String() : path;
+    if (pin == source_.referencePath) return;
+    if (pin.isNotEmpty() && !juce::File(pin).existsAsFile()) return;
+    if (source_.assignReference(pin, lufsCache_.find(pin))) measureAbReferenceLufs(pin);
+
+    // Reload what is audible so A is the pinned file: the pair (A changed
+    // under it) or, on A without a B, the single deck.
+    if (sessions_.hasSession() && !sessions_.active()->files.empty()) {
+        pairA_.clear(); // the loaded pair holds the old A
+        setAbSide(source_.showingProcessed);
+    }
+    updatePlaybackGain();
+}
+
+void PlaybackService::measureAbReferenceLufs(const juce::String& path)
+{
+    juce::WeakReference<PlaybackService> self(this);
+    work_.runInBackground([path, self]() {
+        const auto lufs = measureIntegratedLufs(juce::File(path));
+        juce::MessageManager::callAsync([self, path, lufs]() {
+            auto* service = self.get();
+            if (service == nullptr || service->source_.referencePath != path) return; // re-pinned meanwhile
+            if (lufs.has_value())
+                service->rememberLufs(path, *lufs);
+            else
+                service->source_.referenceLufsUnavailable = true; // plays unmatched, not muted forever
+            service->updatePlaybackGain();
+        });
+    });
 }
 
 void PlaybackService::measureAbProcessedLufs(const juce::String& path)
@@ -481,7 +524,7 @@ void PlaybackService::setAbSide(bool showProcessed)
                 if (playing) engine_.play();
             } else {
                 // B would not load beside A: the single-deck switch.
-                loadAudioFileForPlayback(juce::File(wantB ? source_.processedPath : sessions_.activeSourcePath()));
+                loadAudioFileForPlayback(juce::File(wantB ? source_.processedPath : aSidePath()));
                 engine_.setPosition(pos);
                 if (playing) engine_.play();
                 return;
@@ -498,7 +541,7 @@ void PlaybackService::setAbSide(bool showProcessed)
         return;
     }
 
-    const juce::String target = wantB ? source_.processedPath : sessions_.activeSourcePath();
+    const juce::String target = wantB ? source_.processedPath : aSidePath();
     loadAudioFileForPlayback(juce::File(target));
     updatePlaybackGain();
     engine_.setPosition(pos); // seamless - same position
@@ -557,6 +600,7 @@ void PlaybackService::invalidateReads() noexcept
 void PlaybackService::resetForSession()
 {
     source_.resetForSession();
+    clearLivePreview(nullptr); // STU-9: an edit of the old track is not previewed on the new one
     pairA_.clear();
     pairB_.clear();
     unloadAudioFileForPlayback();
@@ -566,6 +610,76 @@ void PlaybackService::resetForSession()
         const juce::ScopedLock sl(waveformLock_);
         waveformPeaks_.clear();
     }
+}
+
+// ---- STU-5: monitoring ------------------------------------------------------------
+
+dsp::MonitorSolo::Mode PlaybackService::toSoloMode(MonitorMode mode) noexcept
+{
+    switch (mode) {
+        case MonitorMode::Mono: return dsp::MonitorSolo::Mode::Mono;
+        case MonitorMode::Side: return dsp::MonitorSolo::Mode::Side;
+        case MonitorMode::Sub: return dsp::MonitorSolo::Mode::Sub;
+        case MonitorMode::Full: break;
+    }
+    return dsp::MonitorSolo::Mode::Off;
+}
+
+IPlayback::MonitorMode PlaybackService::monitorMode() const noexcept
+{
+    switch (engine_.monitorMode()) {
+        case dsp::MonitorSolo::Mode::Mono: return MonitorMode::Mono;
+        case dsp::MonitorSolo::Mode::Side: return MonitorMode::Side;
+        case dsp::MonitorSolo::Mode::Sub: return MonitorMode::Sub;
+        default: break; // the band solos are the plugin's only
+    }
+    return MonitorMode::Full;
+}
+
+// ---- STU-9: live preview -----------------------------------------------------------
+
+IPlayback::LivePreviewStatus PlaybackService::describePreview(const std::vector<dsp::RealtimeChain::StagePlan>& plan,
+                                                              const juce::String& label)
+{
+    LivePreviewStatus status;
+    status.active = true;
+    status.label = label;
+    for (const auto& stage : plan) {
+        const juce::String name(stage.effect);
+        switch (stage.mode) {
+            case dsp::RealtimeChain::StageMode::Exact: status.live.add(name); break;
+            case dsp::RealtimeChain::StageMode::CausalEquivalent:
+                status.substituted.add(name + ": " + juce::String(stage.note));
+                break;
+            case dsp::RealtimeChain::StageMode::Skipped:
+                status.skipped.add(name + ": " + juce::String(stage.note));
+                break;
+        }
+    }
+    return status;
+}
+
+void PlaybackService::setLivePreviewChain(void* owner, const std::vector<ipc::HttpServiceBridge::EffectSpec>& chain,
+                                          const juce::String& label)
+{
+    previewOwner_ = owner;
+    previewLabel_ = label;
+    engine_.livePreview().setChain(RenderService::nativeChain(chain));
+}
+
+void PlaybackService::clearLivePreview(void* owner)
+{
+    if (owner != nullptr && owner != previewOwner_) return; // someone else's preview
+    previewOwner_ = nullptr;
+    previewLabel_.clear();
+    engine_.livePreview().clear();
+}
+
+IPlayback::LivePreviewStatus PlaybackService::livePreviewStatus() const
+{
+    const auto& stage = engine_.livePreview();
+    if (!stage.isEnabled()) return {};
+    return describePreview(stage.plan(), previewLabel_);
 }
 
 } // namespace khensu

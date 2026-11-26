@@ -169,9 +169,13 @@ void TransportWaveform::paint(juce::Graphics& g)
     const float midY = wave.getCentreY();
     const float halfH = wave.getHeight() * 0.5f;
 
-    // Lane
-    g.setColour(KhensuTheme::bgVoid.withAlpha(0.6f));
-    g.fillRoundedRectangle(wave, 3.0f);
+    // LG-15: recessed liquid-glass waveform lane with subtle specular rim.
+    g.setColour(KhensuTheme::bgVoid.withAlpha(0.55f));
+    g.fillRoundedRectangle(wave, 6.0f);
+    juce::ColourGradient laneRim(KhensuTheme::borderActive.withMultipliedAlpha(0.75f), wave.getTopLeft(),
+                                 KhensuTheme::borderSubtle, wave.getBottomRight(), false);
+    g.setGradientFill(laneRim);
+    g.drawRoundedRectangle(wave.reduced(0.5f), 6.0f, 1.0f);
 
     // Changed regions (behind the waveform).
     for (size_t i = 0; i < regions_.size(); ++i) {
@@ -193,15 +197,15 @@ void TransportWaveform::paint(juce::Graphics& g)
 
     const float playX = wave.getX() + tw::xForTime(dragging_ ? dragSeconds_ : position_, wave.getWidth(), duration_);
     if (!columns_.empty()) {
-        // Neutral peaks; what has played is brighter. Bars every other pixel.
-        const auto played = KhensuTheme::textPrimary.withAlpha(0.62f);
-        const auto ahead = KhensuTheme::textSecondary.withAlpha(0.38f);
+        // LG-15: luminous played peaks (teal-tinted bright gradient) vs calm unplayed peaks.
+        const auto played = KhensuTheme::textPrimary.interpolatedWith(KhensuTheme::accentTeal, 0.35f).withAlpha(0.78f);
+        const auto ahead = KhensuTheme::textSecondary.withAlpha(0.36f);
         for (size_t c = 0; c < columns_.size(); c += 2) {
             const float x = wave.getX() + static_cast<float>(c);
             const float v = juce::jmax(columns_[c], c + 1 < columns_.size() ? columns_[c + 1] : 0.0f);
             const float h = juce::jmax(1.0f, std::sqrt(v) * halfH * 0.94f); // sqrt: quiet passages stay visible
             g.setColour(x < playX ? played : ahead);
-            g.fillRect(x, midY - h, 1.4f, h * 2.0f);
+            g.fillRoundedRectangle(x, midY - h, 1.5f, h * 2.0f, 0.75f);
         }
     } else {
         // No peaks yet (or nothing loaded): a centre line.
@@ -219,8 +223,10 @@ void TransportWaveform::paint(juce::Graphics& g)
         g.fillRect(hoverX_, wave.getY(), 1.0f, wave.getHeight());
     }
 
-    // Playhead
+    // LG-15: glowing playhead (soft halo + crisp core).
     if (duration_ > 0.0) {
+        g.setColour(KhensuTheme::accentTeal.withAlpha(0.28f));
+        g.fillRect(playX - 3.0f, wave.getY(), 6.0f, wave.getHeight());
         g.setColour(KhensuTheme::accentTeal);
         g.fillRect(playX - 1.0f, wave.getY() - 1.0f, 2.0f, wave.getHeight() + 2.0f);
         juce::Path cap;

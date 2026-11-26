@@ -22,16 +22,16 @@ struct ProvenanceTimelinePanel::RowComp : public juce::Component {
         b.removeFromLeft(8);
 
         auto top = b.removeFromTop(16);
-        g.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::bold));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
         g.setColour(data.accent);
         g.drawText(data.when + "   " + data.type, top, juce::Justification::centredLeft, true);
 
-        g.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(data.summary, b.removeFromTop(16), juce::Justification::centredLeft, true);
 
         if (data.recId.isNotEmpty()) {
-            g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::italic));
+            g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::italic));
             g.setColour(KhensuTheme::textSecondary);
             g.drawText("from: " + data.recId, b.removeFromTop(12), juce::Justification::centredLeft, true);
         }
@@ -41,7 +41,6 @@ struct ProvenanceTimelinePanel::RowComp : public juce::Component {
 // Every cached palette colour on this component, in one place (UI-01).
 void ProvenanceTimelinePanel::applyThemeColours()
 {
-    emptyLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     exportStoryboardButton_.setColour(juce::TextButton::buttonColourId, KhensuTheme::accentTeal.withAlpha(0.15f));
     exportStoryboardButton_.setColour(juce::TextButton::textColourOffId, KhensuTheme::accentTeal);
 }
@@ -57,11 +56,9 @@ ProvenanceTimelinePanel::ProvenanceTimelinePanel(IAppController& c) : PanelCard(
     viewport_.setViewedComponent(&content_, false);
     addAndMakeVisible(viewport_);
 
-    emptyLabel_.setText(TRANS("No changes recorded yet for this session.\n"
-                        "Apply a copilot chain or accept a recommendation to start the timeline."),
-                        juce::dontSendNotification);
-    emptyLabel_.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(emptyLabel_);
+    emptyState_.setMessage(TRANS("No changes recorded yet for this session."),
+                           TRANS("Apply a copilot chain or accept a recommendation to start the timeline."));
+    addAndMakeVisible(emptyState_);
 
     exportStoryboardButton_.setTooltip(TRANS("Writes a client-facing HTML storyboard of this session's "
                                        "changes (applied processing, saved versions, deliveries) - "
@@ -163,7 +160,7 @@ void ProvenanceTimelinePanel::rebuild(std::vector<Row> rows)
     rows_.clear();
 
     const bool empty = rows.empty();
-    emptyLabel_.setVisible(empty);
+    emptyState_.setVisible(empty);
     viewport_.setVisible(!empty);
 
     for (auto& r : rows) {
@@ -180,7 +177,7 @@ void ProvenanceTimelinePanel::resized()
     auto b = bodyArea();
     exportStoryboardButton_.setBounds(b.removeFromTop(22).removeFromRight(160));
     b.removeFromTop(4);
-    emptyLabel_.setBounds(b);
+    emptyState_.setBounds(b);
     viewport_.setBounds(b);
 
     const int rowH = 52;

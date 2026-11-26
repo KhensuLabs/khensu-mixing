@@ -31,15 +31,15 @@ class TasteProfilePanel::Row final : public juce::Component {
     Row(const LearnedPreference& p, std::function<void()> onReset)
     {
         applyThemeColours();
-        title_.setFont(KhensuTheme::uiFont(14.0f, juce::Font::bold));
+        title_.setFont(KhensuTheme::uiFont(type::large, juce::Font::bold));
         title_.setText(juce::String(p.title), juce::dontSendNotification);
-        value_.setFont(KhensuTheme::metricFont(13.0f));
+        value_.setFont(KhensuTheme::metricFont(type::body));
         value_.setJustificationType(juce::Justification::centredRight);
         value_.setText(juce::String(p.offset_text), juce::dontSendNotification);
-        explanation_.setFont(KhensuTheme::bodyFont(13.0f));
+        explanation_.setFont(KhensuTheme::bodyFont(type::body));
         explanation_.setJustificationType(juce::Justification::topLeft);
         explanation_.setText(juce::String(p.explanation), juce::dontSendNotification);
-        evidence_.setFont(KhensuTheme::labelFont(12.0f));
+        evidence_.setFont(KhensuTheme::labelFont(type::secondary));
         evidence_.setText(evidenceLine(p), juce::dontSendNotification);
 
         reset_.setButtonText(TRANS("Reset"));
@@ -104,17 +104,16 @@ void TasteProfilePanel::applyThemeColours()
 {
     headerLabel_.setColour(juce::Label::textColourId, KhensuTheme::accentTeal);
     introLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
-    emptyLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
 }
 
 TasteProfilePanel::TasteProfilePanel(IAppController& c) : controller_(c)
 {
     applyThemeColours();
-    headerLabel_.setFont(KhensuTheme::uiFont(15.0f, juce::Font::bold));
+    headerLabel_.setFont(KhensuTheme::uiFont(type::subtitle, juce::Font::bold));
     headerLabel_.setText(TRANS("What Khensu Has Learned About Your Taste"), juce::dontSendNotification);
     addAndMakeVisible(headerLabel_);
 
-    introLabel_.setFont(KhensuTheme::bodyFont(13.0f));
+    introLabel_.setFont(KhensuTheme::bodyFont(type::body));
     introLabel_.setJustificationType(juce::Justification::topLeft);
     introLabel_.setText(TRANS("These offsets come from the recommendations you accept or reject and the side you "
                               "pick in A/B comparisons. They shift the genre targets that recommendations, the "
@@ -122,13 +121,11 @@ TasteProfilePanel::TasteProfilePanel(IAppController& c) : controller_(c)
                         juce::dontSendNotification);
     addAndMakeVisible(introLabel_);
 
-    emptyLabel_.setFont(KhensuTheme::bodyFont(13.0f));
-    emptyLabel_.setJustificationType(juce::Justification::topLeft);
-    emptyLabel_.setText(TRANS("Nothing learned yet. Accept or reject loudness, dynamics, stereo-width or low-end "
+    emptyState_.setMessage(TRANS("Nothing learned yet."),
+                        TRANS("Accept or reject loudness, dynamics, stereo-width or low-end "
                               "recommendations, or pick a side with the ABX overlay's \"I Prefer\" buttons, and "
-                              "what Khensu learns will show up here."),
-                        juce::dontSendNotification);
-    addChildComponent(emptyLabel_);
+                              "what Khensu learns will show up here."));
+    addChildComponent(emptyState_);
 
     resetAllButton_.setButtonText(TRANS("Reset all"));
     resetAllButton_.setTitle(TRANS("Reset all learned preferences"));
@@ -176,7 +173,7 @@ void TasteProfilePanel::show(std::vector<LearnedPreference> prefs)
         rows_.push_back(std::make_unique<Row>(p, [this, key] { resetOne(key); }));
         rowsHolder_.addAndMakeVisible(*rows_.back());
     }
-    emptyLabel_.setVisible(shown_.empty());
+    emptyState_.setVisible(shown_.empty());
     resetAllButton_.setEnabled(!shown_.empty());
     resized();
 }
@@ -240,7 +237,7 @@ void TasteProfilePanel::resized()
     headerLabel_.setBounds(header);
     introLabel_.setBounds(b.removeFromTop(48));
     b.removeFromTop(KhensuTheme::sp2);
-    if (emptyLabel_.isVisible()) emptyLabel_.setBounds(b.removeFromTop(60));
+    if (emptyState_.isVisible()) emptyState_.setBounds(b.removeFromTop(140));
     viewport_.setBounds(b);
     layoutRows();
 }

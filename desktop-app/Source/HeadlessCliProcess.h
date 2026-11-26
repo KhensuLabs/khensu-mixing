@@ -15,4 +15,8 @@ int runWithConsole(const std::wstring& commandLine, const std::wstring& pythonPa
 /// Writes a UTF-8 line to the console stderr used by runWithConsole().
 void writeConsoleError(const std::string& utf8Line);
 
+/// Writes UTF-8 text (plus a line end) to the console stdout used by
+/// runWithConsole() - the headless modes' JSON.
+void writeConsoleOutput(const std::string& utf8Text);
+
 } // namespace khensu::headless

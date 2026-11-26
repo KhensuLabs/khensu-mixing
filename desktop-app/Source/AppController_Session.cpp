@@ -7,6 +7,7 @@
 #include <khensu/targets/UserPreferenceModel.h>
 #include "session/WorkspaceRecoveryState.h"
 #include "ui/shared/RenderPaths.h"
+#include "ui/shared/DecisionNotices.h"
 #include <algorithm>
 
 namespace khensu {
@@ -128,39 +129,43 @@ void AppController::handleMissingSessionFile()
     sidebar_.setAnalysisStatus(TRANS("File not found"), false);
 
     const juce::String sessionId(sessions_.state().session->id);
-    auto callback = juce::ModalCallbackFunction::create([this, sessionId](int result) {
-        if (result != 1) return; // "Skip" - leave the session without playback/analysis
-        // The prompt is async: the user may have opened another session.
-        if (!sessions_.state().session || juce::String(sessions_.state().session->id) != sessionId) return;
-
-        missingFileChooser_ = std::make_unique<juce::FileChooser>(
-            "Locate the missing audio file", juce::File::getSpecialLocation(juce::File::userMusicDirectory),
+    // A notice, not a modal box: locating the file is one non-destructive
+    // action, and dismissing it is the old "Skip" (the session stays open
+    // without playback/analysis). The notice can outlive the session, so the
+    // action re-checks it.
+    juce::Component::SafePointer<AppController> self(this);
+    auto stillSameSession = [self, sessionId] {
+        return self != nullptr && self->sessions_.state().session &&
+               juce::String(self->sessions_.state().session->id) == sessionId;
+    };
+    auto locate = [self, sessionId] {
+        if (self == nullptr) return;
+        self->missingFileChooser_ = std::make_unique<juce::FileChooser>(
+            TRANS("Locate the missing audio file"), juce::File::getSpecialLocation(juce::File::userMusicDirectory),
             "*.wav,*.aiff,*.flac,*.mp3,*.aac,*.ogg");
-        missingFileChooser_->launchAsync(
+        self->missingFileChooser_->launchAsync(
             juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-            [this, sessionId](const juce::FileChooser& fc) {
+            [self, sessionId](const juce::FileChooser& fc) {
+                if (self == nullptr) return;
                 auto chosen = fc.getResult();
-                if (!chosen.existsAsFile() || !sessions_.state().session) return;
-                if (juce::String(sessions_.state().session->id) != sessionId) return; // session changed meanwhile
+                auto& sessions = self->sessions_;
+                if (!chosen.existsAsFile() || !sessions.state().session) return;
+                if (juce::String(sessions.state().session->id) != sessionId) return; // session changed meanwhile
 
-                invalidateBackgroundReads();
+                self->invalidateBackgroundReads();
                 // Off the message thread (DSK-20): WAL + busy_timeout can stall.
-                if (auto relinked = sessions_.relinkSource(chosen.getFullPathName()))
-                    runInBackground([sm = sessions_.sharedManager(), session = std::move(*relinked)]() mutable {
+                if (auto relinked = sessions.relinkSource(chosen.getFullPathName()))
+                    self->runInBackground([sm = sessions.sharedManager(), session = std::move(*relinked)]() mutable {
                         sm->saveSession(session);
                     });
 
-                playback_.loadAudioFileForPlayback(chosen);
-                updateSessionStatusLabel();
-                analysis_.beginAnalysis();
+                self->playback_.loadAudioFileForPlayback(chosen);
+                self->updateSessionStatusLabel();
+                self->analysis_.beginAnalysis();
             });
-    });
-
-    juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon, TRANS("Audio File Not Found"),
-                                       TRANS("This session's audio file could not be found:") + "\n\n" + missingPath +
-                                           "\n\n" +
-                                           TRANS("It may have been moved or deleted. Would you like to locate it?"),
-                                       TRANS("Locate File..."), TRANS("Skip"), nullptr, callback);
+    };
+    decision_notices::postReplacing(
+        noticeBar_, decision_notices::missingSessionFile(missingPath, std::move(stillSameSession), std::move(locate)));
 }
 
 
@@ -290,6 +295,8 @@ void AppController::resetSessionScopedState()
     // them so none can finish into the next session's history, A/B side,
     // autosave or export (AUDIT-002). Callbacks fire now with ok=false.
     renders_.resetForSession(); // + render history and the delta-solo source
+    noticeBar_.withdraw("rerun-offer"); // AUTO-3: an offer for the session being left
+    noticeBar_.withdraw(decision_notices::kMissingSessionFileId); // the left session's missing file
     // After the renders: a cancelled fix has reported by now. The issue
     // queue then forgets the session's states and fix renders (REF-2).
     issues_.resetForSession();

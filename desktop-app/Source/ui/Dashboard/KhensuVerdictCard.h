@@ -39,6 +39,33 @@ class KhensuVerdictCard final : public juce::Component {
     std::function<void()> onFixClicked;
     /// No issue has a one-click fix: the button opens the issue list instead.
     std::function<void()> onReviewClicked;
+    /// ENH-7: the "Start here" finding was clicked (its recommendation id) -
+    /// the Dashboard shows that finding's card.
+    std::function<void(const std::string& recId)> onStartHereClicked;
+
+    /// Where "Start here" is drawn (the click target); empty when none.
+    juce::Rectangle<int> startHereArea() const noexcept { return startHereArea_; }
+
+    void mouseMove(const juce::MouseEvent& e) override
+    {
+        const bool over = startHereArea_.contains(e.getPosition()) && start_.recId.size() > 0 && onStartHereClicked;
+        setMouseCursor(over ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
+        if (over != hoverStart_) {
+            hoverStart_ = over;
+            repaint(startHereArea_);
+        }
+    }
+    void mouseExit(const juce::MouseEvent&) override
+    {
+        if (!hoverStart_) return;
+        hoverStart_ = false;
+        repaint(startHereArea_);
+    }
+    void mouseUp(const juce::MouseEvent& e) override
+    {
+        if (e.mouseWasDraggedSinceMouseDown() || !startHereArea_.contains(e.getPosition())) return;
+        if (hasData_ && !start_.recId.empty() && onStartHereClicked) onStartHereClicked(start_.recId);
+    }
 
     /// `scopeNote`: what the counts cover when the issue queue already
     /// describes a fixed version (RUN-8), else empty.
@@ -99,7 +126,7 @@ class KhensuVerdictCard final : public juce::Component {
 
         auto valueRow = scoreCol.removeFromTop(40);
         const juce::String value = juce::String(juce::roundToInt(score_.value()));
-        const auto valueFont = KhensuTheme::numericFont(40.0f);
+        const auto valueFont = KhensuTheme::numericFont(type::hero);
         g.setFont(valueFont);
         g.setColour(KhensuTheme::textPrimary);
         const int valueW = juce::GlyphArrangement::getStringWidthInt(valueFont, value) + 4;
@@ -160,14 +187,23 @@ class KhensuVerdictCard final : public juce::Component {
 
         inner.removeFromTop(KhensuTheme::sp1);
         auto startRow = inner.removeFromTop(36);
+        startHereArea_ = {};
         if (start_.text.isNotEmpty()) {
+            startHereArea_ = startRow;
             g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
             g.setColour(KhensuTheme::textTertiary);
-            g.drawText(start_.onCurrentVersion ? TRANS("Start here - on the current version") : TRANS("Start here"),
-                       startRow.removeFromTop(14), juce::Justification::centredLeft, false);
+            juce::String caption =
+                start_.onCurrentVersion ? TRANS("Start here - on the current version") : TRANS("Start here");
+            if (onStartHereClicked) caption << " - " << TRANS("click to see its card");
+            g.drawText(caption, startRow.removeFromTop(14), juce::Justification::centredLeft, false);
             g.setFont(KhensuTheme::bodyFont());
-            g.setColour(KhensuTheme::textPrimary);
+            g.setColour(hoverStart_ ? KhensuTheme::accentTeal : KhensuTheme::textPrimary);
             g.drawFittedText(start_.text, startRow, juce::Justification::centredLeft, 1, 0.9f);
+            if (hoverStart_) {
+                const int textW = juce::jmin(startRow.getWidth(),
+                                             juce::GlyphArrangement::getStringWidthInt(KhensuTheme::bodyFont(), start_.text));
+                g.fillRect(startRow.getX(), startRow.getCentreY() + 9, textW, 1);
+            }
         } else {
             g.setFont(KhensuTheme::bodyFont());
             g.setColour(KhensuTheme::textSecondary);
@@ -190,6 +226,8 @@ class KhensuVerdictCard final : public juce::Component {
     verdict::StartHere start_;
     juce::String tierLabel_, tierText_, scopeNote_;
     bool hasData_ = false;
+    juce::Rectangle<int> startHereArea_; ///< ENH-7: set by paint()
+    bool hoverStart_ = false;
 
     /// Every cached palette colour on this card, in one place (UI-01). The
     /// primary role (UX-4) draws the fill; nothing else is cached.

@@ -26,20 +26,20 @@ class ReferenceTrackRitualOverlay final : public juce::Component, public juce::D
         addAndMakeVisible(closeButton_);
 
         titleLabel_.setText(TRANS("REFERENCE-TRACK RITUAL"), juce::dontSendNotification);
-        titleLabel_.setFont(KhensuTheme::labelFont(12.0f).boldened());
+        titleLabel_.setFont(KhensuTheme::labelFont(type::secondary).boldened());
         titleLabel_.setJustificationType(juce::Justification::centred);
 
         detailLabel_.setText(
             TRANS("Drop a reference master to compare loudness, dynamics, spectral balance, and stereo width."),
             juce::dontSendNotification);
-        detailLabel_.setFont(KhensuTheme::bodyFont(12.0f));
+        detailLabel_.setFont(KhensuTheme::bodyFont(type::secondary));
         detailLabel_.setJustificationType(juce::Justification::centred);
 
         dropLabel_.setText(TRANS("Drop reference file here"), juce::dontSendNotification);
-        dropLabel_.setFont(KhensuTheme::metricFont(22.0f));
+        dropLabel_.setFont(KhensuTheme::metricFont(type::heading));
         dropLabel_.setJustificationType(juce::Justification::centred);
 
-        currentRefLabel_.setFont(KhensuTheme::bodyFont(11.0f));
+        currentRefLabel_.setFont(KhensuTheme::bodyFont(type::caption));
         currentRefLabel_.setJustificationType(juce::Justification::centred);
 
         browseButton_.setButtonText(TRANS("Browse..."));

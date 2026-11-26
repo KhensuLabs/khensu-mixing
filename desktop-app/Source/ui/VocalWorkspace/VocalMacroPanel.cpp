@@ -33,7 +33,7 @@ VocalMacroPanel::VocalMacroPanel(IAppController& c) : PanelCard(c, "Vocal Macros
         sliders_[i].setColour(juce::Slider::thumbColourId, KhensuTheme::accentTeal);
         addAndMakeVisible(sliders_[i]);
 
-        labels_[i].setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::plain));
+        labels_[i].setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
         labels_[i].setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
         addAndMakeVisible(labels_[i]);
         updateLabelText(i);

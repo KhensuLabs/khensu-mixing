@@ -20,9 +20,16 @@ class KhensuCopilotProcessor;
 // share one cell size, so dials, values and names line up across the grid.
 // No bypass control here - PluginEditor's header bypassButton_ covers global
 // bypass (ParamIDs::bypass).
+//
+// STU-10: Page::More is the same grid for the state-v5 stages - EQ bands
+// 4-6, the selected band's filter kind / channels / dynamics (a band
+// selector rebinds those controls to bands 1-6), the transient shaper,
+// saturation, bass mono and width.
 class DspControlGridPanel final : public juce::Component, private juce::Timer {
   public:
-    explicit DspControlGridPanel(KhensuCopilotProcessor& proc);
+    enum class Page { Core, More };
+
+    explicit DspControlGridPanel(KhensuCopilotProcessor& proc, Page page = Page::Core);
     ~DspControlGridPanel() override;
 
     void paint(juce::Graphics&) override;
@@ -34,6 +41,10 @@ class DspControlGridPanel final : public juce::Component, private juce::Timer {
     int getNumShapeSelectorsForTest() const noexcept { return static_cast<int>(shapes_.size()); }
     /// The knob for `paramId` (tests), or nullptr.
     ui::KhensuKnob* knobForTest(const juce::String& paramId) const;
+    /// Page::More: the band (1..6) the kind / channels / dynamics controls
+    /// are bound to.
+    int selectedBand() const noexcept { return selectedBand_; }
+    void selectBand(int number);
 
   private:
     void timerCallback() override; // 10 Hz while shown - repaints when an AI-set dot changes
@@ -50,21 +61,45 @@ class DspControlGridPanel final : public juce::Component, private juce::Timer {
     };
 
     void addKnob(const char* paramId, const juce::String& labelText);
+    void bindKnob(KnobRow& row, const char* paramId);
     void addToggle(const char* paramId, const juce::String& labelText, std::vector<ToggleRow>& into);
-    /// OVH-8: an EQ band's shape (bell / low shelf / high shelf).
+    void bindToggle(ToggleRow& row, const char* paramId);
+    /// OVH-8: an EQ band's shape (bell / low shelf / high shelf); STU-10: a
+    /// band's filter kind or channels (any choice parameter).
     void addShape(const char* paramId);
     struct ShapeRow {
         std::unique_ptr<juce::ComboBox> box;
         std::unique_ptr<juce::ComboBoxParameterAttachment> attachment;
     };
+    void bindShape(ShapeRow& row, const char* paramId);
     std::vector<ShapeRow> shapes_;
 
+    void buildCore();
+    void buildMore();
+
+    /// One grid row: an optional switch in the left column (with an optional
+    /// selector under it, or a selector in its place), then selectors and
+    /// knobs in equal cells.
+    struct RowSpec {
+        int knobs = 0;
+        bool toggle = false;
+        bool shapeUnderToggle = false; ///< the next shape goes under the switch
+        bool headSelector = false;     ///< the band selector instead of a switch (Page::More)
+        int cellShapes = 0;            ///< shapes laid out in knob cells before the knobs
+    };
+    std::vector<RowSpec> rows_;
+
     KhensuCopilotProcessor& processor_;
+    const Page page_;
     PluginLookAndFeel lookAndFeel_;
 
     std::vector<KnobRow> knobs_;
     std::vector<ToggleRow> stageToggles_; // hpf, lpf, eq 1-3, comp, multiband, de-esser, limiter
-    std::uint64_t lastAiMask_ = 0;
+    std::vector<bool> lastAiFlags_;
+    /// Page::More: which band the selected-band controls follow.
+    juce::ComboBox bandSelector_;
+    int selectedBand_ = 1;
+    size_t firstBandKnob_ = 0, bandToggle_ = 0, firstBandShape_ = 0;
     /// Row rectangles from the last layout, for the separators.
     std::vector<juce::Rectangle<int>> rowBounds_;
     /// VIZ-6b: each row's module drawing (right of its knobs; empty = no room).

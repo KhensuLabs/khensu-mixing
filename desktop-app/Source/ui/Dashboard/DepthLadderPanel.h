@@ -7,6 +7,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "../shared/KhensuTheme.h" // ThemeListener
+#include "../shared/ChartKitDesktop.h"
 #include "../shared/PanelCard.h"
 #include "../shared/PanelRunState.h"
 #include <vector>
@@ -31,6 +32,7 @@ class DepthLadderPanel final : public PanelCard {
     void resetForSession() override
     {
         stems_.clear();
+        rebuildChart();
         suggestionLabel_.setText({}, juce::dontSendNotification);
         run_.reset();
         resized();
@@ -49,6 +51,14 @@ class DepthLadderPanel final : public PanelCard {
     juce::Label suggestionLabel_;
 
     std::vector<StemDepth> stems_;
+
+    /// VIS-1: the ladder as a ChartKit dot chart.
+    struct Chart final : ThemedLineChart {
+        DepthLadderPanel* owner = nullptr;
+        void extendReadout(ui::chart::Readout& r, double x) override;
+    };
+    void rebuildChart();
+    Chart chart_;
 
     /// Status line, error state and the run button's busy state (UX-8).
     PanelRunState run_{this, &analyzeButton_};

@@ -104,6 +104,30 @@ class SettingsScreen final : public juce::Component, private juce::Timer, privat
     juce::TextButton forgetGenreExamplesButton_{TRANS("Forget my genre examples")};
     void forgetGenreExamples();
 
+    // AUTO-4: what the service holds - the analysis cache's size and the
+    // model registry beside Clear cache, the genre examples beside Forget,
+    // and memory / queues / security events under Refresh.
+    juce::Label cacheStatusLabel_, registryStatusLabel_, genreExamplesLabel_;
+    juce::Label serviceDiagTitle_{{}, TRANS("Service diagnostics")};
+    juce::TextButton serviceDiagRefreshButton_{TRANS("Refresh")};
+    juce::TextEditor serviceDiagText_;
+    bool serviceDiagInFlight_ = false;
+    /// Fetches all six reports on one background job and shows them.
+    void refreshServiceDiagnostics();
+    void visibilityChanged() override;
+
+    // BUG-6: Display - the theme (applied live, kept in display.json) and
+    // reduced motion (ui/shared/ReducedMotion.h keeps that one).
+    juce::Label themeLabel_{{}, TRANS("Theme")};
+    juce::ComboBox themeCombo_;
+    juce::ToggleButton reduceMotionToggle_{TRANS("Reduce motion")};
+    juce::ToggleButton ambientBackdropToggle_{TRANS("Ambient background motion")};
+    juce::Label displayNote_;
+    void loadDisplayPrefs();
+    void saveDisplayPrefs() const;
+    /// The theme changed (here, from Ctrl+K's cycle, anywhere): follow it and keep it.
+    void themeChanged();
+
     juce::TextButton watermarkButton_{TRANS("Download watermark models")};
     juce::Label watermarkStatus_;
     bool watermarkRequestInFlight_ = false;
@@ -114,6 +138,8 @@ class SettingsScreen final : public juce::Component, private juce::Timer, privat
     juce::TextButton midiConnectButton_{TRANS("Connect")};
     juce::TextButton macroMappingButton_{TRANS("MIDI / OSC macro mapping...")};
     juce::Label midiEventLabel_;
+    /// STU-13: the MIDI-CI property responder (off by default).
+    juce::ToggleButton midiCiToggle_{TRANS("MIDI-CI: let MIDI 2.0 tools read the mapped controls")};
 
 #if JUCE_WINDOWS
     // GPU rendering fallback. JUCE 8 renders every Windows peer with
@@ -152,7 +178,8 @@ class SettingsScreen final : public juce::Component, private juce::Timer, privat
     struct Section {
         juce::Label title, description;
     };
-    Section privacySection_, aiSection_, modelsSection_, audioSection_, dataSection_, advancedSection_;
+    Section displaySection_, privacySection_, aiSection_, modelsSection_, audioSection_, dataSection_,
+        advancedSection_;
     void setupSection(Section& s, const juce::String& title, const juce::String& description);
 
     // NEW-10: what the user listens on; findings below it are marked.
@@ -195,6 +222,7 @@ class SettingsScreen final : public juce::Component, private juce::Timer, privat
     // Declared last - see ThemeListener's note on member ordering.
     ThemeListener themeListener_{[this] {
         applyThemeColours();
+        themeChanged();
         repaint();
     }};
 

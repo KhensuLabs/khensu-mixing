@@ -26,7 +26,7 @@ HostedChainMiniPanel::Row::Row(HostedChainMiniPanel& owner, int slotIndex, int n
     // in the project; it can only be removed (audit M5).
     nameLabel.setText(juce::String(slotIndex + 1) + ". " + (missing ? "missing: " + displayName : displayName),
                       juce::dontSendNotification);
-    nameLabel.setFont(ui::Palette::uiFont(12.0f, juce::Font::bold));
+    nameLabel.setFont(ui::Palette::uiFont(type::secondary, juce::Font::bold));
     nameLabel.setColour(juce::Label::textColourId, missing ? PluginLookAndFeel::statusBad : PluginLookAndFeel::textPrimary);
     nameLabel.setTooltip(missing ? "Not found: " + info.filePath
                                        + " - its saved settings are kept with the project. Remove it to drop them."
@@ -34,7 +34,7 @@ HostedChainMiniPanel::Row::Row(HostedChainMiniPanel& owner, int slotIndex, int n
     nameLabel.setTitle(missing ? slotLabel + " missing" : slotLabel);
     addAndMakeVisible(nameLabel);
 
-    latencyLabel.setFont(ui::Palette::uiFont(11.0f, juce::Font::plain));
+    latencyLabel.setFont(ui::Palette::uiFont(type::caption, juce::Font::plain));
     latencyLabel.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
     latencyLabel.setJustificationType(juce::Justification::centredRight);
     latencyLabel.setTitle(slotLabel + " latency");
@@ -146,7 +146,7 @@ HostedChainMiniPanel::HostedChainMiniPanel(KhensuCopilotProcessor& processor) : 
     setTitle("Hosted plugin chain");
 
     headerLabel_.setText("Hosted Plugins", juce::dontSendNotification);
-    headerLabel_.setFont(ui::Palette::uiFont(13.0f, juce::Font::bold));
+    headerLabel_.setFont(ui::Palette::uiFont(type::body, juce::Font::bold));
     headerLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textPrimary);
     headerLabel_.setAccessible(false);
     addAndMakeVisible(headerLabel_);
@@ -160,14 +160,14 @@ HostedChainMiniPanel::HostedChainMiniPanel(KhensuCopilotProcessor& processor) : 
     addButton_.onClick = [this] { launchAddChooser(); };
     addAndMakeVisible(addButton_);
 
-    statusLabel_.setFont(ui::Palette::uiFont(11.0f, juce::Font::plain));
+    statusLabel_.setFont(ui::Palette::uiFont(type::caption, juce::Font::plain));
     statusLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
     statusLabel_.setTitle("Hosted chain status");
     statusLabel_.setTooltip("Result of the last hosted-chain action.");
     addAndMakeVisible(statusLabel_);
 
     emptyLabel_.setText("No hosted plugins. Use \"Add plugin...\" to load a VST3.", juce::dontSendNotification);
-    emptyLabel_.setFont(ui::Palette::uiFont(12.0f, juce::Font::plain));
+    emptyLabel_.setFont(ui::Palette::uiFont(type::secondary, juce::Font::plain));
     emptyLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
     emptyLabel_.setJustificationType(juce::Justification::centred);
     emptyLabel_.setTitle("Hosted chain is empty");

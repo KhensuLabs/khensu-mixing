@@ -26,8 +26,16 @@ class RenderTreePanel final : public PanelCard, public juce::SettableTooltipClie
     ~RenderTreePanel() override;
 
     void paint(juce::Graphics& g) override;
+    void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void resetForSession() override;
+
+    /// STU-8: plays the version at `treeIndex` as the A / B side of the
+    /// loudness-matched A/B. Playback only - the accepted version is unchanged.
+    void pinAs(bool sideA, int treeIndex);
+    /// STU-8: back to the original against the current version.
+    void resetAb();
+    juce::TextButton& resetAbButtonForTesting() noexcept { return resetAbButton_; }
 
   private:
     struct NodeLayout {
@@ -76,9 +84,18 @@ class RenderTreePanel final : public PanelCard, public juce::SettableTooltipClie
     std::unique_ptr<juce::AlertWindow> dialog_;
     std::unique_ptr<juce::FileChooser> chooser_;
 
+    // STU-8: the row's "A" / "B" pin buttons (drawn; hit-tested in mouseDown)
+    // and the Reset A/B button, shown while the A/B is not original vs current.
+    static constexpr float kPinW = 22.0f, kPinH = 16.0f;
+    juce::Rectangle<float> pinBounds(const NodeLayout& nl, bool sideA) const;
+    juce::String abSummary() const;
+    void updateResetButton();
+    juce::TextButton resetAbButton_;
+
     // ENG-2: hub registrations; destroyed (deregistered) before the members
     // above them that the callbacks touch.
     ListenerHandle renderTreeListener_;
+    ListenerHandle abAppliedListener_; ///< STU-8: B changed elsewhere - redraw the pins
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RenderTreePanel)
 };

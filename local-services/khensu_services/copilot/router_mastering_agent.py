@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 import os
 
+from typing import Literal
+
 from fastapi import APIRouter
 from pydantic import Field
 
@@ -41,6 +43,10 @@ class MasteringAgentRequest(RequestModel):
     abstained_reason: str = ""
     target_stem: str = "mix"
     stem_paths: dict[str, str] = Field(default_factory=dict)
+    # ENH-5: warm | balanced | open | loud (balanced = the genre's own targets)
+    # and how far the style moves them, 0..1.
+    style: Literal["warm", "balanced", "open", "loud"] = "balanced"
+    strength: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
 _mastering_jobs = JobStore(name="mastering_agent", max_active=4)  # bounded (F2) + admission cap (ARCH-01)
@@ -86,6 +92,7 @@ def _run_mastering_job(job_id: str, req: MasteringAgentRequest) -> None:
             req.file_path, out_dir, genre, initial_chain=chain,
             max_iterations=req.max_iterations,
             should_cancel=lambda: job_cancel_requested(_mastering_jobs, job_id),
+            style=req.style, strength=req.strength,
         )
         output = result.get("best_safe_output_path")
         if output and os.path.isfile(output):

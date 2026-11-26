@@ -179,8 +179,11 @@ void SidebarComponent::applyThemeColours()
 
 void SidebarComponent::setActiveScreen(int idx)
 {
+    activeIndex_ = juce::jlimit(0, kNumScreens - 1, idx);
     for (int i = 0; i < kNumScreens; ++i)
-        navItems_[i].setActive(i == idx);
+        navItems_[i].setActive(i == activeIndex_);
+    const auto targetBounds = navItems_[static_cast<size_t>(activeIndex_)].getBounds();
+    if (!targetBounds.isEmpty()) activePillY_.setTarget(static_cast<float>(targetBounds.getY()));
 }
 
 void SidebarComponent::setSessionName(const juce::String& name, const juce::String& genre)
@@ -225,16 +228,57 @@ juce::Rectangle<int> SidebarComponent::sessionBlockBounds() const
 
 void SidebarComponent::paint(juce::Graphics& g)
 {
-    g.setColour(KhensuTheme::bgBase);
-    g.fillAll();
-    // The hairline between the sidebar and the content (UX2-4).
-    g.setColour(KhensuTheme::borderSubtle);
-    g.fillRect(getLocalBounds().removeFromRight(1));
+    // LG-10: translucent frosted liquid-glass sidebar rail refracting the smoke backdrop.
+    auto* root = getTopLevelComponent();
+    if (root != nullptr && root != this) {
+        KhensuLookAndFeel::drawFrostedRail(g, getLocalBounds(), root->getLocalBounds(),
+                                           root->getLocalArea(this, getLocalBounds()), false, true);
+    } else {
+        g.setColour(KhensuTheme::bgBase);
+        g.fillAll();
+        g.setColour(KhensuTheme::borderSubtle);
+        g.fillRect(getLocalBounds().removeFromRight(1));
+    }
+
+    // LG-11: spring-animated liquid-glass active nav capsule with soft teal edge bloom.
+    if (activeIndex_ >= 0 && activeIndex_ < kNumScreens) {
+        const auto activeRow = navItems_[static_cast<size_t>(activeIndex_)].getBounds();
+        if (!activeRow.isEmpty()) {
+            const float pillY = activePillY_.hasValue() ? activePillY_.value() : static_cast<float>(activeRow.getY());
+            const auto pill = juce::Rectangle<float>(static_cast<float>(activeRow.getX()), pillY,
+                                                     static_cast<float>(activeRow.getWidth()),
+                                                     static_cast<float>(activeRow.getHeight()))
+                                  .reduced(static_cast<float>(KhensuTheme::sp2), 2.0f);
+            const float pillR = juce::jmin(10.0f, pill.getHeight() * 0.42f);
+
+            // Soft left-edge teal bloom inside the capsule.
+            juce::ColourGradient capsuleFill(KhensuTheme::accentTeal.withAlpha(0.18f), pill.getX(), pill.getCentreY(),
+                                             KhensuTheme::bgOverlay.withAlpha(0.72f), pill.getRight(),
+                                             pill.getCentreY(), false);
+            capsuleFill.addColour(0.32, KhensuTheme::bgOverlay.withAlpha(0.84f));
+            g.setGradientFill(capsuleFill);
+            g.fillRoundedRectangle(pill, pillR);
+
+            // Curved specular rim on the active capsule.
+            juce::ColourGradient pillRim(
+                juce::Colours::white.interpolatedWith(KhensuTheme::accentTeal, 0.35f).withAlpha(0.32f), // theme-exempt(specular glint is white light in every theme)
+                pill.getTopLeft(), KhensuTheme::borderSubtle, pill.getBottomRight(), false);
+            g.setGradientFill(pillRim);
+            g.drawRoundedRectangle(pill.reduced(0.5f), pillR, 1.0f);
+
+            // Luminous 3 px teal edge indicator with soft halo.
+            const auto bar = juce::Rectangle<float>(1.0f, pill.getY() + 6.0f, 3.0f, pill.getHeight() - 12.0f);
+            g.setColour(KhensuTheme::accentTeal.withAlpha(0.32f));
+            g.fillRoundedRectangle(bar.expanded(2.0f, 1.5f), 3.0f);
+            g.setColour(KhensuTheme::accentTeal);
+            g.fillRoundedRectangle(bar, 1.5f);
+        }
+    }
 
     // Brand: the wordmark, left-aligned with the rows below it.
     {
         auto brand = getLocalBounds().removeFromTop(kBrandH).withTrimmedLeft(KhensuTheme::sp4 + 2);
-        const auto mark = KhensuTheme::uiFont(15.0f, juce::Font::bold).withExtraKerningFactor(0.16f);
+        const auto mark = KhensuTheme::uiFont(type::subtitle, juce::Font::bold).withExtraKerningFactor(0.16f);
         const juce::String word = "KHENSU"; // i18n-exempt(brand name)
         const int wordW = juce::GlyphArrangement::getStringWidthInt(mark, word) + 6;
         g.setFont(mark);
@@ -250,10 +294,18 @@ void SidebarComponent::paint(juce::Graphics& g)
     // status dot - what is loaded, at a glance, from every screen.
     {
         const auto card = sessionBlockBounds().toFloat();
-        g.setColour(KhensuTheme::bgSurface);
-        g.fillRoundedRectangle(card, 8.0f);
-        g.setColour(KhensuTheme::borderSubtle);
-        g.drawRoundedRectangle(card.reduced(0.5f), 8.0f, 1.0f);
+        constexpr float cardR = 10.0f;
+        g.setColour(KhensuTheme::bgSurface.withAlpha(0.68f));
+        g.fillRoundedRectangle(card, cardR);
+        juce::ColourGradient cardSheen(KhensuTheme::highlight.withMultipliedAlpha(1.6f), card.getCentreX(),
+                                       card.getY(), KhensuTheme::highlight.withAlpha(0.0f), card.getCentreX(),
+                                       card.getY() + card.getHeight() * 0.5f, false);
+        g.setGradientFill(cardSheen);
+        g.fillRoundedRectangle(card, cardR);
+        juce::ColourGradient cardRim(KhensuTheme::borderActive.brighter(0.25f), card.getTopLeft(),
+                                     KhensuTheme::borderSubtle, card.getBottomRight(), false);
+        g.setGradientFill(cardRim);
+        g.drawRoundedRectangle(card.reduced(0.5f), cardR, 1.0f);
 
         auto inner = sessionBlockBounds().reduced(KhensuTheme::sp3, KhensuTheme::sp3);
         if (sessionName_.isEmpty()) {
@@ -388,6 +440,10 @@ void SidebarComponent::resized()
     toolsCaption_ = b.removeFromTop(kCaptionH);
     for (int i = kToolsStart; i < kFooterStart; ++i)
         navItems_[(size_t)i].setBounds(b.removeFromTop(rowH));
+
+    // Keep the sliding active capsule aligned on layout/resize.
+    if (activeIndex_ >= 0 && activeIndex_ < kNumScreens)
+        activePillY_.jumpTo(static_cast<float>(navItems_[static_cast<size_t>(activeIndex_)].getY()));
 }
 
 } // namespace khensu

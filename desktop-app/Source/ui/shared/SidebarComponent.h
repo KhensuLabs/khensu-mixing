@@ -6,6 +6,7 @@
 #include <functional>
 #include "NavItemComponent.h"
 #include "KhensuTheme.h"
+#include "ValueAnimator.h"
 
 namespace khensu {
 
@@ -97,6 +98,9 @@ class SidebarComponent final : public juce::Component {
     juce::Rectangle<int> sessionBlockBounds() const;
 
     std::array<NavItemComponent, kNumScreens> navItems_;
+    int activeIndex_ = 0;
+    // LG-11: spring-animated liquid-glass capsule sliding behind the active nav row.
+    ValueAnimator activePillY_{[this] { repaint(); }, 220, ValueAnimator::Curve::Spring};
     juce::String sessionName_, sessionGenre_;
     juce::String analysisStatus_;
     bool analysisOk_ = true;

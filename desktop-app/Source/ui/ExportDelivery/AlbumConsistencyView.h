@@ -4,7 +4,7 @@
 //          above), the album's median and a +/- 1 LU band - the tracks that
 //          will jump out in a playlist sit outside it;
 //   bottom each track's tonal fingerprint against the album's average
-//          spectrum (per band, diverging: red = more energy than the album,
+//          spectrum (per band, diverging: orange = more energy than the album,
 //          blue = less) - the track that sounds darker or brighter than its
 //          neighbours shows as a column of colour.
 // Measured natively from each track's current master (TrackTimeline).

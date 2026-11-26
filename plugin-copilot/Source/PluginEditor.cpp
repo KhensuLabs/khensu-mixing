@@ -90,10 +90,12 @@ KhensuCopilotEditor::KhensuCopilotEditor(KhensuCopilotProcessor& p)
 #endif
       processor_(p), presetBar_(p), meterSection_(p),
       systemBrainPanel_([&p](std::function<void()> job) { p.runShortInBackground(std::move(job)); }),
-      mixerChainPanel_(&p), chatPanel_(p), dspGridPanel_(p), eqCurvePanel_(p), hostedChainPanel_(p), mixHubPanel_(p),
-      issuePanel_(p), compactTopFix_(p)
+      mixerChainPanel_(&p), chatPanel_(p), dspGridPanel_(p),
+      dspMorePanel_(p, DspControlGridPanel::Page::More), eqCurvePanel_(p), hostedChainPanel_(p), mixHubPanel_(p),
+      issuePanel_(p), referencePanel_(p), compactTopFix_(p)
 {
     setLookAndFeel(&editorLookAndFeel_); // UX-4: 12 px button text floor
+    PluginLookAndFeel::registerRoot(*this); // VIS-9: a palette switch reaches this editor
     titleLabel_.setText("Khensu Copilot", juce::dontSendNotification);
     titleLabel_.setFont(ui::Palette::uiFont(ui::studio::kTitleSize, juce::Font::bold));
     titleLabel_.setColour(juce::Label::textColourId, PluginLookAndFeel::textPrimary);
@@ -164,6 +166,30 @@ KhensuCopilotEditor::KhensuCopilotEditor(KhensuCopilotProcessor& p)
     comparisonStrip_.onNextBlindTrial = [this] { processor_.nextBlindTrial(); };
     comparisonStrip_.monitorTrimDb = [this] { return processor_.getMonitorTrimDb(); };
 
+    // ENH-10: the reference and the monitoring solo, beside the A/B.
+    refButton_.setButtonText(TRANS("Ref"));
+    refButton_.setComponentID("refButton");
+    refButton_.setTitle(TRANS("Hear reference"));
+    refButton_.setTooltip(TRANS("Hear the reference track, loudness matched to this track (load one on the "
+                                "Reference tab). Never in an offline render."));
+    refButton_.setClickingTogglesState(true);
+    refButton_.onClick = [this] {
+        processor_.setReferenceListening(refButton_.getToggleState() && processor_.getReference() != nullptr);
+        updateMonitorButtons();
+    };
+    addAndMakeVisible(refButton_);
+    soloButton_.setComponentID("soloButton");
+    soloButton_.setTitle(TRANS("Monitoring solo"));
+    soloButton_.setTooltip(TRANS("Listen to part of the output: Mono sum, Side only, Sub below 120 Hz, or a low / "
+                                 "mid / high band. For monitoring only - not automatable, not saved, never in an "
+                                 "offline render."));
+    // A solo that is on is a warning state, like Bypass.
+    soloButton_.setColour(juce::TextButton::buttonOnColourId, PluginLookAndFeel::statusWarn);
+    soloButton_.setColour(juce::TextButton::textColourOnId, PluginLookAndFeel::bgDark);
+    soloButton_.onClick = [this] { showSoloMenu(); };
+    addAndMakeVisible(soloButton_);
+    updateMonitorButtons();
+
     // A finding's state lives in the desktop's issue queue (CON-1): the same
     // feedback row, written with the same notes, so Done here reads done on
     // the Issues screen and reopening here reopens it there. Dismissing stays
@@ -216,20 +242,32 @@ KhensuCopilotEditor::KhensuCopilotEditor(KhensuCopilotProcessor& p)
     // hand. Writing a fix as host automation over a time span is the Issues
     // list's job (CE-DAW-4).
     suggestionPanel_.setOnAutomateSuggestion([this](const Recommendation& rec) { return applySuggestion(rec); });
-    for (auto* topFix : {&suggestionsPage_.topFix_, &compactTopFix_})
+    for (auto* topFix : {&suggestionsPage_.topFix_, &compactTopFix_}) {
         topFix->onApply = [this](const Recommendation& rec) { return applySuggestion(rec); };
+        topFix->onApplyAll = [this](const std::vector<Recommendation>& recs) { return applyAllFixes(recs); };
+    }
 
-    // UX-18: five tabs under the persistent meter strip (Ctrl+1..5):
-    // Suggest / DSP / Plugins / Mix / Chat. The views that belong together
-    // share a tab with a small switch between them.
-    suggestTab_.addView(TRANS("Suggestions"), suggestionsPage_);
+    // UX-18 / VIS-9: six sections under the persistent meter strip
+    // (Ctrl+1..6), named like the desktop: Issues / DSP / Plugins / Mix Hub /
+    // Chat / Reference. The views that belong together share a section with a
+    // small switch between them.
+    suggestTab_.addView(TRANS("Findings"), suggestionsPage_);
     suggestTab_.addView(TRANS("Hooks / Brain"), hooksBrainPage_);
     dspTab_.addView(TRANS("Chain"), dspGridPanel_);
     // Only the EQ curve of the Dashboard's visual panels fits the plugin's
     // small host-embedded window; the others stay desktop-only.
     dspTab_.addView(TRANS("EQ curve"), eqCurvePanel_);
+    // STU-10: EQ bands 4-6, each band's filter / channels / dynamics, and the
+    // transient, saturation, bass mono and width stages (after the existing
+    // views, so their indices keep their meaning).
+    dspTab_.addView(TRANS("More stages"), dspMorePanel_);
     pluginsTab_.addView(TRANS("Mixer chain"), mixerChainPanel_);
     // WF-9: the DSP tab's Chain view is the plugin chain's one editor.
+    // STU-17: the recipe goes in through the apply strip, which lists what
+    // could not be mapped and why (the same list Apply all shows).
+    mixerChainPanel_.onApplyRecipe = [this](const mixerchain::RecipeDspMapping& mapping) {
+        return applyChainRecipe(mapping);
+    };
     mixerChainPanel_.onLoadedIntoDsp = [this] {
         tabs_.setCurrentTabIndex(1);
         dspTab_.show(0);
@@ -237,17 +275,17 @@ KhensuCopilotEditor::KhensuCopilotEditor(KhensuCopilotProcessor& p)
     // Third-party VST3s hosted inside the copilot - processed after the
     // corrective DSP and before the output stage (limiter, A/B).
     pluginsTab_.addView(TRANS("Hosted"), hostedChainPanel_);
-    // UI-6: flat text tabs; the selected one is underlined in the accent.
-    const auto tabFill = juce::Colours::transparentBlack;
-    tabs_.addTab("Suggest", tabFill, &suggestTab_, false);
-    tabs_.addTab("DSP", tabFill, &dspTab_, false);
-    tabs_.addTab("Plugins", tabFill, &pluginsTab_, false);
+    // VIS-9: a segmented control, the desktop's look. The order is the saved
+    // tab index's meaning (UI-8), so new sections go last.
+    tabs_.addTab(TRANS("Issues"), suggestTab_);
+    tabs_.addTab(TRANS("DSP"), dspTab_);
+    tabs_.addTab(TRANS("Plugins"), pluginsTab_);
     // Every Copilot instance in this process: masking between tracks and the
-    // summed balance (mixhub/MixHub.h).
-    tabs_.addTab("Mix", tabFill, &mixHubPanel_, false);
-    tabs_.addTab("Chat", tabFill, &chatPanel_, false);
-    tabs_.setTabBarDepth(34);
-    tabs_.setOutline(0);
+    // summed balance (mixhub/MixHub.h). "Mix Hub", so it does not read as the
+    // desktop's Mix / Master.
+    tabs_.addTab(TRANS("Mix Hub"), mixHubPanel_);
+    tabs_.addTab(TRANS("Chat"), chatPanel_);
+    tabs_.addTab(TRANS("Reference"), referencePanel_); // ENH-10
     addAndMakeVisible(tabs_);
 
     // UI-8 Compact view parts (hidden in the full view).
@@ -299,7 +337,17 @@ KhensuCopilotEditor::KhensuCopilotEditor(KhensuCopilotProcessor& p)
 
 KhensuCopilotEditor::~KhensuCopilotEditor()
 {
+    PluginLookAndFeel::unregisterRoot(*this);
     setLookAndFeel(nullptr);
+}
+
+void KhensuCopilotEditor::setHighContrast(bool on)
+{
+    processor_.setUiPalette(on ? 1 : 0);
+    PluginLookAndFeel::setPalette(on ? PluginLookAndFeel::Palette::HighContrast : PluginLookAndFeel::Palette::Dark);
+    editorLookAndFeel_.applyPalette();
+    sendLookAndFeelChange();
+    repaint();
 }
 
 void KhensuCopilotEditor::setView(bool compact, ViewSize size)
@@ -339,10 +387,17 @@ void KhensuCopilotEditor::showViewMenu()
     menu.addItem(2, TRANS("Small") + " (720 x 540)", true, !state.compact && state.size == ViewSize::Small);
     menu.addItem(3, TRANS("Medium") + " (960 x 720)", true, !state.compact && state.size == ViewSize::Medium);
     menu.addItem(4, TRANS("Large") + " (1280 x 960)", true, !state.compact && state.size == ViewSize::Large);
+    menu.addSeparator();
+    // VIS-9: the desktop's High-Contrast values; saved with this instance.
+    menu.addItem(10, TRANS("High contrast"), true, processor_.getUiPalette() == 1);
     juce::Component::SafePointer<KhensuCopilotEditor> safeThis(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&viewButton_), [safeThis](int choice) {
         auto* self = safeThis.getComponent();
         if (self == nullptr || choice <= 0) return;
+        if (choice == 10) {
+            self->setHighContrast(self->processor_.getUiPalette() != 1);
+            return;
+        }
         const auto current = self->processor_.getEditorViewState().size;
         if (choice == 1) self->setView(true, current);
         else self->setView(false, choice == 2 ? ViewSize::Small : choice == 4 ? ViewSize::Large : ViewSize::Medium);
@@ -358,7 +413,7 @@ void KhensuCopilotEditor::configureKeyboardAccess()
     setWantsKeyboardFocus(true);
     setTitle("Khensu Copilot");
     setDescription(TRANS("Mix copilot: meters, suggestions, and the corrective DSP chain."));
-    setHelpText(TRANS("Ctrl+1 to Ctrl+5 select a tab; Ctrl+Tab cycles tabs; Ctrl+B toggles bypass."));
+    setHelpText(TRANS("Ctrl+1 to Ctrl+6 select a section; Ctrl+Tab cycles them; Ctrl+B toggles bypass."));
 
     loadButton_.setComponentID("loadButton");
     loadButton_.setTitle(TRANS("Load last session"));
@@ -379,23 +434,13 @@ void KhensuCopilotEditor::configureKeyboardAccess()
     tabs_.setComponentID("tabs");
     tabs_.setTitle(TRANS("Copilot sections"));
     tabs_.setExplicitFocusOrder(5);
-    auto& bar = tabs_.getTabbedButtonBar();
-    // JUCE makes the button bar a keyboardFocusContainer, which hides its
-    // buttons from the editor's Tab traversal; demote it so Tab reaches them.
-    bar.setFocusContainerType(juce::Component::FocusContainerType::focusContainer);
-    for (int i = 0; i < bar.getNumTabs(); ++i) {
-        if (auto* tab = bar.getTabButton(i)) {
-            tab->setWantsKeyboardFocus(true);
-            tab->setDescription(TRANS("Show the") + " " + tab->getButtonText() + " " + TRANS("section") + " (Ctrl+"
-                                + juce::String(i + 1) + ").");
-            tab->setExplicitFocusOrder(i + 1);
-        }
-    }
     compactFindings_.setExplicitFocusOrder(6);
     compactTopFix_.setExplicitFocusOrder(7);
 
     comparisonStrip_.setComponentID("comparisonStrip");
     comparisonStrip_.setExplicitFocusOrder(8);
+    refButton_.setExplicitFocusOrder(9);
+    soloButton_.setExplicitFocusOrder(10);
 
     // Read-only status text stays in the accessibility tree (screen readers
     // announce it) but out of the Tab order.
@@ -529,10 +574,23 @@ void KhensuCopilotEditor::onAnalysisLoaded()
 
 void KhensuCopilotEditor::paint(juce::Graphics& g)
 {
+    // LG-16: subtle static ambient liquid-teal studio wash (zero DAW animation cost).
+    const auto b = getLocalBounds().toFloat();
     g.fillAll(PluginLookAndFeel::bgDark);
-    // Hairline under the header.
-    g.setColour(PluginLookAndFeel::textPrimary.withAlpha(0.08f));
-    g.fillRect(0, compact_ ? kHeaderH - 4 : kHeaderH + kSubHeaderH, getWidth(), 1);
+    if (!b.isEmpty() && PluginLookAndFeel::currentPalette() != PluginLookAndFeel::Palette::HighContrast) {
+        juce::ColourGradient ambient(PluginLookAndFeel::accentTeal.withAlpha(0.065f), b.getWidth() * 0.14f,
+                                     -b.getHeight() * 0.05f, juce::Colours::transparentBlack, b.getWidth() * 0.65f,
+                                     b.getHeight() * 0.65f, true);
+        g.setGradientFill(ambient);
+        g.fillRect(b);
+    }
+    // Luminous hairline under the header.
+    const int hy = compact_ ? kHeaderH - 4 : kHeaderH + kSubHeaderH;
+    juce::ColourGradient hair(PluginLookAndFeel::textPrimary.withAlpha(0.06f), 0.0f, (float)hy,
+                              PluginLookAndFeel::textPrimary.withAlpha(0.06f), b.getWidth(), (float)hy, false);
+    hair.addColour(0.35, PluginLookAndFeel::accentTeal.withAlpha(0.18f));
+    g.setGradientFill(hair);
+    g.fillRect(0, hy, getWidth(), 1);
 }
 
 bool KhensuCopilotEditor::applySuggestion(const Recommendation& rec, bool requireSafe)
@@ -583,6 +641,82 @@ bool KhensuCopilotEditor::applySuggestion(const Recommendation& rec, bool requir
     juce::String summary;
     summary << TRANS("Applied") << " " << applied << " " << (applied == 1 ? TRANS("parameter") : TRANS("parameters"));
     if (!manualLines.isEmpty()) summary << " - " << manualLines.size() << " " << TRANS("to dial in by hand");
+    showApplyStrip(summary + " " + TRANS("(hover for details)"), details, true);
+    return true;
+}
+
+bool KhensuCopilotEditor::applyAllFixes(const std::vector<Recommendation>& recs)
+{
+    std::vector<float> before;
+    for (auto* param : processor_.getParameters()) before.push_back(param->getValue());
+    const auto result = processor_.applyAllSafeFixes(recs);
+    const auto& batch = result.batch;
+    const auto details =
+        applyBatchDetails(batch, TRANS("Applied to the built-in DSP chain (host-automatable, live under Amount):"));
+    const int skipped = static_cast<int>(batch.skipped.size());
+    if (!result.applied) {
+        pendingOverride_.reset();
+        showApplyStrip(TRANS("No open finding is both safe to apply automatically and renderable here") + " - "
+                           + juce::String(skipped) + " " + TRANS("skipped") + " " + TRANS("(hover for details)"),
+                       details, false);
+        return false;
+    }
+    applyUndoSnapshot_ = std::move(before);
+    pendingOverride_.reset();
+    const int applied = static_cast<int>(batch.appliedIds.size());
+    juce::String summary;
+    summary << TRANS("Applied") << " " << applied << " " << (applied == 1 ? TRANS("fix") : TRANS("fixes"));
+    if (skipped > 0) summary << " - " << skipped << " " << TRANS("skipped");
+    showApplyStrip(summary + " " + TRANS("(hover for details)"), details, true);
+    return true;
+}
+
+juce::String KhensuCopilotEditor::applyBatchDetails(const copilot::FixBatchResult& batch, const juce::String& appliedHeading)
+{
+    const auto utf8 = [](const std::string& s) { return juce::String(juce::CharPointer_UTF8(s.c_str())); };
+    juce::String details;
+    if (!batch.notes.empty()) {
+        details << appliedHeading << "\n";
+        for (const auto& note : batch.notes) details << "  - " << utf8(note) << "\n";
+        details << "\n";
+    }
+    if (!batch.unmappedKeys.empty()) {
+        details << TRANS("Dial these into the relevant device manually:") << "\n";
+        for (const auto& key : batch.unmappedKeys) details << "  - " << utf8(key) << "\n";
+        details << "\n";
+    }
+    if (!batch.skipped.empty()) {
+        details << TRANS("Skipped:") << "\n";
+        for (const auto& s : batch.skipped) details << "  - " << s.what << ": " << s.reason << "\n";
+    }
+    return details;
+}
+
+bool KhensuCopilotEditor::applyChainRecipe(const mixerchain::RecipeDspMapping& mapping)
+{
+    std::vector<float> before;
+    for (auto* param : processor_.getParameters()) before.push_back(param->getValue());
+    const auto batch = copilot::recipeBatch(mapping);
+    const auto details = applyBatchDetails(batch, TRANS("Loaded into the built-in DSP chain (an approximation - load the "
+                                                  "listed plugins for their exact character):"));
+    const int skipped = static_cast<int>(batch.skipped.size());
+    if (batch.values.empty()) {
+        // Nothing maps: leave the chain as it is rather than switching it off.
+        pendingOverride_.reset();
+        showApplyStrip(TRANS("Nothing in this chain maps onto the built-in DSP") + " - " + juce::String(skipped) + " "
+                           + TRANS("skipped") + " " + TRANS("(hover for details)"),
+                       details, false);
+        return false;
+    }
+    // One complete set: stages the recipe does not map are switched off (PLG-19).
+    processor_.applyAiParameterSet(batch.values);
+    applyUndoSnapshot_ = std::move(before);
+    pendingOverride_.reset();
+    const int loaded = static_cast<int>(batch.appliedIds.size());
+    juce::String summary;
+    summary << TRANS("Loaded") << " " << loaded << " " << (loaded == 1 ? TRANS("plugin") : TRANS("plugins")) << " "
+            << TRANS("into the DSP chain");
+    if (skipped > 0) summary << " - " << skipped << " " << TRANS("skipped");
     showApplyStrip(summary + " " + TRANS("(hover for details)"), details, true);
     return true;
 }
@@ -652,7 +786,7 @@ void KhensuCopilotEditor::layoutCompact(juce::Rectangle<int> b)
     loadButton_.setBounds(header.removeFromRight(110));
     formatTag_.setBounds({});
 
-    comparisonStrip_.setBounds(b.removeFromBottom(30).reduced(kPad, 2));
+    layoutFooter(b.removeFromBottom(30).reduced(kPad, 2));
     layoutApplyStrip(b);
     b.reduce(kPad, 0);
     b.removeFromTop(4);
@@ -698,11 +832,52 @@ void KhensuCopilotEditor::layoutFull(juce::Rectangle<int> b)
     meterSection_.setBounds(b.removeFromTop(meterH).reduced(kPad, 0));
     b.removeFromTop(4);
 
-    // Global Comparison Strip at bottom
-    comparisonStrip_.setBounds(b.removeFromBottom(kFooterH).reduced(kPad, 4));
+    // Global Comparison Strip at bottom, with the reference and solo (ENH-10).
+    layoutFooter(b.removeFromBottom(kFooterH).reduced(kPad, 4));
     b.removeFromBottom(2);
     layoutApplyStrip(b);
     tabs_.setBounds(b.reduced(kPad / 2, 0));
+}
+
+void KhensuCopilotEditor::layoutFooter(juce::Rectangle<int> footer)
+{
+    refButton_.setBounds(footer.removeFromLeft(52).reduced(1, 1));
+    footer.removeFromLeft(4);
+    soloButton_.setBounds(footer.removeFromLeft(compact_ ? 104 : 136).reduced(1, 1));
+    footer.removeFromLeft(6);
+    comparisonStrip_.setBounds(footer);
+}
+
+void KhensuCopilotEditor::showSoloMenu()
+{
+    using Mode = copilot::MonitorSolo::Mode;
+    const auto current = processor_.getMonitorSolo();
+    juce::PopupMenu menu;
+    menu.addSectionHeader(TRANS("Monitoring solo (not saved, never rendered)"));
+    for (int m = 0; m < copilot::MonitorSolo::kNumModes; ++m) {
+        const auto mode = static_cast<Mode>(m);
+        menu.addItem(m + 1, copilot::MonitorSolo::modeName(mode), true, mode == current);
+        if (mode == Mode::Off || mode == Mode::Sub) menu.addSeparator();
+    }
+    juce::Component::SafePointer<KhensuCopilotEditor> safeThis(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&soloButton_), [safeThis](int choice) {
+        auto* self = safeThis.getComponent();
+        if (self == nullptr || choice <= 0) return;
+        self->processor_.setMonitorSolo(static_cast<copilot::MonitorSolo::Mode>(choice - 1));
+        self->updateMonitorButtons();
+    });
+}
+
+void KhensuCopilotEditor::updateMonitorButtons()
+{
+    using Mode = copilot::MonitorSolo::Mode;
+    const auto mode = processor_.getMonitorSolo();
+    const auto text = mode == Mode::Off ? TRANS("Solo: Off") : TRANS("Solo:") + " " + copilot::MonitorSolo::modeName(mode);
+    if (soloButton_.getButtonText() != text) soloButton_.setButtonText(text);
+    soloButton_.setToggleState(mode != Mode::Off, juce::dontSendNotification);
+    const bool haveRef = processor_.getReference() != nullptr;
+    refButton_.setEnabled(haveRef);
+    refButton_.setToggleState(haveRef && processor_.isReferenceListening(), juce::dontSendNotification);
 }
 
 void KhensuCopilotEditor::resized()
@@ -839,6 +1014,7 @@ void KhensuCopilotEditor::timerCallback()
 
     // 3. Keep comparison strip synchronized with processor
     comparisonStrip_.selectMode(processor_.getAbMode());
+    updateMonitorButtons(); // ENH-10
 }
 
 bool KhensuCopilotEditor::isInterestedInFileDrag(const juce::StringArray& files)

@@ -678,6 +678,160 @@ def check_jmax_size_t(errors: list[str]) -> None:
                                   "macOS build (juce_dsp SIMD overloads) - use std::max/std::min.")
 
 
+_FONT_HELPERS = ("uiFont", "bodyFont", "labelFont", "metricFont", "numericFont", "monoFont", "numberFont")
+_FONT_SITE = re.compile(r"\b(" + "|".join(_FONT_HELPERS) + r")\s*\(|\bFontOptions\s*[({]|\bjuce::Font\s*[({]"
+                        r"|\.setFont\s*\(|\.(?:withHeight|withPointHeight|setHeight)\s*\(")
+_NUMERIC_LITERAL = re.compile(r"^\s*(\d+(?:\.\d*)?|\.\d+)[fF]?\s*$")
+
+
+def _strip_cpp_comments(text: str) -> str:
+    """Blank out // and /* */ comments (newlines kept, string literals intact)."""
+    out: list[str] = []
+    i, n, quote = 0, len(text), None
+    while i < n:
+        c = text[i]
+        if quote:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if c == quote or c == "\n":
+                quote = None
+        elif c in "\"'":
+            quote = c
+            out.append(c)
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i))
+            i = j
+            continue
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append("".join(ch if ch == "\n" else " " for ch in text[i:j]))
+            i = j
+            continue
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _call_args(code: str, open_idx: int) -> list[str] | None:
+    """Top-level arguments of the call/brace-init opening at code[open_idx]."""
+    close = {"(": ")", "{": "}"}[code[open_idx]]
+    depth, cur, args, quote = 0, [], [], None
+    for i in range(open_idx + 1, len(code)):
+        c = code[i]
+        if quote:
+            cur.append(c)
+            if c == quote and code[i - 1] != "\\":
+                quote = None
+        elif c in "\"'":
+            quote = c
+            cur.append(c)
+        elif c in "({[":
+            depth += 1
+            cur.append(c)
+        elif c in ")}]":
+            if depth == 0:
+                if c != close:
+                    return None
+                args.append("".join(cur))
+                return args
+            depth -= 1
+            cur.append(c)
+        elif c == "," and depth == 0:
+            args.append("".join(cur))
+            cur = []
+        else:
+            cur.append(c)
+    return None
+
+
+def _receiver_is_font(code: str, dot: int) -> bool:
+    """Is the expression before `.withHeight(` a font (a call or name containing "font")?"""
+    j = dot - 1
+    while j >= 0 and code[j].isspace():
+        j -= 1
+    if j >= 0 and code[j] in ")}":
+        depth = 0
+        while j >= 0:
+            if code[j] in ")}":
+                depth += 1
+            elif code[j] in "({":
+                depth -= 1
+                if depth == 0:
+                    break
+            j -= 1
+        m = re.search(r"([A-Za-z_][\w:]*)\s*$", code[:max(j, 0)])
+    else:
+        m = re.search(r"([A-Za-z_][\w:.>-]*)$", code[:j + 1])
+    return bool(m and "font" in m.group(1).lower())
+
+
+def check_font_sizes(errors: list[str]) -> None:
+    """UXR-8: font sizes come from the type scale, with an 11 px floor.
+
+    Every font height is a `type::` token (shared-core/include/khensu/ui/
+    TypeScale.h) passed to a theme font helper - `KhensuTheme::uiFont(type::body)`,
+    `ui::Palette::uiFont(type::caption)` - so the hierarchy has ten named steps
+    instead of the ~35 ad-hoc literals (7 px to 46 px) the 2026-11-25 sweep
+    replaced. A literal height (a theme helper's size, a FontOptions /
+    juce::Font size, Graphics::setFont(float), font.withHeight(n)) fails outside
+    the theme files, and a literal under 11 px fails everywhere. A size computed
+    from layout is fine: the helpers floor it at type::caption. Escape hatch:
+    `font-exempt(<reason>)` on the line.
+    """
+    theme_files = {"KhensuTheme.cpp", "KhensuTheme.h", "KhensuLookAndFeel.cpp", "KhensuLookAndFeel.h",
+                   "KhensuPalette.cpp", "KhensuPalette.h", "PluginLookAndFeel.cpp", "StudioStyle.h",
+                   "TypeScale.h"}
+    floor_px = 11.0
+    roots = ("desktop-app/Source", "plugin-copilot/Source", "shared-core/src", "shared-core/include")
+    for sub in roots:
+        for f in sorted((ROOT / sub).rglob("*")):
+            if f.suffix not in (".cpp", ".h"):
+                continue
+            text = f.read_text(encoding="utf-8", errors="replace")
+            if "Font" not in text and "font" not in text:
+                continue
+            raw_lines = text.splitlines()
+            code = _strip_cpp_comments(text)
+            for m in _FONT_SITE.finditer(code):
+                open_idx = m.end() - 1
+                args = _call_args(code, open_idx)
+                if not args:
+                    continue
+                site = m.group(0)
+                if m.group(1):                                    # theme helper: size is arg 0
+                    candidates = args[:1]
+                elif site.startswith(".setFont"):                 # Graphics::setFont(float)
+                    candidates = args if len(args) == 1 else []
+                elif site.startswith("."):                        # font.withHeight(n)
+                    candidates = args[:1] if _receiver_is_font(code, m.start()) else []
+                else:                                             # FontOptions / juce::Font ctor
+                    candidates = args
+                for arg in candidates:
+                    lit = _NUMERIC_LITERAL.match(arg)
+                    if not lit:
+                        continue
+                    value = float(lit.group(1))
+                    lineno = code.count("\n", 0, open_idx) + 1
+                    line = raw_lines[lineno - 1] if lineno <= len(raw_lines) else ""
+                    if "font-exempt(" in line:
+                        continue
+                    rel = f.relative_to(ROOT).as_posix()
+                    if value < floor_px:
+                        errors.append(f"{rel}:{lineno}: font height {lit.group(0).strip()} is under the 11 px "
+                                      "floor - use type::caption (UXR-8), or annotate font-exempt(<reason>).")
+                    elif f.name not in theme_files:
+                        errors.append(f"{rel}:{lineno}: literal font height {lit.group(0).strip()} - use a "
+                                      "type:: token from khensu/ui/TypeScale.h (UXR-8), or annotate "
+                                      "font-exempt(<reason>).")
+
+
 def check_generated_issue_codes(errors: list[str]) -> None:
     """ENG-7: the service's finding-code table is generated from the C++ one."""
     result = subprocess.run(
@@ -750,6 +904,7 @@ def main() -> int:
     check_generated_issue_codes(errors)
     check_string_zero_decimals(errors)
     check_jmax_size_t(errors)
+    check_font_sizes(errors)
     check_hand_rolled_fetches(errors)
     check_benchmark_report(errors)
     check_measured_loudness(errors)

@@ -1,4 +1,5 @@
 // desktop-app/Source/ui/Dashboard/DashboardScreen.cpp
+#include "../shared/GenreInUse.h"
 #include "../shared/TimelineCache.h"
 #include "DashboardScreen.h"
 #include "../shared/PanelRunState.h"
@@ -9,6 +10,8 @@
 #include "../shared/PanelCard.h"
 #include "../shared/FeatureMaturity.h"
 #include "EssentialsSelection.h"
+#include "FindingCardMap.h"
+#include "../shared/UndoToast.h"
 #include <khensu/targets/GenreEntry.h>
 #include <khensu/recommendations/MixReportBuilder.h>
 #include <khensu/recommendations/MixScorecard.h>
@@ -52,6 +55,12 @@ void DashboardScreen::applyThemeColours()
     timelineToggleButton_.setColour(juce::TextButton::textColourOnId, KhensuTheme::textPrimary);
     for (auto* caption : {&detailCaption_, &measurementsCaption_})
         caption->setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
+    // ENH-7: the view row - the view on screen is a quiet teal tint.
+    viewCaption_.setColour(juce::Label::textColourId, KhensuTheme::textTertiary);
+    for (auto* b : {&essentialsViewButton_, &allViewButton_, &moreViewsButton_}) {
+        b->setColour(juce::TextButton::buttonOnColourId, KhensuTheme::accentTeal.withAlpha(0.24f));
+        b->setColour(juce::TextButton::textColourOnId, KhensuTheme::accentTeal);
+    }
 }
 
 DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessionRegistration_(ctrl, *this)
@@ -60,9 +69,12 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
     titleLabel.setScreen(ScreenType::Dashboard);
     addAndMakeVisible(titleLabel);
 
-    snapshotsButton_.setEnabled(false);
-    snapshotsButton_.setTooltip(TRANS("Save this analysis as snapshot A or B, then compare the two"));
-    snapshotsButton_.onClick = [this] { showSnapshotsMenu(); };
+    // ENH-8: one home for snapshots - Mix / Master > Versions. This is the
+    // link there (it was a second, Dashboard-only A / B snapshot store).
+    snapshotsButton_.setButtonText(TRANS("Snapshots") + " " + juce::String(juce::CharPointer_UTF8("\xe2\x86\x92")));
+    snapshotsButton_.setTitle(TRANS("Snapshots"));
+    snapshotsButton_.setTooltip(TRANS("Snapshots live in Mix / Master > Versions: save and compare them there"));
+    snapshotsButton_.onClick = [this] { controller.shell().showMixMasterCard(3); }; // 3 = Versions > Snapshots
 
     compareToggleButton_.setClickingTogglesState(true);
     compareToggleButton_.setTooltip(TRANS("Show inline reference-track deltas on Loudness/Dynamics/Spectral/Stereo "
@@ -89,15 +101,15 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
     };
     addChildComponent(btnRerunDeep_); // visibility toggled in updateHeader()
 
-    statusLabel.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::plain));
+    statusLabel.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::plain));
     addAndMakeVisible(statusLabel);
 
     shortcutLegendLabel_.setText(TRANS("[N] Next Issue  |  [Ctrl+Z] Undo  |  [Ctrl+Y] Redo"), juce::dontSendNotification);
-    shortcutLegendLabel_.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    shortcutLegendLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     shortcutLegendLabel_.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(shortcutLegendLabel_);
 
-    conflictBanner_.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::bold));
+    conflictBanner_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
     conflictBanner_.setJustificationType(juce::Justification::centred);
     conflictBanner_.setVisible(false);
     addChildComponent(conflictBanner_);
@@ -179,6 +191,8 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
     // "Start here" names the issue that Fix top issue fixes (VerdictModel.h).
     verdictCard_.onFixClicked = [this] { controller.shell().fixTopIssue(); };
     verdictCard_.onReviewClicked = [this] { controller.shell().showScreen(ScreenType::Issues); };
+    // ENH-7: "Start here" names a finding; clicking it shows that finding's card.
+    verdictCard_.onStartHereClicked = [this](const std::string& recId) { revealCardForFinding(recId); };
     issuesListener_ = listen(controller.issues(), this, &IIssues::addIssuesListener, &IIssues::removeIssuesListener,
                              [this] {
                                  refreshVerdict();
@@ -196,8 +210,12 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
     // drawn; a marker opens that finding on the Issues screen.
     hero_.setTitle(TRANS("Spectrum and findings"));
     hero_.setTooltip(TRANS("The track's spectrum against the genre target, with every finding where it lives. "
-                           "Click a marker to open that finding on the Issues screen."));
-    hero_.onFindingClicked = [this](const std::string& key) { controller.shell().showIssue(key); };
+                           "Click a marker or a finding to show its card below."));
+    // ENH-7: a finding shows its card on this screen; one no card shows
+    // opens on the Issues screen (as before).
+    hero_.onFindingClicked = [this](const std::string& key) {
+        if (!revealCardForFinding(key)) controller.shell().showIssue(key);
+    };
     hero_.onMetricClicked = [this](int gauge) { controller.shell().showMetricExplanation(gauge); };
     hero_.setOriginalProbe([this] {
         auto& p = controller.playback();
@@ -348,26 +366,26 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
         });
     }
 
-    // Zone 3 category tabs - narrow the grid to one workspace. "Essentials"
-    // (index 0, UX-1) is the default; "All" shows every card. The tab NAME is
-    // data (compared with categoryForPanel()), so it is not translated.
-    for (const auto* cat : dashboard_category::kTabs)
-        zone3Tabs_.addSegment(cat); // i18n-exempt(category names are data, compared with forPanel())
-    zone3Tabs_.setTitle(TRANS("Dashboard category"));
-    zone3Tabs_.setSelected(0);
-    zone3Tabs_.onChange = [this](int index) {
-        if (index < 0 || index >= (int)std::size(dashboard_category::kTabs)) return;
-        activeZone3Category_ = dashboard_category::kTabs[index];
-        layoutZone3();
-        // Keep the category tab strip pinned at the top of the viewport and show
-        // the freshly filtered grid beneath it - don't yank the whole page up to
-        // zone 0 (verdict card), which is jarring when the user is down at the
-        // tabs. Clamp so we never scroll past the new content height.
-        const int maxY = juce::jmax(0, grid.getHeight() - viewport.getMaximumVisibleHeight());
-        viewport.setViewPosition(0, juce::jmin(zone3Tabs_.getY(), maxY));
-        grid.repaint();
-    };
-    grid.addAndMakeVisible(zone3Tabs_);
+    // ENH-7: two views up front - Essentials (UX-1, the remembered default)
+    // and All - and the category views (Loudness, Spectrum, ...) behind one
+    // "More views" menu instead of ten tabs. The view NAME is data (compared
+    // with categoryForPanel()); the labels shown are translated.
+    essentialsViewButton_.setButtonText(TRANS("Essentials"));
+    essentialsViewButton_.setTooltip(TRANS("The cards for this track's findings, worst first, and the core views."));
+    essentialsViewButton_.onClick = [this] { setView(dashboard_category::kTabs[0], true); };
+    allViewButton_.setButtonText(TRANS("All cards"));
+    allViewButton_.setTooltip(TRANS("Every card (the advanced ones when turned on in the ... menu)."));
+    allViewButton_.onClick = [this] { setView(dashboard_category::kTabs[1], true); };
+    moreViewsButton_.setTooltip(TRANS("Show only one subject's cards: loudness, spectrum, spatial, song, stems, "
+                                      "quality or the advanced views."));
+    moreViewsButton_.onClick = [this] { showMoreViewsMenu(); };
+    viewCaption_.setText(TRANS("View"), juce::dontSendNotification);
+    viewCaption_.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
+    viewCaption_.setJustificationType(juce::Justification::centredRight);
+    for (juce::Component* c : std::initializer_list<juce::Component*>{&viewCaption_, &essentialsViewButton_,
+                                                                      &allViewButton_, &moreViewsButton_})
+        grid.addAndMakeVisible(c);
+    updateViewButtons();
 
     // Mouse drag-to-reorder: each Zone 3 card can be press-dragged by its
     // header; the grid (a DragAndDropTarget) resolves the drop position to a
@@ -433,7 +451,7 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
 
     // The saved confidence-overlay toggle is applied by loadPreferencesAsync().
 
-    completenessBadge_.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::bold));
+    completenessBadge_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
     completenessBadge_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(completenessBadge_);
 
@@ -459,11 +477,25 @@ DashboardScreen::DashboardScreen(IAppController& ctrl) : controller(ctrl), sessi
             case 3:
                 toggleConfidenceOverlay(!confidenceOverlayEnabled_);
                 break;
-            case 4: // OVH-7: research / forensic / experimental cards in "All"
-                showAdvancedCards_ = !showAdvancedCards_;
-                writePreferenceAsync("dashboard_show_advanced", showAdvancedCards_ ? "1" : "0");
-                layoutZone3();
+            case 4: { // OVH-7: research / forensic / experimental cards in "All"
+                auto toggle = [this] {
+                    showAdvancedCards_ = !showAdvancedCards_;
+                    writePreferenceAsync("dashboard_show_advanced", showAdvancedCards_ ? "1" : "0");
+                    layoutZone3();
+                };
+                toggle();
+                // UXR-9: undo puts the cards back as they were.
+                juce::Component::SafePointer<DashboardScreen> self(this);
+                UndoToast::show(*this, showAdvancedCards_ ? TRANS("Advanced cards shown") : TRANS("Advanced cards hidden"),
+                                [self] {
+                                    if (self == nullptr) return;
+                                    self->showAdvancedCards_ = !self->showAdvancedCards_;
+                                    self->writePreferenceAsync("dashboard_show_advanced",
+                                                               self->showAdvancedCards_ ? "1" : "0");
+                                    self->layoutZone3();
+                                });
                 break;
+            }
             default:
                 break;
             }
@@ -574,10 +606,12 @@ void DashboardScreen::loadPreferencesAsync()
         const std::string confidence = get("dashboard_confidence_overlay");
         const std::string advanced = get("dashboard_show_advanced"); // OVH-7
         const std::string waveformOpen = get("dashboard_waveform_open"); // UX2-1
+        const std::string view = get(kViewPrefKey);                      // ENH-7
         auto layoutRes = sm->getUserPreference("dashboard_layout_active");
         const bool hasLayout = layoutRes.is_ok();
         const std::string layout = hasLayout ? layoutRes.value() : std::string{};
-        juce::MessageManager::callAsync([safe, compare, dock, confidence, advanced, waveformOpen, hasLayout, layout] {
+        juce::MessageManager::callAsync([safe, compare, dock, confidence, advanced, waveformOpen, view, hasLayout,
+                                         layout] {
             auto* self = safe.getComponent();
             if (self == nullptr) return;
             if (compare == "1") {
@@ -596,6 +630,9 @@ void DashboardScreen::loadPreferencesAsync()
             }
             self->showAdvancedCards_ = advanced == "1"; // OVH-7
             self->setWaveformOpen(waveformOpen == "1", false); // UX2-1
+            // ENH-7: the remembered view (Essentials when none was chosen).
+            for (const auto* tab : dashboard_category::kTabs)
+                if (view == tab) self->setView(tab, false);
             if (hasLayout) self->applyWorkspaceLayout(WorkspaceLayout::fromJson(juce::String(layout)), false);
             self->prefsLoaded_ = true;
             // Already visible before the prefs arrived: pop out now.
@@ -624,9 +661,6 @@ void DashboardScreen::resetForSession()
     // session's analysis starts.
     lastAutoScanRunToken_ = -1;
     lastStemAutoScanPath_.clear();
-    snapA_.reset();
-    snapB_.reset();
-    compareOverlay_.reset();
     for (auto* p : zone3Panels_)
         if (auto* card = dynamic_cast<PanelCard*>(p)) card->resetForSession();
     pipelineProgress_.setVisible(false);
@@ -670,7 +704,8 @@ void DashboardScreen::updateHero()
     }
     std::optional<GenreEntry> genre;
     if (const auto* session = controller.getActiveSession())
-        genre = controller.genreDatabase().findById(session->target.primary_genre);
+        genre = genre_in_use::entry(session->target.primary_genre, &controller.currentAnalysis(),
+                                    controller.genreDatabase()); // BUG-1: the detected genre too
     const auto issues = controller.issues().list();
     auto model = hero_spectrum::build(controller.currentAnalysis(), genre, issues,
                                       controller.analysis().currentVerification(),
@@ -873,7 +908,9 @@ void DashboardScreen::pushDataToPanels(const AnalysisResult& r)
     bool genreKnown = false;
     if (controller.hasActiveSession()) {
         target = controller.getActiveSession()->target;
-        if (auto g = controller.genreDatabase().findById(target.primary_genre)) {
+        if (auto g = genre_in_use::entry(target.primary_genre,
+                                         controller.hasAnalysis() ? &controller.currentAnalysis() : nullptr,
+                                         controller.genreDatabase())) {
             genre = *g;
             genreKnown = true;
         }
@@ -990,14 +1027,6 @@ void DashboardScreen::updateHeader()
     // UI-10: keyboard legend is engineer detail.
     shortcutLegendLabel_.setVisible(active && engineerDetail());
 
-    const bool hasAnal = controller.hasAnalysis();
-    snapshotsButton_.setEnabled(hasAnal);
-
-    if (!hasAnal) {
-        snapA_.reset();
-        snapB_.reset();
-    }
-
     if (active) {
         juce::String name =
             controller.getActiveSession() ? juce::String(controller.getActiveSession()->name) : juce::String();
@@ -1094,24 +1123,29 @@ void DashboardScreen::layoutZone3()
     }
 
     // Detailed cards: the category tabs (Essentials by default) and the grid.
+    // ENH-7: the caption and, on its right, the view row (Essentials | All
+    // cards | More views). Order and per-card visibility come from the
+    // current Dashboard Layout (applyWorkspaceLayout()).
     detailCaption_.setVisible(active);
+    for (juce::Component* c : std::initializer_list<juce::Component*>{&viewCaption_, &essentialsViewButton_,
+                                                                      &allViewButton_, &moreViewsButton_})
+        c->setVisible(active);
     if (active) {
-        detailCaption_.setBounds(0, y + KhensuTheme::sp2, w, 28);
-        y += 28 + KhensuTheme::sp2 + KhensuTheme::sp2;
-    }
-
-    // Zone 3: Technical Quality and Creative/Song Structure panels are shown
-    // together (previously tab-gated so only one group was ever visible at a
-    // time).
-    // Order and per-panel visibility come from the current Dashboard Layout
-    // (built-in User Profile / Workspace Mode, or a saved custom layout);
-    // see applyWorkspaceLayout() and the "Layout" header button.
-    // Zone 3 category tab strip - filters the cards below to one workspace.
-    {
-        const int tabsH = 30;
-        zone3Tabs_.setVisible(controller.hasActiveSession());
-        zone3Tabs_.setBounds(0, y, w, tabsH);
-        y += tabsH + gap;
+        auto row = juce::Rectangle<int>(0, y + KhensuTheme::sp2, w, KhensuTheme::buttonH);
+        const auto font = KhensuTheme::uiFont(type::body);
+        auto widthFor = [&font](const juce::TextButton& b) {
+            return juce::GlyphArrangement::getStringWidthInt(font, b.getButtonText()) + 28;
+        };
+        const int moreW = juce::jmax(widthFor(moreViewsButton_), 110);
+        moreViewsButton_.setBounds(row.removeFromRight(moreW));
+        row.removeFromRight(KhensuTheme::sp1);
+        allViewButton_.setBounds(row.removeFromRight(widthFor(allViewButton_)));
+        row.removeFromRight(KhensuTheme::sp1);
+        essentialsViewButton_.setBounds(row.removeFromRight(widthFor(essentialsViewButton_)));
+        row.removeFromRight(KhensuTheme::sp2);
+        viewCaption_.setBounds(row.removeFromRight(48));
+        detailCaption_.setBounds(row);
+        y += KhensuTheme::buttonH + KhensuTheme::sp2 + gap;
     }
 
     const bool essentialsOnly = (activeZone3Category_ == "Essentials");
@@ -1405,10 +1439,6 @@ void DashboardScreen::resized()
 
     layoutZone3();
 
-    if (compareOverlay_) {
-        compareOverlay_->setBounds(getLocalBounds());
-        compareOverlay_->toFront(false);
-    }
 }
 
 void DashboardScreen::saveDockState()
@@ -1509,7 +1539,14 @@ void DashboardScreen::openLayoutEditorWith(const std::vector<juce::String>& save
                                  builtInLayoutPresets(), savedNames);
     layoutEditorOverlay_.reset(overlay);
 
-    overlay->onApply = [this](const WorkspaceLayout& layout) { applyWorkspaceLayout(layout); };
+    overlay->onApply = [this](const WorkspaceLayout& layout) {
+        const auto before = currentLayout(); // UXR-9
+        applyWorkspaceLayout(layout);
+        const auto after = currentLayout();
+        if (after.panelOrder != before.panelOrder || after.panelVisibility != before.panelVisibility
+            || after.reportMode != before.reportMode)
+            offerCardUndo(TRANS("Card layout changed"), before);
+    };
     overlay->onRequestSavedLayout = [this, overlay](const juce::String& name) {
         auto sm = controller.sessions().sessionManagerPtr();
         if (sm == nullptr) return;
@@ -1636,6 +1673,7 @@ juce::Component* DashboardScreen::panelById(const std::string& id) const
 std::vector<std::pair<juce::String, juce::Component*>> DashboardScreen::groupCardsForDiagnostics()
 {
     activeZone3Category_ = "All";
+    updateViewButtons();
     layoutZone3();
     std::vector<std::pair<juce::String, juce::Component*>> out;
     for (auto& g : cardGroups_)
@@ -1861,6 +1899,7 @@ void DashboardScreen::reorderZone3Panel(const std::string& draggedId, const std:
 {
     auto it = std::find(zone3Order_.begin(), zone3Order_.end(), draggedId);
     if (it == zone3Order_.end()) return;
+    const auto previous = currentLayout(); // UXR-9
     zone3Order_.erase(it);
 
     auto targetIt = std::find(zone3Order_.begin(), zone3Order_.end(), targetId);
@@ -1871,14 +1910,12 @@ void DashboardScreen::reorderZone3Panel(const std::string& draggedId, const std:
         zone3Order_.insert(targetIt, draggedId);
     }
 
-    WorkspaceLayout layout;
-    layout.panelOrder = zone3Order_;
-    layout.panelVisibility = zone3Visibility_;
-    layout.reportMode = controller.shell().getReportMode() == ReportMode::EngineerDetail ? "engineer" : "client";
-    writePreferenceAsync("dashboard_layout_active", layout.toJson().toStdString());
+    if (zone3Order_ == previous.panelOrder) return; // dropped where it was
+    writePreferenceAsync("dashboard_layout_active", currentLayout().toJson().toStdString());
 
     layoutZone3();
     resized();
+    offerCardUndo(TRANS("Card moved:") + " " + panelLabel(draggedId), previous);
 }
 
 void DashboardScreen::applyWorkspaceLayout(const WorkspaceLayout& layout, bool persist)
@@ -1944,81 +1981,170 @@ juce::String DashboardScreen::getSpinnerText(const juce::String& base) const
 
 void DashboardScreen::applyReferenceMatchEq() { reference_.applyMatchEq(); }
 
-void DashboardScreen::showSnapshotsMenu()
+// ---- ENH-7: views and finding -> card ---------------------------------------------
+
+namespace {
+/// The category views behind "More views", with their shown labels.
+struct MoreView {
+    const char* name;  ///< the dashboard_category::kTabs name (data)
+    const char* label; ///< what the menu shows
+};
+const MoreView kMoreViews[] = {
+    {"Loudness", NEEDS_TRANS("Loudness")},
+    {"Spectrum", NEEDS_TRANS("Spectrum")},
+    {"Spatial", NEEDS_TRANS("Spatial")},
+    {"Song & Structure", NEEDS_TRANS("Song & structure")},
+    {"Song insights", NEEDS_TRANS("Song insights")},
+    {"Stems", NEEDS_TRANS("Stems")},
+    {"Quality", NEEDS_TRANS("Quality")},
+    {"Advanced", NEEDS_TRANS("Advanced")},
+};
+} // namespace
+
+void DashboardScreen::updateViewButtons()
 {
-    if (!controller.hasAnalysis()) return;
-    const juce::String tick(juce::CharPointer_UTF8("  \xE2\x9C\x93"));
-    juce::PopupMenu m;
-    m.addItem(1, TRANS("Save as snapshot A") + (snapA_ ? tick : juce::String()));
-    m.addItem(2, TRANS("Save as snapshot B") + (snapB_ ? tick : juce::String()));
-    m.addSeparator();
-    m.addItem(3, TRANS("Compare A and B"), snapA_.has_value() && snapB_.has_value());
+    const bool essentials = activeZone3Category_ == dashboard_category::kTabs[0];
+    const bool all = activeZone3Category_ == dashboard_category::kTabs[1];
+    essentialsViewButton_.setToggleState(essentials, juce::dontSendNotification);
+    allViewButton_.setToggleState(all, juce::dontSendNotification);
+    moreViewsButton_.setToggleState(!essentials && !all, juce::dontSendNotification);
+    juce::String more = TRANS("More views") + "...";
+    for (const auto& v : kMoreViews)
+        if (activeZone3Category_ == v.name) more = juce::translate(v.label) + "...";
+    moreViewsButton_.setButtonText(more);
+}
+
+void DashboardScreen::setView(const juce::String& category, bool persist)
+{
+    activeZone3Category_ = category;
+    updateViewButtons();
+    layoutZone3();
+    if (persist) {
+        writePreferenceAsync(kViewPrefKey, category.toStdString());
+        // Keep the view row where it is and show the filtered cards under it
+        // - don't yank the page up to the verdict. Clamped to the content.
+        const int maxY = juce::jmax(0, grid.getHeight() - viewport.getMaximumVisibleHeight());
+        if (viewport.getViewPositionY() > essentialsViewButton_.getY())
+            viewport.setViewPosition(0, juce::jmin(juce::jmax(0, essentialsViewButton_.getY() - KhensuTheme::sp2), maxY));
+    }
+    grid.repaint();
+}
+
+void DashboardScreen::showMoreViewsMenu()
+{
+    juce::PopupMenu menu;
+    int id = 1;
+    for (const auto& v : kMoreViews)
+        menu.addItem(id++, juce::translate(v.label), true, activeZone3Category_ == v.name);
     juce::Component::SafePointer<DashboardScreen> self(this);
-    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&snapshotsButton_), [self](int choice) {
-        if (self == nullptr || !self->controller.hasAnalysis()) return;
-        if (choice == 1) self->snapA_ = self->controller.currentAnalysis();
-        if (choice == 2) self->snapB_ = self->controller.currentAnalysis();
-        if (choice == 3) self->compareSnapshots();
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&moreViewsButton_), [self](int result) {
+        if (self == nullptr || result < 1 || result > static_cast<int>(std::size(kMoreViews))) {
+            if (self != nullptr) self->updateViewButtons(); // a dismissed menu leaves the toggle as it was
+            return;
+        }
+        self->setView(kMoreViews[result - 1].name, true);
     });
 }
 
-void DashboardScreen::compareSnapshots()
+bool DashboardScreen::revealCardForFinding(const std::string& findingKeyOrCode)
 {
-    if (snapA_ && snapB_) {
-        const auto& sa = *snapA_;
-        const auto& sb = *snapB_;
-        std::vector<MetricDiffTable::Row> rows;
-
-        auto addRow = [&](const juce::String& name, const juce::String& valA, const juce::String& valB,
-                          const juce::String& delta,
-                          juce::Colour col) { rows.push_back({name, valA, valB, delta, col}); };
-
-        float lufsDel = sb.loudness.lufs_integrated - sa.loudness.lufs_integrated;
-        addRow(TRANS("Integrated LUFS"), juce::String(sa.loudness.lufs_integrated, 1) + " LUFS",
-               juce::String(sb.loudness.lufs_integrated, 1) + " LUFS",
-               (lufsDel >= 0 ? "+" : "") + juce::String(lufsDel, 1) + " dB",
-               std::abs(lufsDel) < 0.5f ? KhensuTheme::accentTeal : KhensuTheme::accentAmber);
-
-        float tpDel = sb.loudness.true_peak_dbtp - sa.loudness.true_peak_dbtp;
-        addRow(TRANS("True Peak"), juce::String(sa.loudness.true_peak_dbtp, 1) + " dBTP",
-               juce::String(sb.loudness.true_peak_dbtp, 1) + " dBTP",
-               (tpDel >= 0 ? "+" : "") + juce::String(tpDel, 1) + " dB",
-               sb.loudness.true_peak_dbtp < -1.0f ? KhensuTheme::accentTeal : KhensuTheme::accentRed);
-
-        float lraDel = sb.loudness.lra - sa.loudness.lra;
-        addRow(TRANS("Loudness Range (LRA)"), juce::String(sa.loudness.lra, 1) + " LU",
-               juce::String(sb.loudness.lra, 1) + " LU", (lraDel >= 0 ? "+" : "") + juce::String(lraDel, 1) + " LU",
-               khensu::KhensuTheme::textPrimary);
-
-        float drDel = sb.dynamics.dynamic_range_db - sa.dynamics.dynamic_range_db;
-        addRow(TRANS("Dynamic Range"), juce::String(sa.dynamics.dynamic_range_db, 1) + " dB",
-               juce::String(sb.dynamics.dynamic_range_db, 1) + " dB",
-               (drDel >= 0 ? "+" : "") + juce::String(drDel, 1) + " dB", khensu::KhensuTheme::textPrimary);
-
-        float wDel = sb.stereo.width - sa.stereo.width;
-        addRow(TRANS("Stereo Width"), juce::String(sa.stereo.width, 2), juce::String(sb.stereo.width, 2),
-               (wDel >= 0 ? "+" : "") + juce::String(wDel, 2), khensu::KhensuTheme::textPrimary);
-
-        float cDel = sb.spectral.centroid_hz - sa.spectral.centroid_hz;
-        addRow(TRANS("Spectral Centroid"), juce::String((int)sa.spectral.centroid_hz) + " Hz",
-               juce::String((int)sb.spectral.centroid_hz) + " Hz",
-               (cDel >= 0 ? "+" : "") + juce::String((int)cDel) + " Hz", khensu::KhensuTheme::textPrimary);
-
-        const bool keyMatch = sa.python_data.pitch_key == sb.python_data.pitch_key;
-        addRow(TRANS("Key Signature"), juce::String(sa.python_data.pitch_key), juce::String(sb.python_data.pitch_key),
-               keyMatch ? TRANS("Match") : TRANS("Change"),
-               keyMatch ? KhensuTheme::accentTeal : KhensuTheme::accentAmber);
-
-        auto* overlay = new MetricDiffOverlay(TRANS("A/B Snapshot Comparison"), std::move(rows),
-                                              TRANS("Snapshot A"), TRANS("Snapshot B"));
-        compareOverlay_.reset(overlay);
-        overlay->onDismiss = [this] {
-            compareOverlay_.reset();
-            resized();
-        };
-        addAndMakeVisible(*compareOverlay_);
-        compareOverlay_->setBounds(getLocalBounds());
-    }
+    const auto cardId = finding_card::forFinding(findingKeyOrCode);
+    return !cardId.empty() && revealCard(cardId);
 }
+
+std::vector<DashboardScreen::SearchableCard> DashboardScreen::searchableCards() const
+{
+    std::vector<SearchableCard> out;
+    for (const auto& [id, label] : {std::pair<const char*, const char*>{"loudness", NEEDS_TRANS("Loudness")},
+                                    {"dynamics", NEEDS_TRANS("Dynamics")},
+                                    {"spectral", NEEDS_TRANS("Spectral balance")},
+                                    {"stereo", NEEDS_TRANS("Stereo")}})
+        out.push_back({id, juce::translate(label), {}});
+    for (const auto& id : zone3PanelIds_) {
+        SearchableCard card{id, panelLabel(id), categoryForPanel(id)};
+        if (const auto it = groupOfMember_.find(id); it != groupOfMember_.end())
+            card.keywords << " " << it->second->title(); // a tab: findable by its group too
+        out.push_back(std::move(card));
+    }
+    return out;
+}
+
+bool DashboardScreen::revealCard(const std::string& cardId)
+{
+    if (!controller.hasActiveSession() || cardId.empty()) return false;
+
+    juce::Component* target = nullptr;
+    if (finding_card::isCorePanel(cardId)) {
+        // The core measurements are always on screen.
+        target = cardId == "loudness" ? static_cast<juce::Component*>(&loudness_)
+                 : cardId == "dynamics" ? static_cast<juce::Component*>(&dynamics_)
+                 : cardId == "spectral" ? static_cast<juce::Component*>(&spectral_)
+                                        : static_cast<juce::Component*>(&stereo_);
+    } else {
+        if (panelById(cardId) == nullptr) return false;
+        const auto unit = canonicalId(cardId);
+        if (auto* group = groupById(unit)) group->selectMember(cardId);
+        // A card the layout hides shows for now; the saved layout is unchanged.
+        if (auto it = zone3Visibility_.find(unit); it != zone3Visibility_.end() && !it->second) it->second = true;
+        if (dock_ != nullptr && dock_->isPoppedOut(unit)) {
+            // It lives in its own window: bring that to the front.
+            if (auto* card = panelById(unit))
+                if (auto* window = card->getTopLevelComponent()) window->toFront(true);
+            return true;
+        }
+        const auto view = finding_card::viewForReveal(activeZone3Category_, unit, essentialIds_, showAdvancedCards_);
+        if (view != activeZone3Category_) setView(view, false); // widened for this reveal; the remembered view stays
+        target = panelById(unit);
+    }
+    if (target == nullptr) return false;
+
+    if (showTimeline_) { // the grid, not the heatmap
+        showTimeline_ = false;
+        timelineToggleButton_.setToggleState(false, juce::dontSendNotification);
+        resized();
+    }
+    layoutZone3();
+    auto scrollTo = [this, target] {
+        const int maxY = juce::jmax(0, grid.getHeight() - viewport.getMaximumVisibleHeight());
+        viewport.setViewPosition(0, juce::jlimit(0, maxY, target->getY() - KhensuTheme::sp3));
+        grid.flash(target);
+    };
+    scrollTo();
+    // Called from another screen, the Dashboard may only now get its size:
+    // scroll again once it is laid out.
+    juce::Component::SafePointer<DashboardScreen> self(this);
+    juce::Component::SafePointer<juce::Component> safeTarget(target);
+    juce::MessageManager::callAsync([self, safeTarget] {
+        if (self == nullptr || safeTarget == nullptr || !safeTarget->isVisible()) return;
+        const int maxY = juce::jmax(0, self->grid.getHeight() - self->viewport.getMaximumVisibleHeight());
+        self->viewport.setViewPosition(0, juce::jlimit(0, maxY, safeTarget->getY() - KhensuTheme::sp3));
+    });
+    return true;
+}
+
+// ---- UXR-9: undo a card change -----------------------------------------------------
+
+WorkspaceLayout DashboardScreen::currentLayout() const
+{
+    WorkspaceLayout layout;
+    layout.panelOrder = zone3Order_;
+    layout.panelVisibility = zone3Visibility_;
+    layout.reportMode = controller.shell().getReportMode() == ReportMode::EngineerDetail ? "engineer" : "client";
+    return layout;
+}
+
+void DashboardScreen::offerCardUndo(const juce::String& message, const WorkspaceLayout& before)
+{
+    juce::Component::SafePointer<DashboardScreen> self(this);
+    UndoToast::show(*this, message, [self, before] {
+        if (self != nullptr) self->applyWorkspaceLayout(before);
+    });
+}
+
+void DashboardScreen::undoLastCardChange()
+{
+    if (auto* toast = UndoToast::find(*this)) toast->triggerUndo();
+}
+
 
 } // namespace khensu

@@ -65,7 +65,7 @@ struct IntakeQueueList::Row final : public juce::Component {
         g.fillRoundedRectangle(b.reduced(0.0f, 2.0f), 6.0f);
 
         // Drag handle
-        g.setFont(KhensuTheme::bodyFont(12.0f));
+        g.setFont(KhensuTheme::bodyFont(type::secondary));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(juce::CharPointer_UTF8("\xe2\x8b\x80\xe2\x8b\x80"), b.removeFromLeft(26.0f).reduced(4.0f, 0.0f),
                    juce::Justification::centred, false);
@@ -74,18 +74,18 @@ struct IntakeQueueList::Row final : public juce::Component {
         auto badge = b.removeFromLeft(44.0f).reduced(2.0f, 14.0f);
         g.setColour(KhensuTheme::bgOverlay);
         g.fillRoundedRectangle(badge, 3.0f);
-        g.setFont(KhensuTheme::monoFont(9.0f));
+        g.setFont(KhensuTheme::monoFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(formatBadge(owner_.files_[(size_t)index_]), badge, juce::Justification::centred, false);
         b.removeFromLeft(8.0f);
 
         // Filename + spec
         auto top = b.removeFromTop(b.getHeight() * 0.55f);
-        g.setFont(KhensuTheme::bodyFont(12.0f));
+        g.setFont(KhensuTheme::bodyFont(type::secondary));
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(displayName(owner_.files_[(size_t)index_]), top, juce::Justification::centredLeft, true);
 
-        g.setFont(KhensuTheme::monoFont(10.0f));
+        g.setFont(KhensuTheme::monoFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         const auto& ref = owner_.files_[(size_t)index_];
         juce::String meta = formatDuration(static_cast<float>(ref.duration_seconds)) + "  " + formatSpec(ref);
@@ -94,11 +94,11 @@ struct IntakeQueueList::Row final : public juce::Component {
         // Status badge (drawn over the right side before the cancel button)
         const auto status = owner_.status_[(size_t)index_];
         juce::String stext = owner_.statusText(status);
-        const float sw = juce::GlyphArrangement::getStringWidth(KhensuTheme::labelFont(9.0f), stext) + 18.0f;
+        const float sw = juce::GlyphArrangement::getStringWidth(KhensuTheme::labelFont(type::caption), stext) + 18.0f;
         auto sb = getLocalBounds().removeFromRight((int)sw + 34).reduced(4, 12);
         g.setColour(owner_.statusColour(status).withAlpha(0.12f));
         g.fillRoundedRectangle(sb.toFloat(), 4.0f);
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(owner_.statusColour(status));
         g.drawText(stext, sb, juce::Justification::centred, false);
     }

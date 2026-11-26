@@ -22,18 +22,18 @@ ModelDownloadDialog::ModelDownloadDialog(IAppController& c) : controller_(c)
 {
     applyThemeColours();
     titleLabel_.setText(TRANS("Demucs AI Separation Model Setup"), juce::dontSendNotification);
-    titleLabel_.setFont(KhensuTheme::labelFont(16.0f).boldened());
+    titleLabel_.setFont(KhensuTheme::labelFont(type::title).boldened());
     addAndMakeVisible(titleLabel_);
 
     descLabel_.setText(TRANS("High-fidelity vocal isolation requires downloading the Demucs AI model. "
                        "This is critical for analyzing the song as it separates vocals cleanly without "
                        "midrange instrument bleed from guitars, synths, and drums."),
                        juce::dontSendNotification);
-    descLabel_.setFont(KhensuTheme::bodyFont(12.0f));
+    descLabel_.setFont(KhensuTheme::bodyFont(type::secondary));
     descLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(descLabel_);
 
-    folderLabel_.setFont(KhensuTheme::monoFont(10.0f));
+    folderLabel_.setFont(KhensuTheme::monoFont(type::caption));
     addAndMakeVisible(folderLabel_);
 
     changeFolderButton_.setButtonText(TRANS("Change Folder..."));
@@ -94,7 +94,7 @@ void ModelDownloadDialog::paint(juce::Graphics& g)
         g.fillRoundedRectangle(fillArea.toFloat(), 4.0f);
     }
 
-    g.setFont(KhensuTheme::bodyFont(11.0f));
+    g.setFont(KhensuTheme::bodyFont(type::caption));
     g.setColour(KhensuTheme::textPrimary);
     g.drawFittedText(statusText_, r.removeFromBottom(40), juce::Justification::topLeft, 2);
 }

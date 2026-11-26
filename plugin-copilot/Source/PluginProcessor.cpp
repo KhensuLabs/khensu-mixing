@@ -4,6 +4,7 @@
 static_assert(khensu::copilot::ServiceClient::kShortRequestMs == khensu::KhensuCopilotProcessor::kShortJobTimeoutMs);
 #include "PluginEditor.h"
 #include "PluginCrashHandler.h"
+#include "PluginWorkerPool.h"
 #include <khensu/common/Version.h>
 #include <khensu/common/AppPaths.h>
 #if JucePlugin_Enable_ARA
@@ -57,6 +58,25 @@ const juce::Identifier kProgramProp{"khensuProgram"};
 const juce::Identifier kPresetNameProp{"khensuPresetName"};
 const juce::Identifier kSnapActiveProp{"khensuSnapActive"};
 const juce::Identifier kSnapOtherProp{"khensuSnapOther"};
+// State v4 (ENH-10 / VIS-9): the reference, its match mode, the palette.
+const juce::Identifier kReferencePathProp{"khensuReferencePath"};
+const juce::Identifier kReferenceMatchProp{"khensuReferenceMatch"};
+const juce::Identifier kUiPaletteProp{"khensuUiPalette"};
+
+// The built-in EQ bands an Unmask cut may take, most preferred first: the
+// last band, so the low bands stay free for the fixes (ENH-10; six bands
+// since STU-10).
+using EqBandIds = mixerchain::EqBandParamIds;
+constexpr const EqBandIds* kUnmaskBands[] = {
+    &mixerchain::kEqBandParamIds[5], &mixerchain::kEqBandParamIds[4], &mixerchain::kEqBandParamIds[3],
+    &mixerchain::kEqBandParamIds[2], &mixerchain::kEqBandParamIds[1], &mixerchain::kEqBandParamIds[0],
+};
+const EqBandIds* unmaskBand(int number)
+{
+    for (const auto* band : kUnmaskBands)
+        if (band->number == number) return band;
+    return nullptr;
+}
 
 /// Same value from the host's point of view: a discrete (bool / choice)
 /// parameter compares by the step its normalised value lands on.
@@ -224,6 +244,39 @@ KhensuCopilotProcessor::KhensuCopilotProcessor()
     dspParams.deessFreq = pDeessFreq_;
     dspParams.deessThreshDb = pDeessThreshDb_;
     dspParams.deessRangeDb = pDeessRangeDb_;
+    // STU-10 (state v5).
+    for (size_t b = 0; b < dspParams.bands.size(); ++b) {
+        const auto& ids = mixerchain::kEqBandParamIds[b];
+        auto& band = dspParams.bands[b];
+        if (b >= 3) {
+            band.on = apvts_.getRawParameterValue(ids.on);
+            band.freq = apvts_.getRawParameterValue(ids.freq);
+            band.gainDb = apvts_.getRawParameterValue(ids.gain);
+            band.q = apvts_.getRawParameterValue(ids.q);
+            band.type = apvts_.getRawParameterValue(ids.type);
+        }
+        band.kind = apvts_.getRawParameterValue(ids.kind);
+        band.mode = apvts_.getRawParameterValue(ids.mode);
+        band.dynOn = apvts_.getRawParameterValue(ids.dynOn);
+        band.dynThreshDb = apvts_.getRawParameterValue(ids.dynThreshDb);
+        band.dynRangeDb = apvts_.getRawParameterValue(ids.dynRangeDb);
+        band.dynAttackMs = apvts_.getRawParameterValue(ids.dynAttackMs);
+        band.dynReleaseMs = apvts_.getRawParameterValue(ids.dynReleaseMs);
+    }
+    dspParams.tsOn = apvts_.getRawParameterValue(ParamIDs::tsOn);
+    dspParams.tsAttackDb = apvts_.getRawParameterValue(ParamIDs::tsAttackDb);
+    dspParams.tsSustainDb = apvts_.getRawParameterValue(ParamIDs::tsSustainDb);
+    dspParams.tsAttackMs = apvts_.getRawParameterValue(ParamIDs::tsAttackMs);
+    dspParams.tsReleaseMs = apvts_.getRawParameterValue(ParamIDs::tsReleaseMs);
+    dspParams.satOn = apvts_.getRawParameterValue(ParamIDs::satOn);
+    dspParams.satDriveDb = apvts_.getRawParameterValue(ParamIDs::satDriveDb);
+    dspParams.satWarmth = apvts_.getRawParameterValue(ParamIDs::satWarmth);
+    dspParams.satMix = apvts_.getRawParameterValue(ParamIDs::satMix);
+    dspParams.satTrimDb = apvts_.getRawParameterValue(ParamIDs::satTrimDb);
+    dspParams.bassMonoOn = apvts_.getRawParameterValue(ParamIDs::bassMonoOn);
+    dspParams.bassMonoFreq = apvts_.getRawParameterValue(ParamIDs::bassMonoFreq);
+    dspParams.widthOn = apvts_.getRawParameterValue(ParamIDs::widthOn);
+    dspParams.widthAmount = apvts_.getRawParameterValue(ParamIDs::widthAmount);
     correctiveDsp_.bindParameters(dspParams);
 
     // Transport sync: owned worker POSTs playhead + meter state at ~5 Hz so the
@@ -241,6 +294,7 @@ KhensuCopilotProcessor::~KhensuCopilotProcessor()
 {
     plugincrash::release();
     stopTimer();
+    referenceCancel_->store(true, std::memory_order_release); // ENH-10: a decode in flight is dropped
     fixAutomationTimer_.stopTimer();
     fixWriter_.cancel(gestureSink_); // close any open host gesture
     liveAnalyzer_.stop();
@@ -361,6 +415,64 @@ juce::AudioProcessorValueTreeState::ParameterLayout KhensuCopilotProcessor::crea
             .withValueFromStringFunction([](const juce::String& t) { return t.getFloatValue() / 100.0f; });
     layout.add(std::make_unique<FloatParam>(ParamIDs::fixAmount, "Fix Amount",
                                             juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 1.0f, percentAttributes));
+
+    // ---- State v5 (STU-10): appended after fix_amount - no earlier id,
+    // range or choice list changed, so a host's automation still lands - and
+    // a v4 project loads every one of them at its default (off / plain).
+    // Order = copilot_params::makeV5DspParamIds().
+    const auto bandName = [](int number, const char* what) {
+        return (number == 1 ? juce::String("EQ") : "EQ" + juce::String(number)) + " " + what;
+    };
+    for (int b = 3; b < mixerchain::kNumEqBands; ++b) {
+        const auto& ids = mixerchain::kEqBandParamIds[b];
+        layout.add(std::make_unique<BoolParam>(ids.on, bandName(ids.number, "On"), false));
+        layout.add(std::make_unique<FloatParam>(ids.freq, bandName(ids.number, "Freq"), logRange(60.0f, 16000.0f), 1000.0f,
+                                                logAttributes));
+        layout.add(std::make_unique<FloatParam>(ids.gain, bandName(ids.number, "Gain"),
+                                                juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), 0.0f));
+        layout.add(std::make_unique<FloatParam>(ids.q, bandName(ids.number, "Q"),
+                                                juce::NormalisableRange<float>(0.3f, 8.0f, 0.01f), 1.0f));
+        layout.add(std::make_unique<juce::AudioParameterChoice>(ids.type, bandName(ids.number, "Shape"), shapes, 0));
+    }
+    const juce::StringArray kinds{"Shape", "Notch", "High-pass", "Low-pass"};
+    const juce::StringArray channelModes{"Stereo", "Mid", "Side"};
+    for (const auto& ids : mixerchain::kEqBandParamIds) {
+        layout.add(std::make_unique<juce::AudioParameterChoice>(ids.kind, bandName(ids.number, "Filter"), kinds, 0));
+        layout.add(std::make_unique<juce::AudioParameterChoice>(ids.mode, bandName(ids.number, "Channels"), channelModes, 0));
+        layout.add(std::make_unique<BoolParam>(ids.dynOn, bandName(ids.number, "Dynamic"), false));
+        layout.add(std::make_unique<FloatParam>(ids.dynThreshDb, bandName(ids.number, "Dyn Threshold"),
+                                                juce::NormalisableRange<float>(-60.0f, 0.0f, 0.1f), -30.0f));
+        layout.add(std::make_unique<FloatParam>(ids.dynRangeDb, bandName(ids.number, "Dyn Range"),
+                                                juce::NormalisableRange<float>(0.0f, 24.0f, 0.1f), 6.0f));
+        layout.add(std::make_unique<FloatParam>(ids.dynAttackMs, bandName(ids.number, "Dyn Attack"), logRange(0.1f, 200.0f),
+                                                5.0f, logAttributes));
+        layout.add(std::make_unique<FloatParam>(ids.dynReleaseMs, bandName(ids.number, "Dyn Release"),
+                                                logRange(5.0f, 2000.0f), 120.0f, logAttributes));
+    }
+    layout.add(std::make_unique<BoolParam>(ParamIDs::tsOn, "Transient On", false));
+    layout.add(std::make_unique<FloatParam>(ParamIDs::tsAttackDb, "Transient Attack Gain",
+                                            juce::NormalisableRange<float>(-24.0f, 24.0f, 0.1f), 0.0f));
+    layout.add(std::make_unique<FloatParam>(ParamIDs::tsSustainDb, "Transient Sustain Gain",
+                                            juce::NormalisableRange<float>(-24.0f, 24.0f, 0.1f), 0.0f));
+    layout.add(std::make_unique<FloatParam>(ParamIDs::tsAttackMs, "Transient Attack", logRange(1.0f, 50.0f), 3.0f,
+                                            logAttributes));
+    layout.add(std::make_unique<FloatParam>(ParamIDs::tsReleaseMs, "Transient Release", logRange(20.0f, 1000.0f), 200.0f,
+                                            logAttributes));
+    layout.add(std::make_unique<BoolParam>(ParamIDs::satOn, "Saturation On", false));
+    layout.add(std::make_unique<FloatParam>(ParamIDs::satDriveDb, "Saturation Drive",
+                                            juce::NormalisableRange<float>(0.0f, 24.0f, 0.1f), 6.0f));
+    layout.add(std::make_unique<FloatParam>(ParamIDs::satWarmth, "Saturation Warmth",
+                                            juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.5f, percentAttributes));
+    layout.add(std::make_unique<FloatParam>(ParamIDs::satMix, "Saturation Mix",
+                                            juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 1.0f, percentAttributes));
+    layout.add(std::make_unique<FloatParam>(ParamIDs::satTrimDb, "Saturation Trim",
+                                            juce::NormalisableRange<float>(-24.0f, 6.0f, 0.1f), 0.0f));
+    layout.add(std::make_unique<BoolParam>(ParamIDs::bassMonoOn, "Bass Mono On", false));
+    layout.add(std::make_unique<FloatParam>(ParamIDs::bassMonoFreq, "Bass Mono Freq", logRange(40.0f, 300.0f), 120.0f,
+                                            logAttributes));
+    layout.add(std::make_unique<BoolParam>(ParamIDs::widthOn, "Width On", false));
+    layout.add(std::make_unique<FloatParam>(ParamIDs::widthAmount, "Width",
+                                            juce::NormalisableRange<float>(0.0f, 2.0f, 0.01f), 1.0f));
     return layout;
 }
 
@@ -420,7 +532,16 @@ void KhensuCopilotProcessor::applyAiParameterSet(const std::map<std::string, flo
                                                      ParamIDs::eq2On,         ParamIDs::eq3On,  ParamIDs::compOn,
                                                      ParamIDs::compMultiband, ParamIDs::limOn,  ParamIDs::deessOn,
                                                      ParamIDs::eqType,        ParamIDs::eq2Type, ParamIDs::eq3Type};
-    for (const char* id : kStageSwitches)
+    // STU-10: bands 4-6, every band's kind / channels / dynamic switch, and
+    // the v5 stages go back to off / plain the same way.
+    std::vector<const char*> switches(std::begin(kStageSwitches), std::end(kStageSwitches));
+    for (int b = 0; b < mixerchain::kNumEqBands; ++b) {
+        const auto& ids = mixerchain::kEqBandParamIds[b];
+        if (b >= 3) switches.insert(switches.end(), {ids.on, ids.type});
+        switches.insert(switches.end(), {ids.kind, ids.mode, ids.dynOn});
+    }
+    switches.insert(switches.end(), {ParamIDs::tsOn, ParamIDs::satOn, ParamIDs::bassMonoOn, ParamIDs::widthOn});
+    for (const char* id : switches)
         if (params.count(id) == 0) {
             setParamFromUi(id, 0.0f);
             clearAiSet(id);
@@ -514,6 +635,21 @@ void KhensuCopilotProcessor::migrateState(juce::ValueTree& state, int fromVersio
     if (fromVersion < 3) {
         // (no-op)
     }
+    // v3 -> v4: the reference path / match mode and the editor palette are
+    // optional properties; a v3 state has none, so no reference and Dark.
+    if (fromVersion < 4) {
+        // (no-op)
+    }
+    // v4 -> v5 (STU-10): bands 4-6, every band's kind / channels / dynamics
+    // and the transient, saturation, bass mono and width stages were
+    // APPENDED; a v4 state has no PARAM node for them, so replaceState gives
+    // each its default: bands 4-6 and the stages off, bands 1-3 of kind
+    // "Shape" (their v3 eqN_type), stereo and static - the v4 chain, which
+    // runs the same filters as before. No existing id, range or choice list
+    // changed, so the saved values (and a host's automation) still land.
+    if (fromVersion < 5) {
+        // (no-op)
+    }
     state.setProperty(kStateVersionId, kStateVersion, nullptr);
 }
 
@@ -544,6 +680,18 @@ void KhensuCopilotProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     // here dropped the hosted latency until the next chain edit).
     hostedPlugins_.prepareToPlay(sampleRate, samplesPerBlock, preparedChannels_, isNonRealtime());
     mixHubTap_.prepare(sampleRate);
+    // ENH-10: monitoring solo, the reference player and the track's loudness.
+    monitorSolo_.prepare(sampleRate, samplesPerBlock);
+    referencePlayer_.prepare(sampleRate);
+    trackStats_.prepare(sampleRate);
+    {
+        // A reference resampled for another rate is decoded again for this one.
+        const auto path = getReferencePath();
+        const double rate = referencePreparedRate_.load(std::memory_order_acquire);
+        if (path.isNotEmpty() && rate > 0.0 && std::abs(rate - sampleRate) > 0.5
+            && juce::MessageManager::existsAndIsCurrentThread())
+            loadReferenceAsync(juce::File(path));
+    }
     updateLatency();
 #if JucePlugin_Enable_ARA
     prepareToPlayForARA(sampleRate, samplesPerBlock, getMainBusNumOutputChannels(), getProcessingPrecision());
@@ -674,6 +822,24 @@ void KhensuCopilotProcessor::processChunk(juce::AudioBuffer<float>& buffer, bool
     // with the host timeline position. Lock-free copy into a preallocated FIFO.
     liveAnalyzer_.pushBlock(buffer.getArrayOfReadPointers(), buffer.getNumChannels(), nSamples, transport.timeSec,
                             transport.timeValid, transport.playing, currentSampleRate_);
+
+    // ENH-10: the track's loudness/dynamics for the reference comparison,
+    // measured like the reference itself.
+    trackStats_.process(buffer.getArrayOfReadPointers(), buffer.getNumChannels(), nSamples);
+
+    // ENH-10 monitoring, LAST: the meters, the Mix hub and the live analysis
+    // above always see the track itself, never the reference or a solo.
+    // Offline renders hear neither (as with the A/B, PLG-12).
+    const bool offline = isNonRealtime();
+    copilot::reference::ReferencePlayer::HostSide host;
+    host.advance = transport.playing || !transport.timeValid;
+    host.timeValid = transport.timeValid;
+    host.timeSec = transport.timeSec;
+    host.integratedLufs = trackStats_.integratedLufs();
+    host.shortTermLufs = trackStats_.shortTermLufs();
+    host.offline = offline;
+    referencePlayer_.process(buffer, host);
+    monitorSolo_.process(buffer, offline);
 }
 
 void KhensuCopilotProcessor::updateTrackProperties(const TrackProperties& properties)
@@ -727,6 +893,9 @@ void KhensuCopilotProcessor::getStateInformation(juce::MemoryBlock& destData)
         state.setProperty(kSnapActiveProp, activeSnapshot_.load(std::memory_order_relaxed), nullptr);
         state.setProperty(kSnapOtherProp, snapshotToString(otherSnapshot_), nullptr);
     }
+    state.setProperty(kReferencePathProp, getReferencePath(), nullptr);
+    state.setProperty(kReferenceMatchProp, static_cast<int>(referencePlayer_.matchMode()), nullptr);
+    state.setProperty(kUiPaletteProp, uiPalette_.load(std::memory_order_relaxed), nullptr);
 
     // APVTS restores the full parent tree, so remove an older embedded
     // snapshot before writing the current hosted chain below.
@@ -900,8 +1069,36 @@ void KhensuCopilotProcessor::setStateInformation(const void* data, int sizeInByt
     }
     // A loaded state is not the live fix's base any more.
     liveFixActive_.store(false, std::memory_order_release);
+    // v4 (ENH-10 / VIS-9).
+    referencePlayer_.setMatchMode(static_cast<int>(tree.getProperty(kReferenceMatchProp, 0)) == 1
+                                      ? copilot::reference::ReferencePlayer::MatchMode::ShortTerm
+                                      : copilot::reference::ReferencePlayer::MatchMode::Integrated);
+    uiPalette_.store(juce::jlimit(0, 1, static_cast<int>(tree.getProperty(kUiPaletteProp, 0))), std::memory_order_relaxed);
+    {
+        const auto restoredPath = tree.getProperty(kReferencePathProp).toString();
+        bool changed = false;
+        {
+            const juce::ScopedLock sl(referenceLock_);
+            changed = restoredPath != referencePath_;
+            referencePath_ = restoredPath;
+        }
+        // Decoding (or clearing) happens on the message thread: hosts restore
+        // state off it, and the reference itself belongs to it.
+        if (changed) {
+            const auto weakProcessor = weakThis_;
+            juce::MessageManager::callAsync([weakProcessor, restoredPath] {
+                auto* processor = weakProcessor.get();
+                if (processor == nullptr || processor->getReferencePath() != restoredPath) return;
+                if (restoredPath.isEmpty())
+                    processor->clearReference();
+                else
+                    processor->loadReferenceAsync(juce::File(restoredPath));
+            });
+        }
+    }
     for (const auto& id : {kStateVersionId, kInstanceIdProp, kMixRoleProp, kBoundSessionProp, kViewCompactProp,
-                           kViewSizeProp, kViewTabProp, kProgramProp, kPresetNameProp, kSnapActiveProp, kSnapOtherProp})
+                           kViewSizeProp, kViewTabProp, kProgramProp, kPresetNameProp, kSnapActiveProp, kSnapOtherProp,
+                           kReferencePathProp, kReferenceMatchProp, kUiPaletteProp})
         tree.removeProperty(id, nullptr);
 
     std::vector<PersistedHostedPluginSlot> hostedSlots;
@@ -1296,6 +1493,8 @@ void KhensuCopilotProcessor::timerCallback()
 {
     hostedPlugins_.reap();
     outputStage_.reapRetired();
+    referencePlayer_.reapRetired(); // ENH-10
+    processMixHubCommands();        // ENH-10: Unmask cuts other instances asked for
     // Hosted plugins can change their tail (e.g. a reverb's decay) without
     // any notification; keep the published value current.
     hostedTailSeconds_.store(hostedPlugins_.getTailLengthSeconds(), std::memory_order_relaxed);
@@ -1425,7 +1624,8 @@ KhensuCopilotProcessor::LiveFixResult KhensuCopilotProcessor::applyLiveFix(const
     LiveFixResult result;
     // Re-applying the same finding keeps its original base, so pressing
     // Apply twice does not stack the fix on itself.
-    const bool sameFix = liveFixActive_.load(std::memory_order_acquire) && liveFix_.id == rec.id && !rec.id.empty();
+    const bool sameFix = liveFixActive_.load(std::memory_order_acquire) && liveFixes_.size() == 1
+                         && liveFixes_.front().id == rec.id && !rec.id.empty();
     std::map<std::string, float> base = sameFix ? liveFixBase_ : std::map<std::string, float>{};
     if (!sameFix)
         for (const char* id : kDspParamIds) base[id] = readPlain(id);
@@ -1442,18 +1642,55 @@ KhensuCopilotProcessor::LiveFixResult KhensuCopilotProcessor::applyLiveFix(const
         result.blockedReason = TRANS("Nothing in this fix maps to the built-in chain.");
         return result;
     }
-    const auto fixId = rec.id;
-    const copilot::ParamUndoHistory::ScopedTransaction step(
-        undoHistory_, TRANS("Apply top fix") + " " + juce::String(juce::roundToInt(getFixAmount() * 100.0f)) + " %",
-        [this, fixId] {
-            if (getLiveFixId() == fixId) clearLiveFix();
-        });
-    liveFix_ = rec;
+    startLiveFixes({rec}, std::move(base),
+                   TRANS("Apply top fix") + " " + juce::String(juce::roundToInt(getFixAmount() * 100.0f)) + " %");
+    result.applied = true;
+    return result;
+}
+
+KhensuCopilotProcessor::ApplyAllResult KhensuCopilotProcessor::applyAllSafeFixes(const std::vector<Recommendation>& recs)
+{
+    ApplyAllResult result;
+    // The base is the parameters as they are now, without any earlier live
+    // fix being re-counted: Apply all replaces the live fix.
+    std::map<std::string, float> base;
+    for (const char* id : kDspParamIds) base[id] = readPlain(id);
+    const auto baseOf = [&base](const std::string& id) {
+        const auto it = base.find(id);
+        return it != base.end() ? it->second : 0.0f;
+    };
+    result.batch = copilot::combineFixes(recs, getFixAmount(), baseOf, true);
+    if (result.batch.empty()) return result;
+    std::vector<Recommendation> applied;
+    for (const auto& id : result.batch.appliedIds)
+        for (const auto& rec : recs)
+            if (rec.id == id) {
+                applied.push_back(rec);
+                break;
+            }
+    const int count = static_cast<int>(applied.size());
+    startLiveFixes(std::move(applied), std::move(base),
+                   TRANS("Apply all safe fixes") + " (" + juce::String(count) + ")");
+    result.applied = true;
+    return result;
+}
+
+void KhensuCopilotProcessor::startLiveFixes(std::vector<Recommendation> recs, std::map<std::string, float> base,
+                                            const juce::String& stepName)
+{
+    std::vector<std::string> ids;
+    for (const auto& rec : recs) ids.push_back(rec.id);
+    const copilot::ParamUndoHistory::ScopedTransaction step(undoHistory_, stepName, [this, ids] {
+        // Undo forgets the live fix it made (a later one stays).
+        if (!liveFixActive_.load(std::memory_order_acquire) || liveFixes_.size() != ids.size()) return;
+        for (size_t i = 0; i < ids.size(); ++i)
+            if (liveFixes_[i].id != ids[i]) return;
+        clearLiveFix();
+    });
+    liveFixes_ = std::move(recs);
     liveFixBase_ = std::move(base);
     liveFixActive_.store(true, std::memory_order_release);
     reapplyLiveFix();
-    result.applied = true;
-    return result;
 }
 
 void KhensuCopilotProcessor::reapplyLiveFix()
@@ -1468,14 +1705,14 @@ void KhensuCopilotProcessor::reapplyLiveFix()
     const float amount = getFixAmount();
     if (amount < 0.005f) {
         // Amount 0: the parameters the fix touches go back to before it.
-        for (const auto& [id, value] : mixerchain::mapRecommendationToDsp(liveFix_, 1.0f, baseOf).values) {
+        for (const auto& [id, value] : copilot::combineFixes(liveFixes_, 1.0f, baseOf, false).values) {
             juce::ignoreUnused(value);
             setParamFromUi(id.c_str(), baseOf(id));
             clearAiSet(id.c_str());
         }
         return;
     }
-    for (const auto& [id, value] : mixerchain::mapRecommendationToDsp(liveFix_, amount, baseOf).values)
+    for (const auto& [id, value] : copilot::combineFixes(liveFixes_, amount, baseOf, false).values)
         if (std::abs(readPlain(id.c_str()) - value) > 1.0e-5f || !isAiSet(id.c_str())) setParamFromAI(id.c_str(), value);
 }
 
@@ -1487,7 +1724,247 @@ void KhensuCopilotProcessor::clearLiveFix()
 
 std::string KhensuCopilotProcessor::getLiveFixId() const
 {
-    return liveFixActive_.load(std::memory_order_acquire) ? liveFix_.id : std::string();
+    return liveFixActive_.load(std::memory_order_acquire) && !liveFixes_.empty() ? liveFixes_.front().id
+                                                                                  : std::string();
+}
+
+bool KhensuCopilotProcessor::isLiveFix(const std::string& recId) const
+{
+    if (!liveFixActive_.load(std::memory_order_acquire) || recId.empty()) return false;
+    for (const auto& rec : liveFixes_)
+        if (rec.id == recId) return true;
+    return false;
+}
+
+size_t KhensuCopilotProcessor::getLiveFixCount() const
+{
+    return liveFixActive_.load(std::memory_order_acquire) ? liveFixes_.size() : 0;
+}
+
+// ---- ENH-10 (1): reference track -------------------------------------------------
+
+void KhensuCopilotProcessor::loadReferenceAsync(const juce::File& file, std::function<void(bool, juce::String)> onDone)
+{
+    const auto path = file.getFullPathName();
+    {
+        const juce::ScopedLock sl(referenceLock_);
+        referencePath_ = path;
+        referenceStatus_ = TRANS("Loading...");
+    }
+    referenceLoading_.store(true, std::memory_order_release);
+    markNonParameterStateChanged();
+    const auto generation = referenceGeneration_.fetch_add(1) + 1;
+    const double rate = currentSampleRate_ > 0.0 ? currentSampleRate_ : 48000.0;
+    const auto cancel = referenceCancel_;
+    const auto weakProcessor = weakThis_;
+    // A worker that lives for the process (PluginWorkerPool): a decode is not
+    // interruptible mid-read, so it is never joined on the message thread.
+    const bool queued = copilot::PluginWorkerPool::submit([file, rate, generation, cancel, weakProcessor, onDone] {
+        juce::String error;
+        auto data = copilot::reference::loadReference(file, rate, error,
+                                                      [cancel] { return cancel->load(std::memory_order_acquire); });
+        if (cancel->load(std::memory_order_acquire)) return;
+        juce::MessageManager::callAsync([weakProcessor, generation, data, error, rate, onDone] {
+            auto* processor = weakProcessor.get();
+            if (processor == nullptr || generation != processor->referenceGeneration_.load()) return;
+            processor->referenceLoading_.store(false, std::memory_order_release);
+            if (data == nullptr) {
+                {
+                    const juce::ScopedLock sl(processor->referenceLock_);
+                    processor->referenceStatus_ = error;
+                }
+                if (onDone) onDone(false, error);
+                return;
+            }
+            processor->reference_ = data;
+            processor->referencePreparedRate_.store(rate, std::memory_order_release);
+            processor->referencePlayer_.setReference(data);
+            {
+                const juce::ScopedLock sl(processor->referenceLock_);
+                processor->referenceStatus_.clear();
+            }
+            if (onDone) onDone(true, {});
+        });
+    });
+    if (!queued) {
+        referenceLoading_.store(false, std::memory_order_release);
+        const juce::ScopedLock sl(referenceLock_);
+        referenceStatus_ = TRANS("Could not start the reference decode.");
+    }
+}
+
+void KhensuCopilotProcessor::clearReference()
+{
+    referenceGeneration_.fetch_add(1); // a decode in flight no longer lands
+    referenceLoading_.store(false, std::memory_order_release);
+    reference_.reset();
+    referencePreparedRate_.store(0.0, std::memory_order_release);
+    referencePlayer_.setReference(nullptr);
+    referencePlayer_.setListening(false);
+    {
+        const juce::ScopedLock sl(referenceLock_);
+        referencePath_.clear();
+        referenceStatus_.clear();
+    }
+    markNonParameterStateChanged();
+}
+
+copilot::reference::ReferencePtr KhensuCopilotProcessor::getReference() const { return reference_; }
+
+juce::String KhensuCopilotProcessor::getReferencePath() const
+{
+    const juce::ScopedLock sl(referenceLock_);
+    return referencePath_;
+}
+
+juce::String KhensuCopilotProcessor::getReferenceStatus() const
+{
+    const juce::ScopedLock sl(referenceLock_);
+    return referenceStatus_;
+}
+
+void KhensuCopilotProcessor::setReferenceMatchMode(copilot::reference::ReferencePlayer::MatchMode mode)
+{
+    if (mode == referencePlayer_.matchMode()) return;
+    referencePlayer_.setMatchMode(mode);
+    markNonParameterStateChanged();
+}
+
+void KhensuCopilotProcessor::setReferenceForTesting(copilot::reference::ReferencePtr data)
+{
+    referenceGeneration_.fetch_add(1);
+    referenceLoading_.store(false, std::memory_order_release);
+    reference_ = data;
+    referencePreparedRate_.store(data != nullptr ? data->sampleRate : 0.0, std::memory_order_release);
+    referencePlayer_.setReference(data);
+    const juce::ScopedLock sl(referenceLock_);
+    referencePath_ = data != nullptr ? data->path : juce::String();
+    referenceStatus_.clear();
+}
+
+// ---- VIS-9: palette --------------------------------------------------------------
+
+void KhensuCopilotProcessor::setUiPalette(int palette)
+{
+    palette = juce::jlimit(0, 1, palette);
+    if (uiPalette_.exchange(palette, std::memory_order_relaxed) != palette) markNonParameterStateChanged();
+}
+
+// ---- ENH-10 (4): Mix Hub Unmask --------------------------------------------------
+
+bool KhensuCopilotProcessor::requestUnmask(const mixhub::MaskingConflict& conflict, juce::String& message)
+{
+    const auto self = getMixHubInstanceId();
+    if (!conflict.involves(self)) {
+        message = TRANS("Unmask works on a pair that includes this track.");
+        return false;
+    }
+    mixhub::UnmaskRequest request;
+    request.source = self;
+    request.target = conflict.instanceA == self ? conflict.instanceB : conflict.instanceA;
+    request.cut = mixhub::unmaskCutFor(conflict);
+    const auto name = getHostTrackName();
+    request.sourceName = name.isNotEmpty() ? name : TRANS("another track");
+    getMixHub().postUnmask(request);
+    const auto other = conflict.instanceA == self ? conflict.nameB : conflict.nameA;
+    message = TRANS("Asked") + " " + other + " " + TRANS("to cut") + " " + juce::String(request.cut.gainDb, 1)
+              + " dB " + TRANS("at") + " " + mixhub::formatHz(request.cut.freqHz) + ".";
+    return true;
+}
+
+void KhensuCopilotProcessor::requestRemoveUnmask(juce::uint64 target)
+{
+    mixhub::UnmaskRequest request;
+    request.source = getMixHubInstanceId();
+    request.target = target;
+    request.remove = true;
+    getMixHub().postUnmask(request);
+}
+
+int KhensuCopilotProcessor::unmaskBandFor(juce::uint64 source) const
+{
+    const auto it = unmaskSlots_.find(source);
+    return it != unmaskSlots_.end() ? it->second.band : 0;
+}
+
+void KhensuCopilotProcessor::processMixHubCommands()
+{
+    for (const auto& request : getMixHub().takeUnmaskRequests(getMixHubInstanceId())) applyUnmaskRequest(request);
+}
+
+void KhensuCopilotProcessor::applyUnmaskRequest(const mixhub::UnmaskRequest& request)
+{
+    auto& hub = getMixHub();
+    const auto existing = unmaskSlots_.find(request.source);
+    if (request.remove) {
+        if (existing != unmaskSlots_.end()) {
+            if (const auto* band = unmaskBand(existing->second.band)) {
+                const copilot::ParamUndoHistory::ScopedTransaction step(undoHistory_,
+                                                                       TRANS("Remove Unmask cut"));
+                const auto& before = existing->second.before;
+                setParamFromUi(band->freq, before[1]);
+                setParamFromUi(band->gain, before[2]);
+                setParamFromUi(band->q, before[3]);
+                setParamFromUi(band->type, before[4]);
+                setParamFromUi(band->kind, before[5]);
+                setParamFromUi(band->mode, before[6]);
+                setParamFromUi(band->dynOn, before[7]);
+                setParamFromUi(band->on, before[0]);
+                for (const char* id : {band->on, band->freq, band->gain, band->q, band->type, band->kind, band->mode,
+                                       band->dynOn})
+                    clearAiSet(id);
+            }
+            unmaskSlots_.erase(existing);
+        }
+        hub.clearUnmaskStatus(request.source, request.target);
+        return;
+    }
+
+    // The band this source's cut already holds, else a free one.
+    const EqBandIds* band = existing != unmaskSlots_.end() ? unmaskBand(existing->second.band) : nullptr;
+    if (band == nullptr)
+        for (const auto* candidate : kUnmaskBands)
+            if (readPlain(candidate->on) < 0.5f) {
+                band = candidate;
+                break;
+            }
+    mixhub::UnmaskStatus status;
+    status.cut = request.cut;
+    if (band == nullptr) {
+        status.applied = false;
+        status.note = TRANS("No free EQ band on this track - every built-in band is in use.");
+        hub.setUnmaskStatus(request.source, request.target, status);
+        return;
+    }
+    if (existing == unmaskSlots_.end()) {
+        UnmaskSlot slot;
+        slot.band = band->number;
+        slot.before = {readPlain(band->on),   readPlain(band->freq), readPlain(band->gain), readPlain(band->q),
+                       readPlain(band->type), readPlain(band->kind), readPlain(band->mode), readPlain(band->dynOn)};
+        unmaskSlots_[request.source] = slot;
+    }
+    {
+        const copilot::ParamUndoHistory::ScopedTransaction step(undoHistory_,
+                                                               TRANS("Unmask cut for") + " " + request.sourceName);
+        float lo = 0.0f, hi = 0.0f;
+        const auto clampTo = [&lo, &hi](const char* id, float v) {
+            return mixerchain::dspParamRange(id, lo, hi) ? juce::jlimit(lo, hi, v) : v;
+        };
+        setParamFromAI(band->type, static_cast<float>(static_cast<int>(mixerchain::EqBandShape::Bell)));
+        // A plain stereo, static bell, whatever the band was left as.
+        setParamFromAI(band->kind, static_cast<float>(static_cast<int>(mixerchain::EqBandKind::Shape)));
+        setParamFromAI(band->mode, static_cast<float>(static_cast<int>(mixerchain::EqBandChannels::Stereo)));
+        setParamFromAI(band->dynOn, 0.0f);
+        setParamFromAI(band->freq, clampTo(band->freq, request.cut.freqHz));
+        setParamFromAI(band->gain, clampTo(band->gain, request.cut.gainDb));
+        setParamFromAI(band->q, clampTo(band->q, request.cut.q));
+        setParamFromAI(band->on, 1.0f);
+    }
+    status.applied = true;
+    status.band = band->number;
+    status.note = TRANS("EQ band") + " " + juce::String(band->number) + ": " + juce::String(request.cut.gainDb, 1)
+                  + " dB " + TRANS("at") + " " + mixhub::formatHz(request.cut.freqHz);
+    hub.setUnmaskStatus(request.source, request.target, status);
 }
 
 // ---- UI-9: programs, user presets, A/B snapshots -----------------------------------

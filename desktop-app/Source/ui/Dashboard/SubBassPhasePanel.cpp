@@ -85,7 +85,7 @@ void SubBassPhasePanel::paint(juce::Graphics& g)
     // Verdict line, coloured by alignment.
     auto verdictRow = b.removeFromTop(20);
     g.setColour(phaseColour(correlation_));
-    g.setFont(KhensuTheme::labelFont(11.0f).boldened());
+    g.setFont(KhensuTheme::labelFont(type::caption).boldened());
     g.drawText(verdict_, verdictRow, juce::Justification::centredLeft, false);
     b.removeFromTop(4);
 
@@ -116,7 +116,7 @@ void SubBassPhasePanel::drawGoniometer(juce::Graphics& g, juce::Rectangle<int> a
     g.drawLine(cx, cy - half, cx, cy + half, 1.0f);
 
     g.setColour(KhensuTheme::textTertiary);
-    g.setFont(KhensuTheme::labelFont(7.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.drawText("kick", (int)(cx + half - 24), (int)(cy + 2), 24, 9, juce::Justification::centredRight, false);
     g.drawText("bass", (int)(cx + 2), (int)(cy - half), 24, 9, juce::Justification::centredLeft, false);
 
@@ -136,7 +136,7 @@ void SubBassPhasePanel::drawHistory(juce::Graphics& g, juce::Rectangle<int> area
     g.fillRoundedRectangle(r, 4.0f);
 
     g.setColour(KhensuTheme::textTertiary.withAlpha(0.5f));
-    g.setFont(KhensuTheme::labelFont(7.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.drawText("correlation over time", (int)r.getX() + 3, (int)r.getY() + 1, (int)r.getWidth() - 6, 9,
                juce::Justification::centredLeft, false);
 

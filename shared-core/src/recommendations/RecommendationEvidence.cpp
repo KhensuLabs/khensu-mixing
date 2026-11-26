@@ -94,8 +94,13 @@ std::vector<EvidenceItem> evidenceForCode(const std::string& code, const Analysi
                            "below", kGenre));
     else if (code == "stereo_too_narrow")
         out.push_back(item("Stereo width", st.width, "", genre.stereo_width_min, "below", kGenre));
-    else if (code == "stereo_too_wide")
+    else if (code == "stereo_too_wide") {
         out.push_back(item("Stereo width", st.width, "", genre.stereo_width_max, "above", kGenre));
+        // STU-16: the width reading clamps at 1 once the side is as loud as
+        // the mid; the M/S balance (M^2 - S^2) / (M^2 + S^2) does not, so the
+        // width fix can still solve how far over it is.
+        out.push_back(item("Mid/side balance", st.ms_balance, "", std::nullopt, "", kAbsolute));
+    }
     else if (code == "phase_issue")
         out.push_back(item("Stereo correlation", st.correlation, "", AnalysisResult::PhaseData::kPhaseIssueCorrelation,
                            "below", kAbsolute));

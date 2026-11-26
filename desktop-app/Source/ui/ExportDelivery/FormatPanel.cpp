@@ -2,6 +2,8 @@
 #include "FormatPanel.h"
 #include "../shared/KhensuTheme.h"
 #include "ExportPlan.h"
+#include "../../IAppController.h"
+#include <khensu/session/SessionManager.h>
 
 namespace khensu {
 
@@ -10,6 +12,7 @@ void FormatPanel::applyThemeColours()
 {
     presetLabel_.setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
     presetNoteLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
+    extrasLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     mp3WarningLabel_.setColour(juce::Label::textColourId, KhensuTheme::accentAmber);
     outputPathLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     bitDepthLabel_.setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
@@ -28,20 +31,33 @@ FormatPanel::FormatPanel(IAppController& c) : PanelCard(c, "FORMAT & OUTPUT")
                            "- nobody hears them until it's pressed."));
 
     presetLabel_.setText(TRANS("Preset:"), juce::dontSendNotification);
-    presetLabel_.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::bold));
+    presetLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::bold));
     addAndMakeVisible(presetLabel_);
 
-    presetBox_.addItem(TRANS("Custom"), 1);
-    presetBox_.addItem(TRANS("Streaming Master (WAV 24/44.1)"), 2);
-    presetBox_.addItem(TRANS("CD Master (WAV 16/44.1 + dither)"), 3);
-    presetBox_.addItem(TRANS("Video / Broadcast (WAV 24/48)"), 4);
-    presetBox_.addItem(TRANS("Hi-Res Archive (FLAC 24/96)"), 5);
-    presetBox_.addItem(TRANS("Client Preview (MP3 320)"), 6);
+    rebuildPresetBox(); // the five built-ins, then the user's presets (AUTO-2)
     presetBox_.setSelectedId(1, juce::dontSendNotification);
     presetBox_.onChange = [this] { applyPreset(presetBox_.getSelectedId()); };
     addAndMakeVisible(presetBox_);
 
-    presetNoteLabel_.setFont(khensu::KhensuTheme::uiFont(10.5f, juce::Font::plain));
+    savePresetButton_.setTooltip(TRANS("Save the format, bit depth, sample rate, bitrate and the export loudness "
+                                       "as a named preset (with a file-name suffix)."));
+    savePresetButton_.onClick = [this] { promptSavePreset(); };
+    addAndMakeVisible(savePresetButton_);
+    deletePresetButton_.setTooltip(TRANS("Delete the selected preset of your own."));
+    deletePresetButton_.onClick = [this] { deleteSelectedPreset(); };
+    deletePresetButton_.setEnabled(false);
+    addAndMakeVisible(deletePresetButton_);
+    extrasButton_.setTooltip(TRANS("Pick more presets: one Export press then also writes a file for each, named "
+                                   "after the original with the preset's suffix, beside the chosen file."));
+    extrasButton_.onClick = [this] { showExtrasMenu(); };
+    addAndMakeVisible(extrasButton_);
+    extrasLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
+    extrasLabel_.setMinimumHorizontalScale(1.0f);
+    addAndMakeVisible(extrasLabel_);
+    updateExtrasLabel();
+    loadUserPresets();
+
+    presetNoteLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     addAndMakeVisible(presetNoteLabel_);
 
     wavButton_.setRadioGroupId(2001);
@@ -72,7 +88,7 @@ FormatPanel::FormatPanel(IAppController& c) : PanelCard(c, "FORMAT & OUTPUT")
 
     auto setupLabel = [](juce::Label& lbl, const juce::String& text) {
         lbl.setText(text, juce::dontSendNotification);
-        lbl.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::bold));
+        lbl.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::bold));
     };
 
     setupLabel(bitDepthLabel_, TRANS("Bit Depth:"));
@@ -110,12 +126,12 @@ FormatPanel::FormatPanel(IAppController& c) : PanelCard(c, "FORMAT & OUTPUT")
 
     mp3WarningLabel_.setText(TRANS("LAME encoder not found. Place lame.exe next to app or in PATH."),
                              juce::dontSendNotification);
-    mp3WarningLabel_.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    mp3WarningLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     mp3WarningLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(mp3WarningLabel_);
 
     outputPathLabel_.setText(TRANS("(no output path chosen)"), juce::dontSendNotification);
-    outputPathLabel_.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    outputPathLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     addAndMakeVisible(outputPathLabel_);
 
     chooseOutputButton_.onClick = [this]() { onChooseOutput(); };
@@ -176,9 +192,18 @@ void FormatPanel::applyPreset(int presetId)
                                  juce::dontSendNotification);
         break;
     default:
+        if (presetId >= kFirstUserPresetId && presetId - kFirstUserPresetId < static_cast<int>(userPresets_.size())) {
+            const auto& p = userPresets_[static_cast<size_t>(presetId - kFirstUserPresetId)];
+            applyPresetSettings(p);
+            presetNoteLabel_.setText(TRANS("Your preset - its extra files end in %s.").replace("%s", p.suffix),
+                                     juce::dontSendNotification);
+            deletePresetButton_.setEnabled(true);
+            return;
+        }
         presetNoteLabel_.setText({}, juce::dontSendNotification);
         break;
     }
+    deletePresetButton_.setEnabled(false);
     followFormatExtension();
     updateFormatVisibility();
     resized();
@@ -331,6 +356,10 @@ void FormatPanel::resized()
     {
         auto presetRow = b.removeFromTop(rowH);
         presetLabel_.setBounds(presetRow.removeFromLeft(labelW));
+        deletePresetButton_.setBounds(presetRow.removeFromRight(64).reduced(0, 3));
+        presetRow.removeFromRight(4);
+        savePresetButton_.setBounds(presetRow.removeFromRight(104).reduced(0, 3));
+        presetRow.removeFromRight(6);
         presetBox_.setBounds(presetRow);
         b.removeFromTop(2);
         presetNoteLabel_.setBounds(b.removeFromTop(26));
@@ -371,10 +400,240 @@ void FormatPanel::resized()
         }
     }
 
+    {
+        auto extrasRow = b.removeFromTop(rowH);
+        extrasButton_.setBounds(extrasRow.removeFromLeft(labelW + 30).reduced(0, 3));
+        extrasRow.removeFromLeft(6);
+        extrasLabel_.setBounds(extrasRow);
+        b.removeFromTop(gap);
+    }
+
     auto pathRow = b.removeFromTop(rowH);
     chooseOutputButton_.setBounds(pathRow.removeFromRight(90));
     pathRow.removeFromRight(6);
     outputPathLabel_.setBounds(pathRow);
+}
+
+// ---- AUTO-2: user presets and multi-format export ---------------------------
+
+export_presets::Preset FormatPanel::currentAsPreset(const juce::String& name) const
+{
+    const auto st = getState();
+    export_presets::Preset p;
+    p.name = name.trim();
+    p.format = st.format;
+    p.bitDepth = st.bitDepth;
+    p.sampleRate = st.sampleRate;
+    p.mp3Bitrate = st.mp3Bitrate;
+    p.loudness = loudnessKey ? loudnessKey() : juce::String();
+    p.suffix = export_presets::suffixForName(p.name);
+    return p;
+}
+
+void FormatPanel::applyPresetSettings(const export_presets::Preset& p)
+{
+    juce::TextButton* button = &wavButton_;
+    FormatType type = FormatType::WAV;
+    switch (p.format) {
+    case AudioExportOptions::Format::AIFF: button = &aiffButton_; type = FormatType::AIFF; break;
+    case AudioExportOptions::Format::FLAC: button = &flacButton_; type = FormatType::FLAC; break;
+    case AudioExportOptions::Format::MP3: button = &mp3Button_; type = FormatType::MP3; break;
+    case AudioExportOptions::Format::AAC: button = &aacButton_; type = FormatType::AAC; break;
+    case AudioExportOptions::Format::WAV: break;
+    }
+    button->setToggleState(true, juce::dontSendNotification);
+    selectedFormat_ = type;
+    bitDepthBox_.setSelectedId(p.bitDepth == AudioExportOptions::BitDepth::Bits16   ? 1
+                               : p.bitDepth == AudioExportOptions::BitDepth::Bits32 ? 3
+                                                                                    : 2,
+                               juce::dontSendNotification);
+    sampleRateBox_.setSelectedId(p.sampleRate == AudioExportOptions::SampleRate::SR44100   ? 1
+                                 : p.sampleRate == AudioExportOptions::SampleRate::SR48000 ? 2
+                                 : p.sampleRate == AudioExportOptions::SampleRate::SR96000 ? 3
+                                                                                           : kSourceRateId,
+                                 juce::dontSendNotification);
+    mp3BitrateBox_.setSelectedId(p.mp3Bitrate == AudioExportOptions::Mp3Bitrate::kbps128   ? 1
+                                 : p.mp3Bitrate == AudioExportOptions::Mp3Bitrate::kbps192 ? 2
+                                                                                           : 3,
+                                 juce::dontSendNotification);
+    if (!p.builtIn() && applyLoudnessKey) applyLoudnessKey(p.loudness);
+    followFormatExtension();
+    updateFormatVisibility();
+    resized();
+}
+
+std::vector<export_presets::Preset> FormatPanel::allPresets() const
+{
+    auto all = export_presets::builtIns();
+    all.insert(all.end(), userPresets_.begin(), userPresets_.end());
+    return all;
+}
+
+std::vector<export_presets::Preset> FormatPanel::extraPresets() const
+{
+    std::vector<export_presets::Preset> out;
+    for (const auto& p : allPresets())
+        if (extraNames_.contains(p.name)) out.push_back(p);
+    return out;
+}
+
+void FormatPanel::setUserPresetsForTesting(std::vector<export_presets::Preset> presets)
+{
+    userPresets_ = std::move(presets);
+    rebuildPresetBox();
+    updateExtrasLabel();
+}
+
+void FormatPanel::setExtraSelected(const juce::String& presetName, bool selected)
+{
+    if (selected)
+        extraNames_.addIfNotAlreadyThere(presetName);
+    else
+        extraNames_.removeString(presetName);
+    updateExtrasLabel();
+}
+
+void FormatPanel::rebuildPresetBox()
+{
+    const int selected = presetBox_.getSelectedId();
+    const juce::String selectedName = selected >= kFirstUserPresetId ? presetBox_.getText() : juce::String();
+    presetBox_.clear(juce::dontSendNotification);
+    presetBox_.addItem(TRANS("Custom"), 1);
+    for (const auto& p : export_presets::builtIns())
+        presetBox_.addItem(p.name, p.builtInId);
+    if (!userPresets_.empty()) presetBox_.addSectionHeading(TRANS("Your presets"));
+    int restore = selected >= kFirstUserPresetId ? 1 : selected;
+    for (size_t i = 0; i < userPresets_.size(); ++i) {
+        const int id = kFirstUserPresetId + static_cast<int>(i);
+        presetBox_.addItem(userPresets_[i].name, id);
+        if (selectedName.isNotEmpty() && userPresets_[i].name == selectedName) restore = id;
+    }
+    if (restore > 0) presetBox_.setSelectedId(restore, juce::dontSendNotification);
+    deletePresetButton_.setEnabled(restore >= kFirstUserPresetId);
+    // Extras that no longer exist are dropped.
+    const auto all = allPresets();
+    for (int i = extraNames_.size(); --i >= 0;)
+        if (std::none_of(all.begin(), all.end(), [&](const export_presets::Preset& p) { return p.name == extraNames_[i]; }))
+            extraNames_.remove(i);
+}
+
+void FormatPanel::loadUserPresets()
+{
+    auto db = controller_.sessions().sessionManagerPtr();
+    if (db == nullptr) return;
+    juce::Component::SafePointer<FormatPanel> self(this);
+    controller_.runInBackground([self, db] {
+        auto r = db->getUserPreference(export_presets::kPreferenceKey);
+        const juce::String json = r.is_ok() ? juce::String(r.value()) : juce::String();
+        juce::MessageManager::callAsync([self, json] {
+            if (self == nullptr) return; // the presets are the user's, not the session's
+            self->userPresets_ = export_presets::parse(json);
+            self->rebuildPresetBox();
+            self->updateExtrasLabel();
+        });
+    });
+}
+
+void FormatPanel::storeUserPresets()
+{
+    auto db = controller_.sessions().sessionManagerPtr();
+    if (db == nullptr) return;
+    const std::string json = export_presets::serialize(userPresets_).toStdString();
+    if (controller_.isShuttingDown()) {
+        db->setUserPreference(export_presets::kPreferenceKey, json);
+        return;
+    }
+    controller_.runInBackground([db, json] { db->setUserPreference(export_presets::kPreferenceKey, json); });
+}
+
+void FormatPanel::promptSavePreset()
+{
+    dialog_ = std::make_unique<juce::AlertWindow>(
+        TRANS("Save export preset"),
+        TRANS("Saves the format, bit depth, sample rate, MP3 bitrate and the export loudness. The suffix ends the "
+              "file names a multi-format export writes with this preset."),
+        juce::MessageBoxIconType::NoIcon, this);
+    const juce::String current = presetBox_.getSelectedId() >= kFirstUserPresetId ? presetBox_.getText() : juce::String();
+    dialog_->addTextEditor("name", current, TRANS("Name"));
+    dialog_->addTextEditor("suffix", current.isNotEmpty() ? export_presets::suffixForName(current) : juce::String(),
+                           TRANS("File suffix (optional)"));
+    dialog_->addButton(TRANS("Save"), 1, juce::KeyPress(juce::KeyPress::returnKey));
+    dialog_->addButton(TRANS("Cancel"), 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<FormatPanel> self(this);
+    dialog_->enterModalState(true, juce::ModalCallbackFunction::create([self](int r) {
+                                 if (self == nullptr || self->dialog_ == nullptr) return;
+                                 const auto name = self->dialog_->getTextEditorContents("name").trim();
+                                 const auto suffix = self->dialog_->getTextEditorContents("suffix").trim();
+                                 self->dialog_.reset();
+                                 if (r != 1 || name.isEmpty()) return;
+                                 auto p = self->currentAsPreset(name);
+                                 if (suffix.isNotEmpty()) p.suffix = export_presets::sanitizeSuffix(suffix);
+                                 self->userPresets_ = export_presets::withPreset(self->userPresets_, p);
+                                 self->storeUserPresets();
+                                 self->rebuildPresetBox();
+                                 for (size_t i = 0; i < self->userPresets_.size(); ++i)
+                                     if (self->userPresets_[i].name == name)
+                                         self->presetBox_.setSelectedId(kFirstUserPresetId + static_cast<int>(i),
+                                                                        juce::dontSendNotification);
+                                 self->deletePresetButton_.setEnabled(true);
+                                 self->updateExtrasLabel();
+                             }));
+}
+
+void FormatPanel::deleteSelectedPreset()
+{
+    if (presetBox_.getSelectedId() < kFirstUserPresetId) return;
+    const auto name = presetBox_.getText();
+    userPresets_ = export_presets::withoutPreset(userPresets_, name);
+    extraNames_.removeString(name);
+    presetBox_.setSelectedId(1, juce::dontSendNotification);
+    storeUserPresets();
+    rebuildPresetBox();
+    updateExtrasLabel();
+}
+
+void FormatPanel::showExtrasMenu()
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader(TRANS("Also write these with one Export press"));
+    const auto all = allPresets();
+    for (size_t i = 0; i < all.size(); ++i) {
+        if (i == export_presets::builtIns().size()) menu.addSectionHeader(TRANS("Your presets"));
+        menu.addItem(static_cast<int>(i) + 1, all[i].name + "  (" + all[i].suffix + ")", true,
+                     extraNames_.contains(all[i].name));
+    }
+    menu.addSeparator();
+    menu.addItem(1000, TRANS("None"), !extraNames_.isEmpty());
+    menu.addItem(1001, TRANS("Done"));
+    juce::Component::SafePointer<FormatPanel> self(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&extrasButton_), [self, all](int result) {
+        if (self == nullptr || result <= 0 || result == 1001) return;
+        if (result == 1000) {
+            self->extraNames_.clear();
+        } else {
+            const auto idx = static_cast<size_t>(result - 1);
+            if (idx >= all.size()) return;
+            self->setExtraSelected(all[idx].name, !self->extraNames_.contains(all[idx].name));
+        }
+        self->updateExtrasLabel();
+        self->showExtrasMenu(); // stay open for the next tick
+    });
+}
+
+void FormatPanel::updateExtrasLabel()
+{
+    const auto extras = extraPresets();
+    if (extras.empty()) {
+        extrasLabel_.setText(TRANS("One file. Pick more presets to write several formats at once."),
+                             juce::dontSendNotification);
+        return;
+    }
+    juce::StringArray names;
+    for (const auto& p : extras)
+        names.add(p.name);
+    extrasLabel_.setText(TRANS("Also writes %n more: %l").replace("%n", juce::String((int)extras.size()))
+                             .replace("%l", names.joinIntoString(", ")),
+                         juce::dontSendNotification);
 }
 
 } // namespace khensu

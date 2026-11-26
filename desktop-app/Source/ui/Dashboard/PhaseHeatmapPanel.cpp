@@ -5,6 +5,7 @@
 #include "../shared/SessionEpoch.h"
 #include "../shared/KhensuTheme.h"
 #include "../shared/HeatmapImage.h"
+#include "../shared/VizMaps.h"
 #include <khensu/ipc/HttpServiceBridge.h>
 #include "../shared/PanelRunState.h"
 #include <khensu/ipc/generated/ApiSchema.h>
@@ -14,30 +15,6 @@
 namespace khensu {
 
 namespace {
-/// VIZ-U3: the value under `pos` in a [frame][band] grid drawn over `area`
-/// (band 0 at the bottom), with its time and frequency.
-juce::String gridReadout(const std::vector<std::vector<float>>& grid, const std::vector<float>& edgesHz, float durationSec,
-                         juce::Rectangle<float> area, juce::Point<float> pos, const std::function<juce::String(float)>& value)
-{
-    if (grid.empty() || grid[0].empty() || !area.contains(pos)) return {};
-    const auto f = (size_t)juce::jlimit(0, (int)grid.size() - 1, (int)((pos.x - area.getX()) / area.getWidth() * (float)grid.size()));
-    const int bands = (int)grid[f].size();
-    if (bands == 0) return {};
-    const auto b = (size_t)juce::jlimit(0, bands - 1, (int)((area.getBottom() - pos.y) / area.getHeight() * (float)bands));
-    juce::String where;
-    if (durationSec > 0.0f) {
-        const int t = juce::roundToInt(durationSec * ((float)f + 0.5f) / (float)grid.size());
-        where << t / 60 << ":" << juce::String(t % 60).paddedLeft('0', 2);
-    }
-    if (b + 1 < edgesHz.size()) {
-        const float hz = std::sqrt(edgesHz[b] * edgesHz[b + 1]);
-        where << (where.isEmpty() ? "" : ", ")
-              << (hz >= 1000.0f ? juce::String(hz / 1000.0f, 1) + " kHz" : juce::String(juce::roundToInt(hz)) + " Hz");
-    }
-    const float v = grid[f][b];
-    return where + ": " + (std::isfinite(v) ? value(v) : TRANS("no data"));
-}
-
 std::vector<std::vector<float>> gridOf(const juce::var& rows)
 {
     std::vector<std::vector<float>> grid;
@@ -71,10 +48,9 @@ static juce::Colour corrColour(float v)
     // is a neutral grey, NOT 0.0 - zero correlation is a real, decorrelated
     // reading and would read as "dark = decorrelated" here.
     if (!std::isfinite(v)) return KhensuTheme::textTertiary.withAlpha(0.25f);
-    // Diverging: red (anti-phase, -1) -> dark (0) -> teal (correlated, +1).
-    v = juce::jlimit(-1.0f, 1.0f, v);
-    if (v < 0.0f) return KhensuTheme::bgVoid.interpolatedWith(KhensuTheme::accentRed, -v);
-    return KhensuTheme::bgVoid.interpolatedWith(KhensuTheme::accentTeal, v);
+    // VIS-2: the one diverging map - blue (anti-phase, -1) -> neutral (0)
+    // -> orange (correlated, +1).
+    return ui::viz::themedDiverging(juce::jlimit(-1.0f, 1.0f, v));
 }
 
 // Every cached palette colour on this component, in one place (UI-01).
@@ -86,8 +62,8 @@ PhaseHeatmapPanel::PhaseHeatmapPanel(IAppController& c) : PanelCard(c, "Phase Co
 {
     applyThemeColours();
     setExplainer(TRANS("Phase Correlation Heatmap"),
-                 TRANS("L/R correlation across the whole spectrum over time: teal = mono-safe "
-                 "(+1), red = anti-phase and will cancel when summed to mono (-1), dark = "
+                 TRANS("L/R correlation across the whole spectrum over time: orange = mono-safe "
+                 "(+1), blue = anti-phase and will cancel when summed to mono (-1), grey = "
                  "decorrelated (0). Shows exactly where (frequency) and when (time) the mix "
                  "goes out of phase - the mono-compatibility problems a single "
                  "correlation number hides."));
@@ -126,11 +102,11 @@ void PhaseHeatmapPanel::runAnalysis()
                                                    : (float)(double)c);
                     grid.push_back(std::move(r));
                 }
-            self.img_ = buildGridImage(grid, corrColour);
-            self.grid_ = grid;
             self.edgesHz_ = floatsOf(v[af::PhaseHeatmapResponse::band_edges_hz]);
+            self.img_ = buildGridImageOnAxis(grid, self.edgesHz_, corrColour);
+            self.grid_ = grid;
             self.durationSec_ = (float)(double)v[af::PhaseHeatmapResponse::duration_sec];
-            return self.stereo_ ? TRANS("Teal = mono-safe, red = anti-phase, grey = no data.")
+            return self.stereo_ ? TRANS("Orange = mono-safe, blue = anti-phase, faint = no data.")
                                 : TRANS("Mono file - perfectly correlated.");
         },
         std::move(options));
@@ -146,21 +122,21 @@ void PhaseHeatmapPanel::paint(juce::Graphics& g)
     }
     auto b = bodyArea();
     b.removeFromTop(28);
-    g.setColour(KhensuTheme::bgVoid.withAlpha(0.5f));
-    g.fillRect(b);
     if (!stereo_ || !img_.isValid()) {
-        g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::bodyFont(11.0f));
-        g.drawText("Mono source - no phase relationship to show.", b, juce::Justification::centred, false);
+        drawEmptyState(g, TRANS("Mono source - no phase relationship to show."), {}, 28); // UXR-6
         return;
     }
+    // VIS-2 / VIS-3: the standard frequency axis on the left, the colour bar on the right.
+    const int labelW = 30;
+    auto legend = b.removeFromRight(static_cast<int>(ui::viz::kColourBarW)).toFloat();
+    b.removeFromLeft(labelW);
+    g.setColour(KhensuTheme::bgVoid.withAlpha(0.5f));
+    g.fillRect(b);
     g.drawImage(img_, b.toFloat(), juce::RectanglePlacement::stretchToFit);
-    gridArea_ = (b.toFloat()).toFloat();
-    // Freq axis hint: low at bottom, high at top.
-    g.setColour(KhensuTheme::textTertiary.withAlpha(0.7f));
-    g.setFont(KhensuTheme::labelFont(8.0f));
-    g.drawText("20k", b.getX() + 2, b.getY() + 1, 30, 10, juce::Justification::centredLeft, false);
-    g.drawText("20", b.getX() + 2, b.getBottom() - 11, 30, 10, juce::Justification::centredLeft, false);
+    gridArea_ = b.toFloat();
+    ui::viz::paintFrequencyTicks(g, gridArea_, static_cast<float>(labelW), true);
+    ui::viz::paintDivergingBar(g, legend.withTrimmedLeft(6.0f).withTrimmedTop(4.0f).withTrimmedBottom(4.0f), "+1", "0",
+                               "-1");
 }
 
 void PhaseHeatmapPanel::resized()
@@ -178,7 +154,7 @@ void PhaseHeatmapPanel::resized()
 
 void PhaseHeatmapPanel::mouseMove(const juce::MouseEvent& e)
 {
-    setTooltip(gridReadout(grid_, edgesHz_, durationSec_, gridArea_, e.position, [](float v) {
+    setTooltip(gridReadoutOnAxis(grid_, edgesHz_, durationSec_, gridArea_, e.position, [](float v) {
         return TRANS("correlation") + " " + juce::String(v, 2)
                + (v < 0.0f ? " - " + TRANS("cancels in mono") : v > 0.7f ? " - " + TRANS("mono-safe") : juce::String());
     }));

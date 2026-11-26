@@ -27,7 +27,7 @@ ReferenceProfilesBar::ReferenceProfilesBar(IBackgroundWork& controller, std::fun
     exportButton_.setTooltip(TRANS("Save your reference profiles as a hashed JSON file to share"));
     importButton_.setTooltip(TRANS("Add profiles from a shared JSON file (the hash is checked; numbers only)"));
     browseButton_.setTooltip(TRANS("Browse a shared profile index at an https URL (needs the online switches)"));
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setMinimumHorizontalScale(1.0f);
     analyseButton_.onClick = [this] { analyseReference(); };
     exportButton_.onClick = [this] { exportProfiles(); };

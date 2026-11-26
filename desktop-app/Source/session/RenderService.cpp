@@ -4,12 +4,14 @@
 #include "PlaybackService.h"
 #include "SessionService.h"
 #include "RecommendationChain.h"
+#include <khensu/recommendations/MaskingChain.h>
 #include "ReportBody.h"
 #include "../BackgroundReadKey.h"
 #include "../IBackgroundWork.h"
 #include "../export/AudioExporter.h"
 #include "../services/IAnalysisHub.h"
 #include "../services/IStems.h"
+#include "../services/EqBandChain.h"
 #include "../ui/shared/KhensuTheme.h" // the report's palette snapshot
 #include "../ui/shared/RenderPaths.h"
 #include "../ui/shared/ServiceErrorHint.h"
@@ -281,6 +283,7 @@ void RenderService::registerRenderOf(const juce::String& renderedPath, const juc
         juce::Logger::writeToLog("AppController: refused to register a stem render as the mix render: " + renderedPath);
         return;
     }
+    int newNode = -1; // AUTO-3: set when the render is a new version
     if (const int existing = renderHistory_.findNode(renderedPath); existing >= 0) {
         renderHistory_.restoreTreeNode(existing);
     } else {
@@ -288,10 +291,142 @@ void RenderService::registerRenderOf(const juce::String& renderedPath, const juc
         // version is that version's child (WF-1: fixes stack).
         const bool fromOriginal = juce::File(inputPath) == juce::File(sessions_.activeSourcePath());
         renderHistory_.registerRenderFrom(renderedPath, fromOriginal ? juce::String() : inputPath);
+        newNode = renderHistory_.currentNode();
     }
     loadRenderAtCurrentIndex();
     acceptedRenderChanged();
     notify(renderTreeListeners_);
+    if (newNode >= 0) maybeOfferReplay(newNode);
+}
+
+const IRenders::ChainRender* RenderService::chainFor(const juce::String& path) const
+{
+    const auto it = versionChains_.find(path);
+    return it != versionChains_.end() ? &it->second : nullptr;
+}
+
+RenderService::ReplayOffer RenderService::replayOfferFor(int newNode) const
+{
+    ReplayOffer offer;
+    const auto& tree = renderHistory_.tree();
+    if (newNode < 0 || newNode >= (int)tree.size()) return offer;
+    offer.sessionId = sessions_.activeSessionId();
+    offer.basePath = tree[(size_t)newNode].path;
+    // An edit of the original counts only when the user stepped back to it;
+    // "Start from original" deliberately leaves the stacked fixes out (FIX-3).
+    if (tree[(size_t)newNode].parent < 0 && renderStart_ == RenderStart::Original) return offer;
+    // The same fix re-made on the earlier version (Gentler, a new amount)
+    // replaces its old render: it is not re-run on top of itself.
+    const auto* made = chainFor(offer.basePath);
+    const juce::String madeFor = made != nullptr ? made->sourceRecommendationId : juce::String();
+    for (const int node : RenderHistory::stackedAbove(tree, newNode)) {
+        const auto* chain = chainFor(tree[(size_t)node].path);
+        if (chain == nullptr || chain->chain.empty()) {
+            ++offer.unknownSteps;
+            continue;
+        }
+        if (madeFor.isNotEmpty() && chain->sourceRecommendationId == madeFor) continue;
+        offer.steps.push_back(*chain);
+    }
+    return offer;
+}
+
+void RenderService::maybeOfferReplay(int newNode)
+{
+    if (replay_.active || !onReplayOffer) return;
+    auto offer = replayOfferFor(newNode);
+    if (!offer.steps.empty()) onReplayOffer(offer);
+}
+
+bool RenderService::startReplay(const ReplayOffer& offer)
+{
+    const auto fail = [this](const juce::String& why) {
+        if (onReplayProgress) onReplayProgress(0, 0, why, true, false);
+        return false;
+    };
+    if (replay_.active) return fail(TRANS("Stacked fixes are already being re-run."));
+    if (offer.steps.empty()) return fail(TRANS("Nothing to re-run."));
+    if (offer.sessionId.isEmpty() || offer.sessionId != sessions_.activeSessionId())
+        return fail(TRANS("The session changed - the stacked fixes were not re-run."));
+    if (currentRenderPath() != offer.basePath)
+        return fail(TRANS("The current version changed - the stacked fixes were not re-run."));
+    replay_.active = true;
+    ++replay_.token;
+    replay_.sessionId = offer.sessionId;
+    replay_.input = offer.basePath;
+    replay_.steps = offer.steps;
+    replay_.next = 0;
+    runNextReplayStep();
+    return true;
+}
+
+void RenderService::runNextReplayStep()
+{
+    const int total = (int)replay_.steps.size();
+    if (replay_.next >= replay_.steps.size()) {
+        finishReplay(true, TRANS("Re-ran %n stacked fixes on the new version.").replace("%n", juce::String(total)));
+        return;
+    }
+    const auto& step = replay_.steps[replay_.next];
+    const int index = (int)replay_.next + 1;
+    const juce::File out = uniqueRenderFile(juce::File(sessions_.activeSourcePath()), "_rerun");
+    ChainRender labelled = step;
+    labelled.description = TRANS("Re-run") + " " + juce::String(index) + "/" + juce::String(total) + ": " +
+                           step.description + " -> " + out.getFileName();
+    replay_.runningDescription = labelled.description;
+    versionChains_[out.getFullPathName()] = step; // a later branch can re-run it again
+    if (onReplayProgress)
+        onReplayProgress(index - 1, total,
+                         TRANS("Re-running stacked fix %i of %n: %d")
+                             .replace("%i", juce::String(index))
+                             .replace("%n", juce::String(total))
+                             .replace("%d", step.description),
+                         false, true);
+    juce::WeakReference<RenderService> self(this);
+    const int token = replay_.token;
+    // The step processes the previous step's output, not renderInputPath():
+    // the queue rebuilds one chain whatever "Start from" says.
+    startChain(labelled, replay_.input, out.getFullPathName(), true,
+               [self, token](RenderOutcome outcome, const juce::String& pathOrError, const juce::var&) {
+                   auto* s = self.get();
+                   if (s == nullptr || !s->replay_.active || s->replay_.token != token) return;
+                   switch (outcome) {
+                   case RenderOutcome::Rendered:
+                       s->replay_.input = pathOrError;
+                       ++s->replay_.next;
+                       s->runNextReplayStep();
+                       return;
+                   case RenderOutcome::Cancelled:
+                       s->finishReplay(false, TRANS("Re-running the stacked fixes was cancelled."));
+                       return;
+                   case RenderOutcome::SessionChanged:
+                       s->finishReplay(false, TRANS("The session changed - the stacked fixes were not re-run."));
+                       return;
+                   case RenderOutcome::Failed:
+                       s->finishReplay(false, TRANS("A stacked fix did not render:") + " " + pathOrError);
+                       return;
+                   }
+               });
+}
+
+void RenderService::finishReplay(bool ok, const juce::String& status)
+{
+    const int done = (int)replay_.next;
+    const int total = (int)replay_.steps.size();
+    replay_.active = false;
+    ++replay_.token;
+    replay_.steps.clear();
+    replay_.runningDescription.clear();
+    if (onReplayProgress) onReplayProgress(done, total, status, true, ok);
+}
+
+void RenderService::cancelReplay()
+{
+    if (!replay_.active) return;
+    const auto running = replay_.runningDescription;
+    finishReplay(false, TRANS("Re-running the stacked fixes was cancelled."));
+    for (const auto& job : renderJobs_.activeJobs())
+        if (running.isNotEmpty() && job.description == running) renderJobs_.cancelJob(job.localId);
 }
 
 juce::String RenderService::exportSourcePath() const
@@ -391,7 +526,7 @@ void RenderService::startChain(const ChainRender& render, const juce::String& in
                                  render.sourceRecommendationId,
                                  chainCompletion(sessionId, inputPath, asVersion, std::move(onDone)),
                                  render.genreRelative, render.genreActionAllowed, render.abstainedReason,
-                                 render.targetStem, render.decisionHash);
+                                 render.targetStem, render.decisionHash, render.keyStem);
 }
 
 void RenderService::startRegionChain(const ChainRender& render, const juce::String& inputPath,
@@ -455,11 +590,19 @@ void RenderService::startNativeChain(const ChainRender& render, const juce::Stri
     renderJobs_.rememberChain(render.chain, render.decisionHash);
     juce::Logger::writeToLog("RenderService: the analysis engine is not up - rendering natively: " +
                              render.description);
+    // ENH-6: a keyed DynamicEQ listens to the leading stem when it has been
+    // separated; without it the stage keys on its own input.
+    juce::String keyPath;
+    if (render.keyStem.isNotEmpty()) {
+        const auto keyFile = stems_.getStemFile(render.keyStem);
+        if (keyFile.existsAsFile()) keyPath = keyFile.getFullPathName();
+    }
     renderJobs_.startLocalRender(
         render.description, inputPath, sessionId, render.sourceRecommendationId,
-        [inputPath, outputPath, chain = nativeChain(render.chain)](const std::atomic<bool>& stop) {
+        [inputPath, outputPath, keyPath, chain = nativeChain(render.chain)](const std::atomic<bool>& stop) {
             dsp::OfflineRenderOptions options;
             options.shouldCancel = [&stop] { return stop.load(); };
+            options.keyPath = keyPath.toStdString();
             const auto result =
                 dsp::OfflineChainRenderer::renderFile(juce::File(inputPath), juce::File(outputPath), chain, options);
             RenderJobManager::LocalRenderOutcome outcome;
@@ -499,6 +642,7 @@ juce::File RenderService::renderVersion(const ChainRender& render, const juce::S
     const juce::File outputFile = uniqueRenderFile(juce::File(sessions_.activeSourcePath()), outputSuffix);
     ChainRender labelled = render;
     labelled.description = render.description + " -> " + outputFile.getFileName();
+    versionChains_[outputFile.getFullPathName()] = render; // AUTO-3: what made this version
     startChain(labelled, inPath, outputFile.getFullPathName(), true, std::move(onDone));
     return outputFile;
 }
@@ -529,6 +673,7 @@ void RenderService::applyRecommendationChain(const Recommendation& rec, Done onD
 {
     ChainRender render;
     render.chain = buildRecommendationChain(rec);
+    if (const auto dyn = maskingDynamicEq(rec)) render.keyStem = juce::String(dyn->keyStem);
     if (sessions_.state().session && !sessions_.state().session->files.empty() && render.chain.empty()) {
         if (onDone)
             onDone(false,
@@ -575,16 +720,7 @@ void RenderService::applyCleanupChain(const juce::String& effect, int presetIdx,
 void RenderService::applyEqBands(const std::vector<EqBand>& bands, Done onDone)
 {
     ChainRender render;
-    for (const auto& band : bands) {
-        // HPF/LPF have no gain: they always render when enabled.
-        if (!band.enabled || (eqBandTypeHasGain(band.type) && std::abs(band.gain_db) < 0.1f)) continue;
-        ipc::HttpServiceBridge::EffectSpec eq;
-        eq.effect = renderEffectName(band.type); // AUDIT-008: shelves render as shelves, not bells
-        eq.parameters["cutoff_frequency_hz"] = band.hz;
-        eq.parameters["gain_db"] = band.gain_db;
-        eq.parameters["q"] = band.q;
-        render.chain.push_back(std::move(eq));
-    }
+    render.chain = eqBandsToChain(bands); // the same chain the live preview plays (STU-9)
     if (sessions_.state().session && !sessions_.state().session->files.empty() && render.chain.empty()) {
         if (onDone) onDone(false, TRANS("No EQ bands with a non-zero gain to render - drag a band up or down first."));
         return;
@@ -665,6 +801,9 @@ void RenderService::resetForSession()
     // Every queued/running render belongs to the session being left: cancel
     // them so none can finish into the next session's history, A/B side,
     // autosave or export (AUDIT-002). Callbacks fire now with ok=false.
+    if (replay_.active) finishReplay(false, TRANS("The session changed - the stacked fixes were not re-run."));
+    ++replay_.token;
+    versionChains_.clear();
     renderJobs_.cancelAll();
     renderHistory_.clear();
     renderStart_ = RenderStart::CurrentVersion; // WF-1: each session starts stacking

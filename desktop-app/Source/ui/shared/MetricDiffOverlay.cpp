@@ -24,7 +24,7 @@ MetricDiffOverlay::MetricDiffOverlay(const juce::String& title, std::vector<Metr
     addAndMakeVisible(card_);
 
     titleLabel_.setText(title, juce::dontSendNotification);
-    titleLabel_.setFont(khensu::KhensuTheme::uiFont(15.0f, juce::Font::bold));
+    titleLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::subtitle, juce::Font::bold));
     card_.addAndMakeVisible(titleLabel_);
 
     closeButton_.onClick = [this]() {

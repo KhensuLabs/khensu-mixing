@@ -9,6 +9,7 @@
 #include <JuceHeader.h>
 #include "../shared/KhensuTheme.h" // ThemeListener
 #include "../shared/PanelCard.h"
+#include <khensu/ui/ChartKit.h>
 #include <vector>
 
 namespace khensu {
@@ -29,7 +30,7 @@ class WhatChangedPanel final : public PanelCard {
     struct Row {
         juce::String label, before, after;
         float delta = 0.0f; // after - before, native units
-        int direction = 0;  // +1 improved (green), -1 worse (red), 0 neutral
+        int direction = 0;  // +1 improved, -1 worse (written as words), 0 neutral
         juce::String unit;
     };
 
@@ -48,6 +49,7 @@ class WhatChangedPanel final : public PanelCard {
     juce::ComboBox afterCombo_;
     std::vector<Row> rows_;
     std::vector<NoteRow> noteRows_;
+    ui::chart::ChartSummary summary_; ///< VIS-8
     juce::String diffedPair_; ///< "before|after" guard against re-fetch
     bool fetchInFlight_ = false;
     bool afterPickedByUser_ = false;

@@ -100,6 +100,8 @@ class RenderJobResult(ResponseModel):
     quarantine_path: str | None = None
     measurements: RenderGuardrail | None = None
     source_path: str | None = None
+    # Non-fatal render notes, e.g. a key stem that could not be used (ENH-6).
+    warnings: list[str] | None = None
 
 
 class RenderJobStatusResponse(JobStatusBase):
@@ -136,6 +138,8 @@ class BatchFileResult(ResponseModel):
     quarantine_path: str | None = None
     stem_provenance: dict[str, Any] | None = None
     stem_paths: dict[str, str] | None = None
+    # Non-fatal render notes, e.g. a key stem that could not be used (ENH-6).
+    warnings: list[str] | None = None
 
 
 class BatchJobStatusResponse(JobStatusBase):
@@ -195,6 +199,13 @@ class MasteringIteration(ResponseModel):
     critique: str | None = None
 
 
+class MasteringAgentTargets(ResponseModel):
+    lufs: Number
+    crest_db: Number
+    centroid_hz: Number
+    ceiling_dbtp: Number
+
+
 class MasteringAgentResult(ResponseModel):
     converged: bool
     stop_reason: str | None = None
@@ -205,6 +216,11 @@ class MasteringAgentResult(ResponseModel):
     final_output_path: str | None = None
     decision_hash: str | None = None
     guardrail: RenderGuardrail | None = None
+    # ENH-5: the style the run used and the targets it converged toward.
+    style: str | None = None
+    strength: Number | None = None
+    style_summary: str | None = None
+    targets: MasteringAgentTargets | None = None
 
 
 class MasteringAgentStatusResponse(JobStatusBase):

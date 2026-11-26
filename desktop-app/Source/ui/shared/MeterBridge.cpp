@@ -1,6 +1,7 @@
 // desktop-app/Source/ui/shared/MeterBridge.cpp
 #include "MeterBridge.h"
 #include "PanelRunState.h"
+#include "VizMaps.h"
 #include "../../IAppController.h"
 #include <khensu/targets/GenreDatabase.h>
 
@@ -117,6 +118,7 @@ void MeterBridge::timerCallback()
             live_.add(scratch_[(size_t)i]);
 
     const bool playing = controller_.playback().isPlaying();
+    if (playing) setShowingAnalysed(false);
     if (playing && !scopeConnected_) { // back to the live signal
         scope_.setSource(layout_ == Layout::Large ? &tap->scopeLargeRing() : &tap->scopeRing());
         scopeConnected_ = true;
@@ -148,25 +150,34 @@ void MeterBridge::showAnalysedWhileIdle()
 {
     // Nothing is playing: the meters show what the analysis measured instead
     // of sitting blank (the card is the song's meters, not only a live view).
-    if (!controller_.hasAnalysis()) return;
+    if (!controller_.hasAnalysis()) {
+        setShowingAnalysed(false);
+        return;
+    }
+    setShowingAnalysed(true); // VIS-6: greyed, with the caption
     const auto& r = controller_.currentAnalysis();
     const float lufs = r.loudness.lufs_integrated;
     const bool haveLufs = r.has_fast_analysis() && lufs > -70.0f;
-    loudness_.setValues(LiveLoudness::kSilence, LiveLoudness::kSilence, haveLufs ? lufs : LiveLoudness::kSilence);
+    // The S bar holds the song's loudest short-term reading, the M bar is
+    // empty (there is no momentary reading of a stopped song).
+    const float stMax = r.loudness.lufs_short_term_max > -70.0f ? r.loudness.lufs_short_term_max : LiveLoudness::kSilence;
+    loudness_.setValues(LiveLoudness::kSilence, haveLufs ? stMax : LiveLoudness::kSilence,
+                        haveLufs ? lufs : LiveLoudness::kSilence);
     if (r.loudness.lra_measured) loudness_.setLoudnessRange(r.loudness.lra);
     if (r.loudness.true_peak_dbtp > -98.0f) truePeak_.setPeaks(r.loudness.true_peak_dbtp, r.loudness.true_peak_dbtp);
     correlation_.setCorrelation(r.stereo.correlation);
     if (layout_ == Layout::Compact) {
         Readout next = readout_;
+        next.shortTerm = haveLufs ? stMax : LiveLoudness::kSilence;
         next.integrated = haveLufs ? lufs : LiveLoudness::kSilence;
         if (r.loudness.true_peak_dbtp > -98.0f) next.peakHold = r.loudness.true_peak_dbtp;
         next.correlation = r.stereo.correlation;
         readout_ = next;
         repaint(readoutArea_);
-        return;
     }
-    // The vectorscope: a slice of the song itself, looped, so its stereo image
-    // shows without playback. Decoded once per file, in the background.
+    // The vectorscope (both layouts, VIS-6): a slice of the song itself,
+    // looped and greyed, so its stereo image shows without playback. Decoded
+    // once per file, in the background.
     const auto path = controller_.currentAuditionPath().isNotEmpty() ? controller_.currentAuditionPath()
                                                                      : controller_.activeSourcePath();
     if (path != idleScopeFor_ && !idleScopeLoading_) {
@@ -210,6 +221,18 @@ void MeterBridge::showAnalysedWhileIdle()
     }
 }
 
+void MeterBridge::setShowingAnalysed(bool analysed)
+{
+    if (analysed == showingAnalysed_) return;
+    showingAnalysed_ = analysed;
+    for (ui::AnimatedMeter* m : {static_cast<ui::AnimatedMeter*>(&loudness_), static_cast<ui::AnimatedMeter*>(&truePeak_),
+                                 static_cast<ui::AnimatedMeter*>(&correlation_), static_cast<ui::AnimatedMeter*>(&scope_)})
+        m->setStopped(analysed);
+    widthChart_.setStopped(analysed);
+    setDescription(analysed ? ui::viz::stoppedCaptionText() : juce::String());
+    repaint();
+}
+
 void MeterBridge::paintCompact(juce::Graphics& g)
 {
     // Three readouts, label over value: loudness (with a bar against the
@@ -229,8 +252,9 @@ void MeterBridge::paintCompact(juce::Graphics& g)
         g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
         g.drawText(text, r, juce::Justification::centredLeft, true);
     };
-    const auto value = [&g](juce::Rectangle<int> r, const juce::String& text, juce::Colour colour) {
-        g.setColour(colour);
+    const bool stopped = showingAnalysed_;
+    const auto value = [&g, stopped](juce::Rectangle<int> r, const juce::String& text, juce::Colour colour) {
+        g.setColour(stopped ? ui::viz::stoppedTint(colour) : colour); // VIS-6: analysed, not live
         g.setFont(KhensuTheme::metricFont(KhensuTheme::kFontBody + 2.0f));
         g.drawText(text, r, juce::Justification::centredLeft, true);
     };
@@ -243,7 +267,8 @@ void MeterBridge::paintCompact(juce::Graphics& g)
     // Loudness.
     {
         auto r = loud.withY(top).withHeight(36);
-        label(r.removeFromTop(14), TRANS("Short-term LUFS") + "   " + TRANS("int") + " " + lufsText(readout_.integrated));
+        label(r.removeFromTop(14), (stopped ? TRANS("Stopped - analysed LUFS") : TRANS("Short-term LUFS")) + "   "
+                                       + TRANS("int") + " " + lufsText(readout_.integrated));
         auto row = r;
         value(row.removeFromLeft(48), lufsText(readout_.shortTerm), KhensuTheme::textPrimary);
         auto bar = row.reduced(0, 9).toFloat();
@@ -260,7 +285,7 @@ void MeterBridge::paintCompact(juce::Graphics& g)
                                               bar.getHeight() + 4.0f));
         }
         if (readout_.shortTerm > lo) {
-            g.setColour(KhensuTheme::accentTeal);
+            g.setColour(stopped ? ui::viz::stoppedTint(KhensuTheme::accentTeal) : KhensuTheme::accentTeal);
             g.fillRoundedRectangle(bar.withRight(x(readout_.shortTerm)), 2.0f);
         }
     }
@@ -298,6 +323,14 @@ void MeterBridge::paint(juce::Graphics& g)
         g.drawText(TRANS("Output meters"), getLocalBounds().reduced(KhensuTheme::sp4, KhensuTheme::sp2).removeFromTop(18),
                    juce::Justification::centredLeft, false);
     }
+}
+
+void MeterBridge::paintOverChildren(juce::Graphics& g)
+{
+    if (layout_ != Layout::Large || !showingAnalysed_) return;
+    // VIS-6: one caption for the card, on its title row.
+    auto row = getLocalBounds().reduced(KhensuTheme::sp4, KhensuTheme::sp2).removeFromTop(18).toFloat();
+    ui::viz::paintStoppedCaption(g, row.withTrimmedTop(2.0f));
 }
 
 void MeterBridge::updateWidth(PlaybackMeterTap& tap, bool playing)
@@ -357,17 +390,37 @@ void MeterBridge::resized()
     b = b.reduced(KhensuTheme::sp4);
     b.removeFromTop(22); // the card's caption
     // VIZ-4b: the per-octave width under the meters, so the card is full.
-    widthChart_.setBounds(b.removeFromBottom(juce::jlimit(110, 180, b.getHeight() * 2 / 5)));
+    widthChart_.setBounds(b.removeFromBottom(juce::jlimit(90, 180, b.getHeight() * 3 / 10)));
     b.removeFromBottom(KhensuTheme::sp3);
-    const int scopeSize = juce::jmin(b.getHeight() - 24, b.getWidth() / 2);
-    auto left = b.removeFromLeft(scopeSize);
-    scope_.setBounds(left.removeFromTop(scopeSize));
-    left.removeFromTop(KhensuTheme::sp1);
-    correlation_.setBounds(left.removeFromTop(18));
-    b.removeFromLeft(KhensuTheme::sp4);
-    truePeak_.setBounds(b.removeFromRight(56));
-    b.removeFromRight(KhensuTheme::sp3);
-    loudness_.setBounds(b);
+
+    // BUG-5: every meter gets a box it can draw in without its captions or
+    // scales colliding. The correlation meter needs ~44 px (caption, track,
+    // scale); the loudness meter ~170 px of width for readable bars and ticks.
+    constexpr int kCorrH = 44, kPeakW = 64, kLoudMinW = 170;
+    const int gap = KhensuTheme::sp3;
+    const int oneRowScope = juce::jmin(b.getHeight() - kCorrH - KhensuTheme::sp1, b.getWidth() * 2 / 5);
+    if (b.getWidth() - oneRowScope - kPeakW - 2 * gap >= kLoudMinW && oneRowScope >= 100) {
+        // Wide: [scope over correlation] [loudness] [true peak].
+        auto left = b.removeFromLeft(oneRowScope);
+        scope_.setBounds(left.removeFromTop(oneRowScope));
+        left.removeFromTop(KhensuTheme::sp1);
+        correlation_.setBounds(left.removeFromTop(kCorrH));
+        b.removeFromLeft(gap);
+        truePeak_.setBounds(b.removeFromRight(kPeakW));
+        b.removeFromRight(gap);
+        loudness_.setBounds(b);
+        return;
+    }
+    // Narrow: [loudness | true peak] over [scope | correlation].
+    auto top = b.removeFromTop(juce::jlimit(84, 120, b.getHeight() / 2));
+    truePeak_.setBounds(top.removeFromRight(kPeakW));
+    top.removeFromRight(gap);
+    loudness_.setBounds(top);
+    b.removeFromTop(gap);
+    const int scopeSize = juce::jmax(0, juce::jmin(b.getHeight(), b.getWidth() / 2));
+    scope_.setBounds(b.removeFromLeft(scopeSize).withSizeKeepingCentre(scopeSize, scopeSize));
+    b.removeFromLeft(gap);
+    correlation_.setBounds(b.withSizeKeepingCentre(b.getWidth(), juce::jmin(kCorrH, b.getHeight())));
 }
 
 } // namespace khensu

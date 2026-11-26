@@ -201,6 +201,43 @@ class RenderService final : public IRenders {
     /// render history and delta-solo source.
     void resetForSession();
 
+    // ---- AUTO-3: re-render queue ----
+    /// A new version made from an EARLIER version that already had versions
+    /// stacked on it: the chains of those versions, in order, which can be
+    /// re-run on top of the new one.
+    struct ReplayOffer {
+        juce::String sessionId;
+        juce::String basePath;          ///< the new version the steps go on top of
+        std::vector<ChainRender> steps; ///< in processing order
+        int unknownSteps = 0;           ///< stacked versions whose chain isn't recorded (not re-run)
+    };
+    /// Fired (message thread) when such a version is registered. The owner
+    /// asks the user (a notice) and calls startReplay() on yes.
+    std::function<void(const ReplayOffer&)> onReplayOffer;
+    /// Queue progress: `done` of `total` steps, a status line, and whether
+    /// the queue has ended (`ok` false when it stopped early: cancelled,
+    /// failed or the session changed).
+    std::function<void(int done, int total, const juce::String& status, bool finished, bool ok)> onReplayProgress;
+    /// The offer for the version registered at tree node `newNode`, or an
+    /// offer with no steps (pure on the tree and the recorded chains; tested).
+    ReplayOffer replayOfferFor(int newNode) const;
+    /// Re-runs the offer's steps one after another, each on the previous
+    /// one's output (the first on the offer's base), each registered as a
+    /// version (registerRenderOf). False when it cannot start: another replay
+    /// runs, the session changed, or the base is no longer the current version.
+    bool startReplay(const ReplayOffer& offer);
+    /// Stops the queue: the running step's render is cancelled; versions
+    /// already rendered stay in the tree.
+    void cancelReplay();
+    bool replayInProgress() const noexcept { return replay_.active; }
+    /// The chain that rendered `path` (renderVersion / the replay), if known.
+    const ChainRender* chainFor(const juce::String& path) const;
+    /// Test seam: records the chain a version was rendered with.
+    void rememberVersionChainForTesting(const juce::String& path, const ChainRender& render)
+    {
+        versionChains_[path] = render;
+    }
+
   private:
     /// The one completion path for chain renders (REF-3): the session check,
     /// the outcome, and registration as a version when `asVersion`.
@@ -236,6 +273,23 @@ class RenderService final : public IRenders {
     RenderHistory renderHistory_;
     RenderStart renderStart_ = RenderStart::CurrentVersion;
     std::map<void*, std::function<void()>> renderTreeListeners_;
+
+    // AUTO-3: the chain each version was rendered with (by output path),
+    // and the re-render queue's state.
+    std::map<juce::String, ChainRender> versionChains_;
+    struct Replay {
+        bool active = false;
+        int token = 0; ///< bumped on start / cancel / reset: a late step is ignored
+        juce::String sessionId;
+        juce::String input; ///< what the next step processes
+        std::vector<ChainRender> steps;
+        size_t next = 0;
+        juce::String runningDescription; ///< the render queue's label of the running step
+    };
+    Replay replay_;
+    void runNextReplayStep();
+    void finishReplay(bool ok, const juce::String& status);
+    void maybeOfferReplay(int newNode);
 
     std::atomic<uint64_t> deltaSoloGeneration_{0};
     std::string deltaSoloWetPath_;

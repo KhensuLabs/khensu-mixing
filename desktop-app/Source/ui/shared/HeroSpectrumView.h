@@ -14,6 +14,8 @@
 #include <JuceHeader.h>
 #include <functional>
 #include <map>
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include "HeroSpectrumModel.h"
@@ -49,6 +51,10 @@ class HeroSpectrumView final : public juce::Component, public juce::SettableTool
     std::function<void(int gauge)> onMetricClicked;
 
     void paint(juce::Graphics& g) override;
+    /// VIS-8: what a screen reader reads ("Tonal balance: tilt -3.1 dB/oct,
+    /// 2 problem bands: ...").
+    juce::String summary() const;
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
     void mouseMove(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
@@ -82,7 +88,16 @@ class HeroSpectrumView final : public juce::Component, public juce::SettableTool
         juce::Rectangle<float> bounds;
         int finding = -1;    ///< index into model_.findings, else -1
         int hiddenCount = 0; ///< "+N" overflow chip
+        /// BUG-4: every finding of the chip's kind (same label), worst first;
+        /// the chip reads "Translation x3" and a click cycles through them.
+        std::vector<int> group;
     };
+  public:
+    /// BUG-4: the chips of the "Top findings" row as (label, count) - one
+    /// chip per kind of finding. For tests.
+    std::vector<std::pair<juce::String, int>> chipSummary() const;
+
+  private:
     /// The "Top findings" row: every non-frequency finding, open and worst first.
     std::vector<ChipCell> chipCells() const;
     std::vector<juce::Rectangle<float>> tileCells() const;
@@ -90,7 +105,14 @@ class HeroSpectrumView final : public juce::Component, public juce::SettableTool
     void paintGrid(juce::Graphics& g, juce::Rectangle<float> plot) const;
     void paintTarget(juce::Graphics& g, juce::Rectangle<float> plot) const;
     void paintSpectrum(juce::Graphics& g, juce::Rectangle<float> plot) const;
-    void paintFindings(juce::Graphics& g, juce::Rectangle<float> plot) const;
+    /// VIS-5: the bands at the back, the tilt line under the track's curve,
+    /// the markers and the bands' names on top.
+    enum class FindingLayer { Bands, Tilt, Marks };
+    void paintFindings(juce::Graphics& g, juce::Rectangle<float> plot, FindingLayer layer) const;
+    /// The track's mean level across a band against the target there (dB).
+    std::optional<float> bandDeviationDb(const hero_spectrum::Finding& f) const;
+    /// A band's on-plot label ("Low end +6.0 dB"), shortened to fit, or "".
+    juce::String bandLabel(const hero_spectrum::Finding& f, float maxWidth) const;
     void paintStrip(juce::Graphics& g) const;
     void paintTiles(juce::Graphics& g) const;
     void paintSpread(juce::Graphics& g, juce::Rectangle<float> plot) const;

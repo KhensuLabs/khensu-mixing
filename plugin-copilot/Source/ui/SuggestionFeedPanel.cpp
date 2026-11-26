@@ -81,19 +81,19 @@ void SuggestionRow::paint(juce::Graphics& g)
     g.setColour(PluginLookAndFeel::accentBlue.withAlpha(0.16f));
     g.fillRoundedRectangle(chip.toFloat(), 3.0f);
     g.setColour(PluginLookAndFeel::accentBlue);
-    g.setFont(khensu::ui::Palette::uiFont(9.0f, juce::Font::plain));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
     g.drawText(typeLabel_, chip, juce::Justification::centred);
     b.removeFromTop(2);
 
     // What
     g.setColour(PluginLookAndFeel::textPrimary);
-    g.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::plain));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
     g.drawText(whatText_, b.removeFromTop(16), juce::Justification::centredLeft, true);
     b.removeFromTop(2);
 
     // Action
     g.setColour(PluginLookAndFeel::accentTeal);
-    g.setFont(khensu::ui::Palette::uiFont(10.0f, juce::Font::plain));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
     g.drawText(actionText_, b.removeFromTop(14), juce::Justification::centredLeft, true);
 
     // Row separator
@@ -111,7 +111,7 @@ void SuggestionRow::paint(juce::Graphics& g)
         g.fillEllipse(checkBounds.toFloat());
         if (done || dismissed) {
             g.setColour(PluginLookAndFeel::textPrimary);
-            g.setFont(khensu::ui::Palette::uiFont(10.0f, juce::Font::bold));
+            g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::bold));
             g.drawText(done ? juce::String(juce::CharPointer_UTF8("\xe2\x9c\x93"))
                             : juce::String(juce::CharPointer_UTF8("\xe2\x9c\x95")),
                        checkBounds, juce::Justification::centred);
@@ -238,7 +238,7 @@ void SuggestionFeedPanel::paint(juce::Graphics& g) // Note: paint not resized ca
     g.setColour(PluginLookAndFeel::bgPanel);
     g.fillRect(header);
     g.setColour(PluginLookAndFeel::accentTeal);
-    g.setFont(khensu::ui::Palette::uiFont(10.0f, juce::Font::bold));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::bold));
     g.drawText("SUGGESTIONS  (" + juce::String(rows_.size()) + ")", header.reduced(8, 0),
                juce::Justification::centredLeft);
 
@@ -246,7 +246,7 @@ void SuggestionFeedPanel::paint(juce::Graphics& g) // Note: paint not resized ca
         g.setColour(PluginLookAndFeel::bgDark);
         g.fillRect(getLocalBounds().withTrimmedTop(22));
         g.setColour(PluginLookAndFeel::textMuted);
-        g.setFont(khensu::ui::Palette::uiFont(12.0f, juce::Font::plain));
+        g.setFont(khensu::ui::Palette::uiFont(khensu::type::secondary, juce::Font::plain));
         g.drawText("Analyzing...", getLocalBounds().withTrimmedTop(22), juce::Justification::centred);
         return;
     }
@@ -255,7 +255,7 @@ void SuggestionFeedPanel::paint(juce::Graphics& g) // Note: paint not resized ca
         g.setColour(PluginLookAndFeel::bgDark);
         g.fillRect(getLocalBounds().withTrimmedTop(22));
         g.setColour(PluginLookAndFeel::textMuted);
-        g.setFont(khensu::ui::Palette::uiFont(12.0f, juce::Font::plain));
+        g.setFont(khensu::ui::Palette::uiFont(khensu::type::secondary, juce::Font::plain));
         g.drawText(emptyText_, getLocalBounds().withTrimmedTop(22), juce::Justification::centred);
     }
 }

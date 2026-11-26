@@ -2,6 +2,7 @@
 #include "StemEnergyTimelinePanel.h"
 #include "../../IAppController.h"
 #include "../shared/KhensuTheme.h"
+#include "../shared/ChartKitDesktop.h"
 #include "../shared/PanelRunState.h"
 #include "../shared/TimelineCache.h"
 #include <khensu/common/Result.h>
@@ -32,6 +33,40 @@ StemEnergyTimelinePanel::StemEnergyTimelinePanel(IAppController& c) : PanelCard(
     addChildComponent(masking_);
     run_.onRetry([this] { runAnalysis(); });
     run_.setIdle(TRANS("Requires separated stems (auto-runs once they exist)."));
+    // VIS-1: both are time charts - a click plays from there, the playhead follows.
+    stream_.setTitle(TRANS("Stem energy over time"));
+    masking_.setTitle(TRANS("Masking map"));
+    chart_transport::attachClickToPlay(stream_, controller_.playback());
+    chart_transport::attachClickToPlay(masking_, controller_.playback());
+}
+
+juce::String StemEnergyTimelinePanel::streamSummary() const
+{
+    // VIS-8: each stem's share of the energy, and where the sum peaks.
+    const auto& s = stream_.stream();
+    if (s.stems.empty() || s.timeSec.empty()) return TRANS("Stem energy over time: not measured yet.");
+    std::vector<double> totals(s.stems.size(), 0.0);
+    double all = 0.0, peak = -1.0, peakSec = 0.0;
+    for (size_t f = 0; f < s.timeSec.size(); ++f) {
+        double frame = 0.0;
+        for (size_t k = 0; k < s.stems.size(); ++k)
+            if (f < s.energy[k].size()) {
+                totals[k] += s.energy[k][f];
+                frame += s.energy[k][f];
+            }
+        all += frame;
+        if (frame > peak) {
+            peak = frame;
+            peakSec = s.timeSec[f];
+        }
+    }
+    juce::StringArray parts;
+    for (size_t k = 0; k < s.stems.size(); ++k)
+        parts.add(juce::String(s.stems[k]) + " " + juce::String(juce::roundToInt(all > 0.0 ? 100.0 * totals[k] / all : 0.0)) + " %");
+    ui::chart::Axis t;
+    t.format = ui::chart::Format::Time;
+    return TRANS("Stem energy over time, share of the song's energy") + ": " + parts.joinIntoString(", ") + "; " +
+           TRANS("the loudest moment at") + " " + t.label(peakSec, true) + ".";
 }
 
 void StemEnergyTimelinePanel::runAnalysis()
@@ -61,6 +96,7 @@ void StemEnergyTimelinePanel::runAnalysis()
         [](StemEnergyTimelinePanel& self, const Timelines& timelines) -> juce::String {
             self.timelines_ = timelines;
             self.stream_.setStream(stem_viz::stream(self.timelines_));
+            self.stream_.setSummary(self.streamSummary());
             // Every pair, the vocal ones first (the masking the ear notices).
             self.pairs_.clear();
             const auto& order = stem_viz::stemOrder();
@@ -99,6 +135,14 @@ void StemEnergyTimelinePanel::showPair(int index)
     if (index < 0 || index >= static_cast<int>(pairs_.size())) return;
     const auto& [a, b] = pairs_[static_cast<size_t>(index)];
     masking_.setMap(stem_viz::masking(a, *timelines_.at(a), b, *timelines_.at(b)));
+    const auto& m = masking_.map();
+    ui::chart::Axis t, f;
+    t.format = ui::chart::Format::Time;
+    f.format = ui::chart::Format::Hz;
+    masking_.setSummary(TRANS("Masking map of") + " " + juce::String(a) + " " + TRANS("and") + " " + juce::String(b) + ": " +
+                        (m.worst > 0.0f ? TRANS("the worst clash at") + " " + t.label(m.worstSec, true) + ", " +
+                                              f.label(m.worstHz, true) + "."
+                                        : TRANS("no clash found.")));
 }
 
 void StemEnergyTimelinePanel::paint(juce::Graphics& g)

@@ -37,13 +37,13 @@ inline juce::String purpose(ScreenType screen)
     case ScreenType::ReferenceLibrary: return TRANS("Reference tracks to compare your mix with.");
     case ScreenType::SystemBrain: return TRANS("How each analysis and recommendation works.");
     case ScreenType::Settings:
-        return TRANS("Online permissions and local MIDI hardware. Audio processing remains local.");
+        return TRANS("Display, privacy, AI providers, models, audio and MIDI, data and diagnostics.");
     }
     return {};
 }
 
-inline juce::Font titleFont() { return KhensuTheme::uiFont(20.0f, juce::Font::bold); }
-inline juce::Font purposeFont() { return KhensuTheme::bodyFont(12.0f); }
+inline juce::Font titleFont() { return KhensuTheme::uiFont(type::heading, juce::Font::bold); }
+inline juce::Font purposeFont() { return KhensuTheme::bodyFont(type::secondary); }
 
 /// Title, then the purpose on the same row in secondary text, ellipsized.
 inline void paint(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& heading,
@@ -126,7 +126,7 @@ class ScreenHeader final : public juce::Component {
     juce::Rectangle<int> actionArea() const
     {
         if (action_ == nullptr) return {};
-        const int textW = juce::GlyphArrangement::getStringWidthInt(KhensuTheme::uiFont(14.0f, juce::Font::bold),
+        const int textW = juce::GlyphArrangement::getStringWidthInt(KhensuTheme::uiFont(type::large, juce::Font::bold),
                                                                     action_->getButtonText());
         const int w = juce::jlimit(120, 240, textW + 40);
         return getLocalBounds().removeFromRight(w).withSizeKeepingCentre(

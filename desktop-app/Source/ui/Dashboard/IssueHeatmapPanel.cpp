@@ -4,6 +4,7 @@
 #include "../shared/KhensuLookAndFeel.h"
 #include "../shared/DspDomainClassifier.h"
 #include "../../IAppController.h"
+#include "../shared/ChartKitDesktop.h"
 #include "../shared/FloatVector.h"
 #include <khensu/ipc/HttpServiceBridge.h>
 #include <cmath>
@@ -11,15 +12,16 @@
 
 namespace khensu {
 
-IssueHeatmapPanel::IssueHeatmapPanel(IAppController& c) : PanelCard(c, "Issue Heatmap"), heatmap_(&c)
+IssueHeatmapPanel::IssueHeatmapPanel(IAppController& c) : PanelCard(c, "Issue Heatmap"), heatmap_(&c.playback())
 {
     setExplainer(TRANS("Issue Heatmap"), TRANS("Unified, transport-synced timeline. A shared time axis and playhead run "
                                   "across every lane: the spectro-temporal heatmap, an issue-density row, "
                                   "continuous loudness (LUFS) and stereo-correlation plots, and one "
                                   "recommendation-marker lane per domain (Spectral / Dynamics / Stereo). "
-                                  "Double-click anywhere to seek there; hover to read values at that moment."));
+                                  "Click anywhere to play from there; hover to read values at that moment."));
 
-    heatmap_.onSeekRequest([this](float sec) { controller_.playback().setPlaybackPosition(sec); });
+    // VIS-1: the heatmap is a ChartKit chart - click-to-play, the playhead and
+    // the screen-reader summary (built from its data) are its own.
     heatmap_.setDensityEnabled(true);
     addAndMakeVisible(heatmap_);
 }
@@ -28,7 +30,6 @@ void IssueHeatmapPanel::setData(const AnalysisResult& r)
 {
     const float span =
         controller_.playback().getPlaybackDuration() > 0.0 ? static_cast<float>(controller_.playback().getPlaybackDuration()) : 180.0f;
-    span_ = span;
 
     // Stereo correlation over time - already in AnalysisResult (no fetch).
     stereoCorrelation_.clear();
@@ -59,9 +60,9 @@ void IssueHeatmapPanel::setData(const AnalysisResult& r)
 
     heatmap_.setSpan(span);
     heatmap_.setLanes({
-        {"SPECTRAL", std::move(spectral)},
-        {"DYNAMICS", std::move(dynamics)},
-        {"STEREO", std::move(stereo)},
+        {TRANS("Spectral"), std::move(spectral)},
+        {TRANS("Dynamics"), std::move(dynamics)},
+        {TRANS("Stereo"), std::move(stereo)},
     });
 
     rebuildDataLanes();
@@ -75,9 +76,9 @@ void IssueHeatmapPanel::rebuildDataLanes()
 
     if (!lufsCurve_.empty()) {
         TimelineDataLane loud;
-        loud.label = "LOUDNESS";
-        loud.suffix = "";
-        loud.colour = KhensuTheme::accentTeal;
+        loud.label = TRANS("Loudness");
+        loud.suffix = " LUFS";
+        loud.colour = KhensuTheme::vizCategory(0); // VIS-4: a series colour
         float lo = 0.0f, hi = -120.0f;
         loud.samples.reserve(lufsCurve_.size());
         int finiteCount = 0;
@@ -104,9 +105,9 @@ void IssueHeatmapPanel::rebuildDataLanes()
 
     if (stereoCorrelation_.size() >= 2) {
         TimelineDataLane st;
-        st.label = "STEREO r";
+        st.label = TRANS("Correlation");
         st.suffix = "";
-        st.colour = KhensuTheme::accentBlue;
+        st.colour = KhensuTheme::vizCategory(2); // VIS-4: a series colour, not the minor-severity blue
         st.minV = -1.0f;
         st.maxV = 1.0f;
         st.samples = stereoCorrelation_;

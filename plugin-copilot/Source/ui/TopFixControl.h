@@ -24,6 +24,8 @@ std::vector<Recommendation> topFindings(const std::vector<Recommendation>& recs,
                                         size_t limit);
 /// The highest-severity open finding whose fix maps onto the built-in chain.
 std::optional<Recommendation> selectTopFix(const std::vector<Recommendation>& recs, const IssueStateLookup& stateOf);
+/// ENH-10: how many of `open` (most severe first) Apply all would apply.
+int countSafeFixes(const std::vector<Recommendation>& open);
 } // namespace copilot
 
 // THREAD_CONTEXT(UIThread)
@@ -36,6 +38,11 @@ class TopFixControl final : public juce::Component {
     void setRecommendations(const std::vector<Recommendation>& recs, copilot::IssueStateLookup stateOf);
     /// Called with the top fix when Apply is pressed; returns true if applied.
     std::function<bool(const Recommendation&)> onApply;
+    /// ENH-10: called with every open finding (most severe first) when
+    /// "Apply all safe" is pressed; returns true if anything was applied.
+    std::function<bool(const std::vector<Recommendation>&)> onApplyAll;
+    const std::vector<Recommendation>& openFindings() const noexcept { return openFindings_; }
+    int safeFixCount() const noexcept { return safeFixCount_; }
 
     const std::optional<Recommendation>& topFix() const noexcept { return topFix_; }
     /// Refreshes the "live" marker (the editor's timer).
@@ -44,6 +51,7 @@ class TopFixControl final : public juce::Component {
     void setCompact(bool compact);
 
     juce::Button& applyButton() noexcept { return applyButton_; }
+    juce::Button& applyAllButton() noexcept { return applyAllButton_; }
     ui::KhensuKnob& amountKnob() noexcept { return amountKnob_; }
     juce::String findingTextForTesting() const { return findingLabel_.getText(); }
     juce::String reasonTextForTesting() const { return reasonLabel_.getText(); }
@@ -56,6 +64,9 @@ class TopFixControl final : public juce::Component {
     std::optional<Recommendation> topFix_;
     juce::Label titleLabel_, findingLabel_, reasonLabel_;
     juce::TextButton applyButton_;
+    juce::TextButton applyAllButton_;
+    std::vector<Recommendation> openFindings_;
+    int safeFixCount_ = 0;
     ui::KhensuKnob amountKnob_{"Amount"};
     std::unique_ptr<juce::SliderParameterAttachment> amountAttachment_;
     bool compact_ = false;

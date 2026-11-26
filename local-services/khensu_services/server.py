@@ -91,9 +91,14 @@ async def _lifespan(app: FastAPI):
     """
     import threading
     threading.Thread(target=_warm_start, name="khensu-warm-start", daemon=True).start()
+    # REFS-1: the reference folders marked "rescan on launch" (delayed timer).
+    from khensu_services.analysis.router_reference_scan import schedule_launch_rescan
+    _rescan_timer = schedule_launch_rescan()
     try:
         yield
     finally:
+        if _rescan_timer is not None:
+            _rescan_timer.cancel()
         # CE-COL-3: never leave the LAN listening-room port open.
         try:
             from khensu_services.listening_room import shutdown as _stop_listening_room

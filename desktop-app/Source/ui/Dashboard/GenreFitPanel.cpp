@@ -88,7 +88,7 @@ void GenreFitPanel::paint(juce::Graphics& g)
         return;
     }
     auto b = bodyArea();
-    g.setFont(KhensuTheme::labelFont(11.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText(genreId_ + " - " + juce::String(tracks_) + " " + TRANS("measured tracks"), b.removeFromTop(16),
                juce::Justification::centredLeft, true);

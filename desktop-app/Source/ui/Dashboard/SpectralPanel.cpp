@@ -25,7 +25,7 @@ SpectralPanel::SpectralPanel(IAppController& c) : PanelCard(c, "Spectral Balance
     applyThemeColours();
     setExplainer(TRANS("Spectral"), kSpectralExplainerBase, "spectral_balance");
     addAndMakeVisible(spectrum_);
-    balance_.setFont(khensu::KhensuTheme::uiFont(12.0f, juce::Font::plain));
+    balance_.setFont(khensu::KhensuTheme::uiFont(khensu::type::secondary, juce::Font::plain));
     addAndMakeVisible(balance_);
     addAndMakeVisible(sectionSpectral_);
     sectionSpectral_.setVisible(false);

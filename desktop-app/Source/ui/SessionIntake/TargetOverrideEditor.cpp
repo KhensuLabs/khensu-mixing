@@ -30,7 +30,7 @@ TargetOverrideEditor::TargetOverrideEditor(IAppController& c, const GenreEntry& 
     // does for readiness/scorecard weights.
     titleLabel_.setText(TRANS("Target Overrides (applies to all genres) -- baseline shown for ") + juce::String(genre_.id),
                         juce::dontSendNotification);
-    titleLabel_.setFont(khensu::KhensuTheme::uiFont(15.0f, juce::Font::bold));
+    titleLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::subtitle, juce::Font::bold));
     card_.addAndMakeVisible(titleLabel_);
 
     closeButton_.onClick = [this]() {
@@ -79,7 +79,7 @@ void TargetOverrideEditor::setupRow(Row& row, const juce::String& name, double m
                                     std::function<void(float)> onChange)
 {
     row.label.setText(name, juce::dontSendNotification);
-    row.label.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+    row.label.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     row.label.setColour(juce::Label::textColourId, KhensuTheme::textPrimary);
     card_.addAndMakeVisible(row.label);
 
@@ -93,7 +93,7 @@ void TargetOverrideEditor::setupRow(Row& row, const juce::String& name, double m
     row.slider.onDragEnd = [this] { saveNow(); }; // a finished drag saves at once
     card_.addAndMakeVisible(row.slider);
 
-    row.baselineValue.setFont(khensu::KhensuTheme::uiFont(9.5f, juce::Font::plain));
+    row.baselineValue.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     row.baselineValue.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     card_.addAndMakeVisible(row.baselineValue);
 }

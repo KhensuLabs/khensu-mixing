@@ -10,7 +10,7 @@ if(CMAKE_HOST_APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build universal binary")
 endif()
 
-project(KhensuMixingSuite VERSION 1.0.4 LANGUAGES C CXX)  # C: SQLite and other bundled C sources
+project(KhensuMixingSuite VERSION 1.0.5 LANGUAGES C CXX)  # C: SQLite and other bundled C sources
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

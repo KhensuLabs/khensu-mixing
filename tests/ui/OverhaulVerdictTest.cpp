@@ -278,6 +278,7 @@ TEST_CASE("Motion: a tween eases from the old value to the new one over its dura
 
 TEST_CASE("ValueAnimator jumps to its first value and eases later ones (UI-7)", "[ui7][motion]")
 {
+    ui::motion::setOverrideForTesting(0); // VIS-7: animations on, whatever Windows says
     int frames = 0;
     ValueAnimator a{[&] { ++frames; }};
     a.setTarget(42.0f);
@@ -289,6 +290,7 @@ TEST_CASE("ValueAnimator jumps to its first value and eases later ones (UI-7)", 
     a.setTarget(10.0f, /*animate*/ false);
     CHECK(a.value() == 10.0f);
     CHECK_FALSE(a.isAnimating());
+    ui::motion::setOverrideForTesting(-1);
 }
 
 TEST_CASE("The top strip is session state, never a measurement (VIZ-P1)", "[ui3][rollup]")

@@ -1,6 +1,6 @@
 // desktop-app/Source/ui/Dashboard/AiArtifactsPanel.cpp
 #include "AiArtifactsPanel.h"
-#include "../AiDetection/AiVerdictText.h"
+#include "../ProvenanceSource/AiVerdictText.h"
 #include "../../IAppController.h"
 #include "../shared/KhensuTheme.h"
 #include <khensu/ipc/HttpServiceBridge.h>
@@ -46,7 +46,7 @@ AiArtifactsPanel::AiArtifactsPanel(IAppController& c) : PanelCard(c, "AI Artifac
     run_.onRetry([this] { runScan(); });
     run_.setIdle(TRANS("Runs automatically at intake; re-run any time."));
 
-    summaryLabel_.setFont(KhensuTheme::labelFont(9.5f));
+    summaryLabel_.setFont(KhensuTheme::labelFont(type::caption));
     summaryLabel_.setJustificationType(juce::Justification::topLeft);
     summaryLabel_.setMinimumHorizontalScale(1.0f);
     addAndMakeVisible(summaryLabel_);
@@ -136,9 +136,9 @@ void AiArtifactsPanel::paint(juce::Graphics& g)
     g.setColour(vc.withAlpha(0.15f));
     g.fillRoundedRectangle(header.toFloat().reduced(0, 2), 4.0f);
     g.setColour(vc);
-    g.setFont(KhensuTheme::labelFont(11.0f).boldened());
+    g.setFont(KhensuTheme::labelFont(type::caption).boldened());
     g.drawText(head.text, header.reduced(10, 0), juce::Justification::centredLeft, true);
-    g.setFont(KhensuTheme::monoFont(9.0f));
+    g.setFont(KhensuTheme::monoFont(type::caption));
     g.drawText(ai_verdict_text::scoreText(scan_), header.reduced(10, 0),
                juce::Justification::centredRight, false);
     b.removeFromTop(4);
@@ -156,7 +156,7 @@ void AiArtifactsPanel::paint(juce::Graphics& g)
                                 : sr.likelihood >= 0.05f ? KhensuTheme::accentAmber
                                                          : KhensuTheme::textTertiary;
         g.setColour(rc);
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText(sr.line, cell.reduced(2, 0), juce::Justification::centredLeft, true);
     }
     b.removeFromTop(4);
@@ -164,14 +164,14 @@ void AiArtifactsPanel::paint(juce::Graphics& g)
     // Detectors that did not run (gated models, errors) - AID-05.
     auto notRunRow = b.removeFromTop(14);
     if (notRunLine_.isNotEmpty()) {
-        g.setFont(KhensuTheme::labelFont(8.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(notRunLine_, notRunRow, juce::Justification::centredLeft, true);
     }
 
     // ── Clipping census line ─────────────────────────────────────────────
     auto clipRow = b.removeFromTop(14);
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(clipCount_ > 0 ? KhensuTheme::accentRed : KhensuTheme::textTertiary);
     g.drawText(clipCount_ > 0 ? "Clipping: " + juce::String(clipCount_) + " event(s) at " + clipPositions_
                               : "Clipping: none detected",

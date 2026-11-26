@@ -1,7 +1,9 @@
 // desktop-app/Source/ui/MixMasterEngine/GainStagingPanel.cpp
 #include "GainStagingPanel.h"
 #include "../shared/KhensuTheme.h"
+#include "../shared/ChartStyle.h"
 #include <khensu/targets/PlatformTargets.h>
+#include <khensu/ui/KhensuPalette.h>
 
 namespace khensu {
 
@@ -20,6 +22,25 @@ juce::Font numberFont(float size)
 {
     return KhensuTheme::numericFont(size, juce::Font::plain);
 }
+
+/// VIS-4: where a value sits against its band, in words ("in target",
+/// "2.1 over", "3.0 under") - the colour is never the only cue.
+juce::String fitText(const GainStagingPanel::Gauge& gauge)
+{
+    if (gauge.value > gauge.hi) return "+" + juce::String(gauge.value - gauge.hi, 1) + " " + TRANS("over");
+    if (gauge.value < gauge.lo) return "-" + juce::String(gauge.lo - gauge.value, 1) + " " + TRANS("under");
+    return TRANS("in target");
+}
+
+/// VIS-1: the gauge's bar as a ChartKit axis (ticks, labels, the unit).
+ui::chart::Axis gaugeAxis(const GainStagingPanel::Gauge& gauge)
+{
+    ui::chart::Axis a;
+    a.lo = gauge.min;
+    a.hi = gauge.max;
+    a.unit = gauge.unit;
+    return a;
+}
 } // namespace
 
 GainStagingPanel::GainStagingPanel(IAppController& c) : PanelCard(c, TRANS("Gain staging"))
@@ -34,6 +55,49 @@ GainStagingPanel::GainStagingPanel(IAppController& c) : PanelCard(c, TRANS("Gain
     gauges_[2] = {TRANS("Crest"), "dB", 0.0f, 0.0f, 30.0f, 6.0f, 18.0f, false};
     gauges_[3] = {TRANS("DR"), "dB", 0.0f, 0.0f, 20.0f, 5.0f, 14.0f, false};
     gauges_[4] = {TRANS("True peak"), "dBTP", 0.0f, -12.0f, 3.0f, -12.0f, -1.0f, false};
+    // VIS-8: the gauges read as one image with a text summary.
+    gaugesSummary_.setTitle(TRANS("Gain staging gauges"));
+    gaugesSummary_.describe = [this] { return summary(); };
+    addAndMakeVisible(gaugesSummary_);
+}
+
+juce::String GainStagingPanel::summary() const
+{
+    if (!hasData_) return TRANS("Gain staging: not measured yet.");
+    juce::StringArray parts;
+    for (const auto& gauge : gauges_) {
+        if (!gauge.known) {
+            parts.add(gauge.label + " " + TRANS("not measured"));
+            continue;
+        }
+        parts.add(gauge.label + " " + juce::String(gauge.value, 1) + " " + gauge.unit + " (" + TRANS("target") + " " +
+                  juce::String(gauge.lo, 1) + " " + TRANS("to") + " " + juce::String(gauge.hi, 1) + ", " + fitText(gauge) + ")");
+    }
+    return TRANS("Gain staging") + ": " + parts.joinIntoString("; ") + ". " + playbackLine_ + ". " + dynamicsLine_ + ".";
+}
+
+int GainStagingPanel::gaugeAt(juce::Point<int> pos) const
+{
+    for (size_t i = 0; i < gaugeAreas_.size(); ++i)
+        if (gaugeAreas_[i].contains(pos)) return static_cast<int>(i);
+    return -1;
+}
+
+void GainStagingPanel::mouseMove(const juce::MouseEvent& e)
+{
+    const int g = gaugeAt(e.getPosition());
+    if (g != hoveredGauge_ || g >= 0) {
+        hoveredGauge_ = g;
+        hoverPos_ = e.position;
+        repaint();
+    }
+}
+
+void GainStagingPanel::mouseExit(const juce::MouseEvent&)
+{
+    if (hoveredGauge_ < 0) return;
+    hoveredGauge_ = -1;
+    repaint();
 }
 
 void GainStagingPanel::setData(const AnalysisResult& r)
@@ -117,6 +181,7 @@ void GainStagingPanel::resized()
             gaugeAreas_[i] = tiles.removeFromLeft(w).reduced(KhensuTheme::sp1, 0);
     }
     b.removeFromTop(KhensuTheme::sp3);
+    gaugesSummary_.setBounds(gaugeAreas_[0].getUnion(gaugeAreas_[4]).getUnion(gaugeAreas_[2]));
     statusArea_ = b.removeFromTop(40).reduced(KhensuTheme::sp1, 0);
     b.removeFromTop(KhensuTheme::sp3);
     auto bottom = b.removeFromTop(44).reduced(KhensuTheme::sp1, 0);
@@ -146,8 +211,15 @@ void GainStagingPanel::paintGauge(juce::Graphics& g, const Gauge& gauge, juce::R
     g.drawText(valueText, valueRow, juce::Justification::centredLeft, false);
     g.setColour(KhensuTheme::textTertiary);
     g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
+    const float uw = juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), gauge.unit) + 8.0f;
     g.drawText(gauge.unit, valueRow.withTrimmedLeft(vw + 5.0f).withTrimmedBottom(5.0f),
                juce::Justification::bottomLeft, false);
+    // VIS-4: the verdict in words beside the number, not by colour alone.
+    if (gauge.known && hasData_) {
+        g.setColour(fit == gain_staging::Fit::InTarget ? KhensuTheme::textTertiary : fitColour(fit));
+        g.drawText(fitText(gauge), valueRow.withTrimmedLeft(vw + 5.0f + uw).withTrimmedBottom(5.0f),
+                   juce::Justification::bottomLeft, true);
+    }
 
     // The bar: a neutral track, the target band outlined, the value as a tick.
     a.removeFromTop(6.0f);
@@ -167,6 +239,27 @@ void GainStagingPanel::paintGauge(juce::Graphics& g, const Gauge& gauge, juce::R
         g.fillRoundedRectangle(juce::Rectangle<float>(3.0f, bar.getHeight() + 8.0f).withCentre({x, bar.getCentreY()}),
                                1.5f);
     }
+    // VIS-1: the bar's scale - the ChartKit ticks and labels, the unit on the last.
+    if (a.getHeight() >= 11.0f) {
+        const auto axis = gaugeAxis(gauge);
+        const auto style = desktopChartStyle();
+        g.setFont(ui::Palette::uiFont(style.fontSize * 0.85f));
+        const auto ticks = axis.ticks(std::max(2, static_cast<int>(bar.getWidth() / 44.0f)));
+        auto labels = a.removeFromTop(12.0f);
+        for (size_t i = 0; i < ticks.size(); ++i) {
+            const float x = bar.getX() + bar.getWidth() * static_cast<float>(axis.norm(ticks[i]));
+            g.setColour(style.axis);
+            g.drawVerticalLine(juce::roundToInt(x), bar.getBottom(), bar.getBottom() + 3.0f);
+            const bool last = i + 1 == ticks.size();
+            const auto text = last ? axis.label(ticks[i]) + " " + gauge.unit : axis.label(ticks[i]);
+            const float w = juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), text) + 4.0f;
+            auto r = juce::Rectangle<float>(x - w * 0.5f, labels.getY() + 2.0f, w, 10.0f);
+            if (r.getRight() > area.toFloat().getRight() - 2.0f) r.setX(area.toFloat().getRight() - 2.0f - w);
+            if (r.getX() < area.toFloat().getX() + 2.0f) r.setX(area.toFloat().getX() + 2.0f);
+            g.setColour(style.muted);
+            g.drawText(text, r, juce::Justification::centred, false);
+        }
+    }
 }
 
 void GainStagingPanel::paint(juce::Graphics& g)
@@ -175,6 +268,28 @@ void GainStagingPanel::paint(juce::Graphics& g)
     for (size_t i = 0; i < gauges_.size(); ++i)
         if (!gaugeAreas_[i].isEmpty()) paintGauge(g, gauges_[i], gaugeAreas_[i]);
     if (!hasData_ || statusArea_.isEmpty()) return;
+    paintBody(g);
+    // VIS-1: the ChartKit readout for the gauge under the pointer.
+    if (hoveredGauge_ >= 0) {
+        const auto& gauge = gauges_[static_cast<size_t>(hoveredGauge_)];
+        ui::chart::Readout r;
+        r.title = gauge.label;
+        if (gauge.known) {
+            const auto fit = gain_staging::fit(gauge.value, gauge.lo, gauge.hi);
+            r.lines.push_back({juce::String(gauge.value, 1) + " " + gauge.unit + " - " + fitText(gauge),
+                               fit == gain_staging::Fit::InTarget ? KhensuTheme::vizTrack : fitColour(fit)});
+        } else {
+            r.lines.push_back({TRANS("Not measured on this file"), KhensuTheme::textTertiary});
+        }
+        r.lines.push_back({TRANS("Target") + " " + juce::String(gauge.lo, 1) + " " + TRANS("to") + " " +
+                               juce::String(gauge.hi, 1) + " " + gauge.unit,
+                           KhensuTheme::vizSpreadInner.withAlpha(1.0f)});
+        ui::chart::ChartView::paintReadout(g, r, hoverPos_, getLocalBounds().toFloat(), desktopChartStyle());
+    }
+}
+
+void GainStagingPanel::paintBody(juce::Graphics& g)
+{
 
     // Status lines: neutral unless something is out of target.
     auto s = statusArea_.toFloat();

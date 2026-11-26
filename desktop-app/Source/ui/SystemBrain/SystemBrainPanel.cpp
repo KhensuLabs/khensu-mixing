@@ -34,13 +34,13 @@ SystemBrainPanel::SystemBrainPanel(IAppController& ctrl) : controller(ctrl)
     titleLabel_.setScreen(ScreenType::SystemBrain);
     addAndMakeVisible(titleLabel_);
 
-    serviceInfoLabel_.setFont(KhensuTheme::bodyFont(11.0f));
+    serviceInfoLabel_.setFont(KhensuTheme::bodyFont(type::caption));
     serviceInfoLabel_.setJustificationType(juce::Justification::centredRight);
     serviceInfoLabel_.setText(TRANS("Service info: querying..."), juce::dontSendNotification);
     addAndMakeVisible(serviceInfoLabel_);
     fetchServiceInfo();
 
-    searchInput_.setFont(KhensuTheme::bodyFont(12.0f));
+    searchInput_.setFont(KhensuTheme::bodyFont(type::secondary));
     searchInput_.setTextToShowWhenEmpty(TRANS("Search features..."), KhensuTheme::textTertiary);
     searchInput_.onTextChange = [this]() {
         searchText_ = searchInput_.getText();

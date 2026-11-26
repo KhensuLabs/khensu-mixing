@@ -14,9 +14,9 @@
     ],
     "component": {
       "type": "library",
-      "bom-ref": "khensu-services-1@1.0.4",
+      "bom-ref": "khensu-services-1@1.0.5",
       "name": "khensu-services",
-      "version": "1.0.4",
+      "version": "1.0.5",
       "properties": [
         {
           "name": "uv:package:is_project_root",

@@ -57,7 +57,7 @@ class KhensuComparisonStrip final : public juce::Component {
             if (onAbxClicked) onAbxClicked();
         };
 
-        matchLabel_.setFont(KhensuTheme::labelFont(9.0f));
+        matchLabel_.setFont(KhensuTheme::labelFont(type::caption));
         matchLabel_.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(matchLabel_);
 

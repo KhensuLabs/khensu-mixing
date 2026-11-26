@@ -4,6 +4,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 #include <khensu/feedback/IssueState.h>
 #include <khensu/recommendations/Recommendation.h>
@@ -66,6 +67,19 @@ class IIssues {
     virtual void fixScaled(const std::string& recId, float amount, Done onDone = {}) = 0;
     /// Fixes the most severe open, renderable issue; false when there is none.
     virtual bool fixTopIssue(Done onDone = {}) = 0;
+    /// ENH-2 "Fix all safe": the open findings whose fix is validated on the
+    /// measured corpus (session/FixAllSafe.h), most severe first, and the
+    /// open ones left out with why. Empty when there is no analysis.
+    struct SafeFixPlan {
+        std::vector<std::string> recIds;
+        std::vector<std::pair<std::string, juce::String>> skipped; ///< code, reason
+    };
+    virtual SafeFixPlan safeFixes() const = 0;
+    /// Renders every safe fix as one chain - one new version of the current
+    /// one (WF-1), under the render guardrails - marks those issues done and
+    /// lets the check (FEAT-1) say what worked. False (onDone not called)
+    /// when there is nothing safe to fix.
+    virtual bool fixAllSafe(Done onDone = {}) = 0;
     /// VIZ-N3: the fix in one time region only ("fix the chorus only") - the
     /// rest of the track is copied from the current version, crossfaded.
     virtual void fixInRegion(const std::string& recId, double startSec, double endSec, const juce::String& label,

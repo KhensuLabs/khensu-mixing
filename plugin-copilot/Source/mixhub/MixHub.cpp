@@ -210,6 +210,16 @@ void MixHub::unregisterTap(MixHubTap& tap)
         const juce::ScopedLock sl(framesLock_);
         frames_.erase(tap.getInstanceId());
     }
+    {
+        // An instance that goes takes its requests and statuses with it.
+        const auto id = tap.getInstanceId();
+        const juce::ScopedLock sl(unmaskLock_);
+        unmaskRequests_.erase(std::remove_if(unmaskRequests_.begin(), unmaskRequests_.end(),
+                                             [id](const UnmaskRequest& r) { return r.source == id || r.target == id; }),
+                              unmaskRequests_.end());
+        for (auto it = unmaskStatus_.begin(); it != unmaskStatus_.end();)
+            it = it->first.first == id || it->first.second == id ? unmaskStatus_.erase(it) : std::next(it);
+    }
     if (last) stopThread(kStopTimeoutMs);
 }
 
@@ -242,6 +252,61 @@ int MixHub::getNumRegistered() const
 {
     const juce::ScopedLock sl(tapsLock_);
     return (int)taps_.size();
+}
+
+void MixHub::postUnmask(const UnmaskRequest& request)
+{
+    const juce::ScopedLock sl(unmaskLock_);
+    // A newer request between the same two instances replaces an unread one.
+    unmaskRequests_.erase(std::remove_if(unmaskRequests_.begin(), unmaskRequests_.end(),
+                                         [&request](const UnmaskRequest& r) {
+                                             return r.source == request.source && r.target == request.target;
+                                         }),
+                          unmaskRequests_.end());
+    unmaskRequests_.push_back(request);
+}
+
+std::vector<UnmaskRequest> MixHub::takeUnmaskRequests(juce::uint64 target)
+{
+    std::vector<UnmaskRequest> mine;
+    const juce::ScopedLock sl(unmaskLock_);
+    for (auto it = unmaskRequests_.begin(); it != unmaskRequests_.end();) {
+        if (it->target == target) {
+            mine.push_back(*it);
+            it = unmaskRequests_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    return mine;
+}
+
+void MixHub::setUnmaskStatus(juce::uint64 source, juce::uint64 target, const UnmaskStatus& status)
+{
+    const juce::ScopedLock sl(unmaskLock_);
+    unmaskStatus_[{source, target}] = status;
+}
+
+void MixHub::clearUnmaskStatus(juce::uint64 source, juce::uint64 target)
+{
+    const juce::ScopedLock sl(unmaskLock_);
+    unmaskStatus_.erase({source, target});
+}
+
+std::optional<UnmaskStatus> MixHub::unmaskStatus(juce::uint64 source, juce::uint64 target) const
+{
+    const juce::ScopedLock sl(unmaskLock_);
+    const auto it = unmaskStatus_.find({source, target});
+    if (it == unmaskStatus_.end()) return std::nullopt;
+    return it->second;
+}
+
+bool MixHub::hasPendingUnmask(juce::uint64 source, juce::uint64 target) const
+{
+    const juce::ScopedLock sl(unmaskLock_);
+    for (const auto& r : unmaskRequests_)
+        if (r.source == source && r.target == target) return true;
+    return false;
 }
 
 void MixHub::run()

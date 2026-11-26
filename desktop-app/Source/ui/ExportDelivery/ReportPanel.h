@@ -31,6 +31,12 @@ class ReportPanel final : public PanelCard {
     juce::TextButton visualButton_{TRANS("Save visual report...")};
     void onSaveVisual();
     void writeVisual(const juce::File& file);
+    /// STU-4: the sections and timestamped findings as DAW markers (CSV,
+    /// Reaper regions / markers, or a MIDI file with marker events).
+    juce::TextButton markersButton_{TRANS("DAW markers...")};
+    void onExportMarkers();
+    void chooseMarkersFile(int format);
+    void writeMarkers(const juce::File& file, int format);
     juce::Label pdfStatusLabel_;
 
     juce::String reportOutputPath_;

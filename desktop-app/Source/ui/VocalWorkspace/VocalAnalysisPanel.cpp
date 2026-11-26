@@ -146,20 +146,13 @@ void VocalAnalysisPanel::paint(juce::Graphics& g)
 {
     PanelCard::paint(g);
     if (!stemsAvailable_) {
-        auto b = bodyArea();
-        g.setFont(KhensuTheme::bodyFont(12.0f));
-        g.setColour(KhensuTheme::textSecondary);
-        g.drawText("Vocal-specific metrics require stem isolation.", b.removeFromTop(b.getHeight() / 2),
-                   juce::Justification::centredBottom, false);
-        g.setFont(KhensuTheme::labelFont(11.0f));
-        g.setColour(KhensuTheme::textTertiary);
-        g.drawText("Run isolation first.", b, juce::Justification::centredTop, false);
+        drawEmptyState(g, TRANS("Vocal-specific metrics require stem isolation."), TRANS("Run isolation first.")); // UXR-6
         return;
     }
     // ---- Sibilance heatmap over time ----
     if (!sibTimeline_.empty() && !heatmapArea_.isEmpty()) {
         auto hm = heatmapArea_;
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         juce::String header = "SIBILANCE OVER TIME (CLICK/DRAG TO SCRUB)";
         if (sibilanceHz_ > 0.0f)
@@ -203,7 +196,7 @@ void VocalAnalysisPanel::paint(juce::Graphics& g)
     // ---- Speech Intelligibility Index (SII) heatmap over time ----
     if (!siiTimeline_.empty() && !siiTimelineArea_.isEmpty()) {
         auto hm = siiTimelineArea_;
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText("SPEECH INTELLIGIBILITY (SII) OVER TIME (VS BACKING TRACK)", hm.removeFromTop(12),
                    juce::Justification::centredLeft, false);
@@ -253,10 +246,10 @@ void VocalAnalysisPanel::paint(juce::Graphics& g)
                                        .withBottomY((float)cell.getBottom()),
                                    4.0f);
             g.setColour(KhensuTheme::textPrimary);
-            g.setFont(KhensuTheme::metricFont(15.0f));
+            g.setFont(KhensuTheme::metricFont(type::subtitle));
             g.drawText(juce::String(int(t.v * 100.0f)) + "%", cell.removeFromTop(cell.getHeight() - 14),
                        juce::Justification::centred, false);
-            g.setFont(KhensuTheme::labelFont(8.0f));
+            g.setFont(KhensuTheme::labelFont(type::caption));
             g.setColour(KhensuTheme::textTertiary);
             g.drawText(t.name, cell, juce::Justification::centred, false);
         }

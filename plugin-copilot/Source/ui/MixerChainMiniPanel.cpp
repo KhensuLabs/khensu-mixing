@@ -95,7 +95,7 @@ MixerChainMiniPanel::MixerChainMiniPanel(KhensuCopilotProcessor* proc) : process
     // Right Column Results
     descriptionLabel.setText("Click Generate to create custom insert chain", juce::dontSendNotification);
     descriptionLabel.setColour(juce::Label::textColourId, PluginLookAndFeel::textMuted);
-    descriptionLabel.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::italic));
+    descriptionLabel.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::italic));
     addAndMakeVisible(descriptionLabel);
 
     resultsViewport.setScrollBarsShown(true, false);
@@ -249,10 +249,10 @@ class MiniPluginCard : public juce::Component {
         g.drawRect(getLocalBounds(), 1);
 
         g.setColour(PluginLookAndFeel::textPrimary);
-        g.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::bold));
+        g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::bold));
         g.drawText(name_, 8, 4, getWidth() - 16, 14, juce::Justification::topLeft);
 
-        g.setFont(khensu::ui::Palette::uiFont(10.0f, juce::Font::plain));
+        g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
         g.setColour(PluginLookAndFeel::accentTeal);
         g.drawText(cat_ + "  (" + eco_ + ")", 8, 18, getWidth() - 16, 12, juce::Justification::topLeft);
 
@@ -287,7 +287,8 @@ void MixerChainMiniPanel::updateResultsView()
 void MixerChainMiniPanel::applyChainToProcessor()
 {
     // Maps the generated third-party plugin recipe onto the built-in corrective
-    // DSP chain (HPF / LPF / peak EQ / compressor / limiter). This is an
+    // DSP chain (HPF / LPF, six EQ bands, compressor, limiter, de-esser,
+    // saturation, transient shaper, width, bass mono). This is an
     // approximation of the recipe's broad strokes - the exact plugins listed
     // still need to be loaded in the DAW for their specific character.
     // The parsing/mapping logic lives in shared-core's DspChainMapper so the
@@ -298,23 +299,32 @@ void MixerChainMiniPanel::applyChainToProcessor()
         return;
     }
 
-    std::vector<std::string> mappedStages;
-    auto params = mixerchain::approximateDspParams(lastResponse_.plugins, &mappedStages);
-    // One complete set: stages this chain does not map are switched off, so a
-    // previous Apply's stages no longer stay on underneath it (PLG-19).
-    processor_->applyAiParameterSet(params);
+    // STU-17: every EQ band and the v5 stages; what cannot map is listed.
+    const auto mapping = mixerchain::mapRecipeToDsp(lastResponse_.plugins);
+    bool loaded = false;
+    if (onApplyRecipe) {
+        loaded = onApplyRecipe(mapping);
+    } else if (!mapping.values.empty()) {
+        // One complete set: stages this chain does not map are switched off, so a
+        // previous Apply's stages no longer stay on underneath it (PLG-19).
+        processor_->applyAiParameterSet(mapping.values);
+        loaded = true;
+    }
 
-    if (mappedStages.empty()) {
-        descriptionLabel.setText("No stages could be mapped to the built-in DSP - this chain is a recipe: "
-                                 "load the listed plugins on your DAW insert slots.",
+    if (!loaded) {
+        descriptionLabel.setText(TRANS("No stages could be mapped to the built-in DSP - this chain is a recipe: "
+                                       "load the listed plugins on your DAW insert slots."),
                                  juce::dontSendNotification);
     } else {
         juce::StringArray stagesArr;
-        for (const auto& s : mappedStages)
+        for (const auto& s : mapping.mappedStages)
             stagesArr.add(juce::String(s));
-        descriptionLabel.setText("Loaded an approximation into the DSP chain (" + stagesArr.joinIntoString(", ") +
-                                     "). For the exact character, load the listed plugins in your DAW.",
-                                 juce::dontSendNotification);
+        juce::String text = TRANS("Loaded an approximation into the DSP chain") + " (" + stagesArr.joinIntoString(", ")
+                            + ").";
+        if (!mapping.skipped.empty())
+            text << " " << static_cast<int>(mapping.skipped.size()) << " " << TRANS("skipped - see the apply strip.");
+        text << " " << TRANS("For the exact character, load the listed plugins in your DAW.");
+        descriptionLabel.setText(text, juce::dontSendNotification);
         if (onLoadedIntoDsp) onLoadedIntoDsp();
     }
 }

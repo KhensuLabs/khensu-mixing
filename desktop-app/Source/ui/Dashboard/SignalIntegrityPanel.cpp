@@ -124,15 +124,15 @@ void SignalIntegrityPanel::paint(juce::Graphics& g)
         g.drawRoundedRectangle(cardArea.toFloat().reduced(0.5f), 6.0f, 1.0f);
 
         auto inner = cardArea.reduced(10, 8);
-        g.setFont(KhensuTheme::labelFont(9.0f).boldened());
+        g.setFont(KhensuTheme::labelFont(type::caption).boldened());
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(card.title, inner.removeFromTop(14), juce::Justification::centredLeft, false);
 
-        g.setFont(KhensuTheme::metricFont(18.0f));
+        g.setFont(KhensuTheme::metricFont(type::title));
         g.setColour(card.colour);
         g.drawText(card.metric, inner.removeFromTop(26), juce::Justification::centredLeft, false);
 
-        g.setFont(KhensuTheme::labelFont(9.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textSecondary);
         g.drawFittedText(card.verdict, inner, juce::Justification::topLeft, 3);
     }

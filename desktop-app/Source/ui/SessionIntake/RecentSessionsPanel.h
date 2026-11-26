@@ -30,8 +30,16 @@ class RecentSessionsPanel final : public juce::Component {
     void paint(juce::Graphics& g) override;
     void resized() override;
 
+    /// Tests: the cards shown and their size.
+    int cardCountForTesting() const { return cards_.size(); }
+    juce::Rectangle<int> cardBoundsForTesting(int i) const { return cards_[i]->getBounds(); }
+
   private:
     void showCardMenu(const Session& s);
+    /// AUTO-5: sizes the cards to the viewport. setSessions() and resized()
+    /// both call it - the cards were built 0 px tall when the sessions
+    /// arrived after the last resize, so the card showed only its scrollbar.
+    void layoutCards();
     juce::Label headerLabel;
     juce::Viewport scrollView_;
     juce::Component cardContainer_;

@@ -1,5 +1,11 @@
+// desktop-app/Source/ui/shared/TimelineComponent.h
+// Sections, the waveform, section loudness, findings, hooks and beats on one
+// time line. VIS-1: the ChartKit time axis and readout, the standard loudness
+// axis, click to play from a moment (drag selects a loop), the transport's
+// playhead; VIS-4: loudness in the sequential palette; VIS-8: a summary.
 #pragma once
 #include <JuceHeader.h>
+#include <khensu/ui/ChartKit.h>
 #include <khensu/recommendations/Recommendation.h>
 #include <vector>
 #include <functional>
@@ -35,8 +41,16 @@ class TimelineComponent final : public juce::Component, public juce::ChangeListe
     void setAudioFile(const juce::File& file);
     void setRecommendations(std::vector<Recommendation> recs);
 
-    /// Optional callback fired when the user double-clicks at a position.
+    /// Called on a click at a position when there is no controller (with one,
+    /// a click plays from there through the transport).
     void onSeekRequest(SeekCallback cb) { seekCallback_ = std::move(cb); }
+
+    /// VIS-8: what a screen reader reads.
+    juce::String summary() const;
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
+    ui::chart::Axis timeAxis() const;
+    juce::Rectangle<int> axisRow() const;
+    static constexpr int kAxisH = 14;
 
     void paint(juce::Graphics& g) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
@@ -84,6 +98,7 @@ class TimelineComponent final : public juce::Component, public juce::ChangeListe
     void recreateWaveformCache(juce::Rectangle<int> bounds);
 
     float xFor(float sec) const;
+    void seekTo(float sec);
     float timeForX(float x) const;
     juce::Colour lufsColour(float lufs) const noexcept;
 

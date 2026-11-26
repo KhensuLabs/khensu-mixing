@@ -14,6 +14,7 @@
 #include "TargetSetupPanel.h"
 #include "RecentSessionsPanel.h"
 #include "TrendLinePanel.h"
+#include "RecurringIssuesPanel.h"
 #include "TargetOverrideEditor.h"
 #include "MultitrackSessionView.h"
 #include "IntakeQueueState.h"
@@ -104,6 +105,8 @@ class IntakeScreen final : public juce::Component {
     std::unique_ptr<IntakeBatchReport> batchReport_;
     RecentSessionsPanel recentPanel;
     TrendLinePanel trendPanel;
+    /// AUTO-5: the findings that recur across the user's tracks.
+    std::unique_ptr<RecurringIssuesPanel> recurringPanel_;
     juce::TextButton createButton{TRANS("Create Session")};
     juce::Label genreContextLabel_;
     juce::ComboBox genreSourceCombo_;

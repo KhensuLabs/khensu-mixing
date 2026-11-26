@@ -86,6 +86,9 @@ struct Camera3D {
     float yaw = 0.0f;
     float zoom = 3.5f;
     float fov = 45.0f;
+    /// STU-12: the point the camera orbits and looks at (default the origin,
+    /// which every view used before; SonicOrbit's fly-to moves it).
+    float targetX = 0.0f, targetY = 0.0f, targetZ = 0.0f;
 
     Matrix4x4 getViewMatrix() const
     {
@@ -104,7 +107,10 @@ struct Camera3D {
         Matrix4x4 t = Matrix4x4::translation(0, 0, -zoom);
         Matrix4x4 rx = Matrix4x4::rotationX(pitch);
         Matrix4x4 ry = Matrix4x4::rotationY(yaw);
-        return t.multipliedBy(rx).multipliedBy(ry);
+        Matrix4x4 view = t.multipliedBy(rx).multipliedBy(ry);
+        if (targetX != 0.0f || targetY != 0.0f || targetZ != 0.0f)
+            view = view.multipliedBy(Matrix4x4::translation(-targetX, -targetY, -targetZ));
+        return view;
     }
 
     Matrix4x4 getProjectionMatrix(float aspectRatio) const

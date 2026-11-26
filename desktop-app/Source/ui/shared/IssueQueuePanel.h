@@ -20,6 +20,7 @@
 // THREAD_CONTEXT(UIThread)
 #pragma once
 #include <JuceHeader.h>
+#include "KhensuEmptyState.h"
 #include <map>
 #include <memory>
 #include <vector>
@@ -45,6 +46,8 @@ class IssueQueuePanel final : public PanelCard, private juce::AsyncUpdater {
     void refresh();
     /// Fixes the top open issue (the header's / F key's "Fix top issue").
     void fixTopIssue();
+    /// ENH-2: renders every open finding with a validated fix as one version.
+    void fixAllSafe();
 
     /// Pure helpers (unit-tested).
     static juce::String stateLabel(const IIssues::Issue& issue);
@@ -91,6 +94,8 @@ class IssueQueuePanel final : public PanelCard, private juce::AsyncUpdater {
     Row* rowFor(const std::string& key) const;
     std::function<std::string()> monitoringSource_;
     void runFix(const std::string& recId, float amount);
+    /// UXR-9: "Issue dismissed - Undo" (reopens the issue on Undo).
+    void showUndoToast(const juce::String& message, const std::string& recId);
     void runPrimary(const IIssues::Issue& issue);
     /// NEW-4: Stronger / Gentler on an improved-but-open fix.
     void runRefine(const std::string& recId, bool stronger);
@@ -140,7 +145,7 @@ class IssueQueuePanel final : public PanelCard, private juce::AsyncUpdater {
     void playIssue(const IIssues::Issue& issue);
     void updateAbButton();
     juce::Label statusLabel_;
-    juce::Label emptyLabel_;
+    KhensuEmptyState emptyState_; // UXR-6
     HeroSpectrumView hero_;
     bool referenceRequested_ = false; ///< VIZ-N1: measuring the reference once
     /// VIZ-3a: what the current version changed, measured (shown while a

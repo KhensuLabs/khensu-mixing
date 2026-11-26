@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/Dashboard/LoudnessPanel.cpp
 #include "LoudnessPanel.h"
+#include "../shared/GenreInUse.h"
 #include "../../IAppController.h"
 #include "../shared/KhensuLookAndFeel.h"
 #include "../shared/RecommendationExplainer.h"
@@ -30,7 +31,7 @@ void SectionLoudnessBar::paint(juce::Graphics& g)
 {
     if (values_.empty()) return;
 
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText(TRANS("SECTION LOUDNESS (3D)"), getLocalBounds().withHeight(12), juce::Justification::centredLeft,
                false);
@@ -130,7 +131,7 @@ void LoudnessPanel::setData(const AnalysisResult& r)
     // generic -16..-9 without one.
     float lo = -16.0f, hi = -9.0f;
     if (const auto* s = controller_.getActiveSession())
-        if (auto g = controller_.genreDatabase().findById(s->target.primary_genre)) {
+        if (auto g = genre_in_use::entry(s->target.primary_genre, &r, controller_.genreDatabase())) {
             lo = g->lufs_range_min;
             hi = g->lufs_range_max;
         }

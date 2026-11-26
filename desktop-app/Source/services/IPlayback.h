@@ -5,6 +5,7 @@
 #include <optional>
 #include <vector>
 #include "AbLevelOffset.h"
+#include <khensu/ipc/HttpServiceBridge.h> // HttpServiceBridge::EffectSpec (STU-9)
 
 namespace khensu {
 
@@ -57,6 +58,13 @@ class IPlayback {
     virtual void toggleAb() = 0;
     virtual void setAbSide(bool showProcessed) = 0;
     virtual juce::String abProcessedPath() const noexcept = 0;
+    /// STU-8: pins a version as the A side ("" or the original = the default
+    /// A, the original). B is then matched to its level; both are held muted
+    /// until it is measured. Playback only: the accepted version and the fix
+    /// check are unchanged. Cleared on a session change.
+    virtual void setAbReferencePath(const juce::String& path) = 0;
+    /// The pinned A, or "" while A is the original.
+    virtual juce::String abReferencePath() const = 0;
     virtual std::optional<float> abProcessedLufs() const noexcept = 0;
     /// UI-6: B's loudness against A's and whether playback matches them.
     virtual AbLevelOffset abLevelOffset() const = 0;
@@ -76,6 +84,36 @@ class IPlayback {
     /// UI-5: the tap on what the desktop plays (MeterBridge reads it); null
     /// without an audio engine.
     virtual PlaybackMeterTap* meterTap() noexcept = 0;
+
+    // ---- STU-5: monitoring (the playback device only) ----
+    /// Full = the plain program; Mono = (L+R)/2 on both sides; Side =
+    /// (L-R)/2; Sub = below 120 Hz (Linkwitz-Riley). After the A/B match and
+    /// the meters; never heard in a render or an export.
+    enum class MonitorMode { Full = 0, Mono, Side, Sub };
+    virtual void setMonitorMode(MonitorMode mode) noexcept = 0;
+    virtual MonitorMode monitorMode() const noexcept = 0;
+    /// Dim: the output 20 dB down.
+    virtual void setMonitorDim(bool dim) noexcept = 0;
+    virtual bool monitorDim() const noexcept = 0;
+
+    // ---- STU-9: live preview of a chain while it is edited ----
+    /// What a preview does with each stage of its chain.
+    struct LivePreviewStatus {
+        bool active = false;          ///< a preview chain is playing
+        juce::String label;           ///< what is previewed ("EQ curve")
+        juce::StringArray live;       ///< effects heard exactly as the render will run them
+        juce::StringArray substituted; ///< effects previewed with a causal stand-in ("Limiter: ...")
+        juce::StringArray skipped;    ///< effects heard only in the render ("MultibandCompressor: ...")
+    };
+    /// Starts or updates the live preview of `chain` for `owner` (the
+    /// editing surface): the transport's output runs through the native
+    /// chain, loudness matched. Never writes a file or registers a version.
+    virtual void setLivePreviewChain(void* owner, const std::vector<ipc::HttpServiceBridge::EffectSpec>& chain,
+                                     const juce::String& label) = 0;
+    /// Stops the preview if `owner` started it (nullptr: whoever did).
+    virtual void clearLivePreview(void* owner) = 0;
+    virtual bool isLivePreviewOwner(void* owner) const = 0;
+    virtual LivePreviewStatus livePreviewStatus() const = 0;
 };
 
 } // namespace khensu

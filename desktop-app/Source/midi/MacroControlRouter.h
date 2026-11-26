@@ -12,6 +12,7 @@
 #include <juce_osc/juce_osc.h>
 #include "Midi2DeviceManager.h"
 #include "MacroMappingEngine.h"
+#include "MidiCiResponder.h"
 
 namespace khensu {
 
@@ -40,6 +41,12 @@ class MacroControlRouter final : private Midi2DeviceManager::Listener,
     int oscPort() const noexcept { return oscPort_; }
     bool oscAllowsNetwork() const noexcept { return oscNetwork_; }
 
+    /// STU-13: the MIDI-CI property responder (off by default; persisted
+    /// with the mappings).
+    void setMidiCiEnabled(bool enabled) { ci_.setEnabled(enabled); }
+    bool midiCiEnabled() const noexcept { return ci_.isEnabled(); }
+    MidiCiResponder& midiCi() noexcept { return ci_; }
+
     void save();
     void load();
 
@@ -54,6 +61,7 @@ class MacroControlRouter final : private Midi2DeviceManager::Listener,
     IAppController& controller_;
     Midi2DeviceManager& midi_;
     MacroMappingEngine engine_;
+    MidiCiResponder ci_; ///< after engine_ (reads it), destroyed first
     juce::OSCReceiver osc_;
     std::unique_ptr<juce::DatagramSocket> oscSocket_; ///< outlives the receiver's use of it
     int oscPort_ = 0;

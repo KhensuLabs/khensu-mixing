@@ -26,8 +26,10 @@ PACKAGE = Path(__file__).resolve().parents[1] / "khensu_services"
 #: left: the modules errors.py imports, two returned exceptions, one docstring).
 MAX_RAW_HTTP_EXCEPTIONS = 6
 MAX_TYPED_JOB_STATES = 0
-#: Measured 2026-11-13 (REF-4): 98 -> 86 -> 61.
-MAX_DIRECT_DECODES = 58
+#: Measured 2026-11-13 (REF-4): 98 -> 86 -> 61. +1 on 2026-11-25 (REFS-1):
+#: reference_scan._excerpt decodes a 30 s excerpt of an m4a/mp3 a library scan
+#: touches once - a whole-file load_audio would churn the shared decode cache.
+MAX_DIRECT_DECODES = 59
 
 _STATE = r"(?:pending|queued|running|cancelling|completed|failed|cancelled|interrupted)"
 _TYPED_STATE = re.compile(

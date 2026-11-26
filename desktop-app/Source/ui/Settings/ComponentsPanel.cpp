@@ -38,10 +38,10 @@ class ComponentsPanel::RowView final : public juce::Component {
         b = b.reduced(10, 3);
         b.removeFromRight(install_.isVisible() ? 100 : 0);
         auto top = b.removeFromTop(18);
-        g.setFont(KhensuTheme::bodyFont(13.0f).boldened());
+        g.setFont(KhensuTheme::bodyFont(type::body).boldened());
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(row_.name, top.removeFromLeft(top.getWidth() / 2), juce::Justification::centredLeft, true);
-        g.setFont(KhensuTheme::labelFont(11.0f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         // Installed / missing is a state, not a severity: neutral colours.
         g.setColour(row_.installed ? KhensuTheme::textSecondary : KhensuTheme::textTertiary);
         juce::String state = row_.installed ? TRANS("Installed") : TRANS("Not installed");
@@ -49,7 +49,7 @@ class ComponentsPanel::RowView final : public juce::Component {
             state << " - " << (row_.blocked.isNotEmpty() ? row_.blocked : row_.how);
         g.drawText(state, top, juce::Justification::centredRight, true);
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(KhensuTheme::bodyFont(11.5f));
+        g.setFont(KhensuTheme::bodyFont(type::caption));
         g.drawFittedText(row_.description, b, juce::Justification::topLeft, 1);
     }
     void resized() override
@@ -66,9 +66,9 @@ class ComponentsPanel::RowView final : public juce::Component {
 ComponentsPanel::ComponentsPanel(IAppController& controller) : controller_(controller)
 {
     header_.setText(TRANS("Optional components"), juce::dontSendNotification);
-    header_.setFont(KhensuTheme::labelFont(12.0f).boldened());
+    header_.setFont(KhensuTheme::labelFont(type::secondary).boldened());
     addAndMakeVisible(header_);
-    status_.setFont(KhensuTheme::labelFont(11.0f));
+    status_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(status_);
     applyThemeColours();
 }

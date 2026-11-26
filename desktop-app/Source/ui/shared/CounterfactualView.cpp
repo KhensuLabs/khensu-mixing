@@ -49,17 +49,17 @@ CounterfactualView::CounterfactualView(IAppController& controller, const Recomme
 {
     applyThemeColours();
     titleLabel_.setText(TRANS("What would fix this?"), juce::dontSendNotification);
-    titleLabel_.setFont(KhensuTheme::labelFont(14.0f));
+    titleLabel_.setFont(KhensuTheme::labelFont(type::large));
     addAndMakeVisible(titleLabel_);
 
-    changeLabel_.setFont(KhensuTheme::metricFont(14.0f));
+    changeLabel_.setFont(KhensuTheme::metricFont(type::large));
     changeLabel_.setText(TRANS("Searching for the smallest change..."), juce::dontSendNotification);
     addAndMakeVisible(changeLabel_);
 
     detail_.setMultiLine(true, true);
     detail_.setReadOnly(true);
     detail_.setCaretVisible(false);
-    detail_.setFont(KhensuTheme::bodyFont(12.0f));
+    detail_.setFont(KhensuTheme::bodyFont(type::secondary));
     detail_.setTitle(TRANS("Counterfactual fix details"));
     detail_.setText(TRANS("Each candidate is rendered through the processing chain and re-measured."));
     addAndMakeVisible(detail_);

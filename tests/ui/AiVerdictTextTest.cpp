@@ -1,10 +1,10 @@
 // tests/ui/AiVerdictTextTest.cpp
-// AI-detection verdict wording (ui/AiDetection/AiVerdictText.h; audit
+// AI-detection verdict wording (ui/ProvenanceSource/AiVerdictText.h; audit
 // 2026-11-06 AID-05 / UIX-09): "likely AI-generated" only on provenance
 // evidence, the number labelled as an uncalibrated heuristic score, checklist
 // rows that only "resemble", and detectors that did not run listed.
 #include <catch2/catch_test_macros.hpp>
-#include "ui/AiDetection/AiVerdictText.h"
+#include "ui/ProvenanceSource/AiVerdictText.h"
 
 using namespace khensu;
 

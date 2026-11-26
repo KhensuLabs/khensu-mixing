@@ -1,6 +1,7 @@
 // desktop-app/Source/ui/Dashboard/ScoreCardPanel.cpp
 #include "ScoreCardPanel.h"
 #include "../shared/KhensuLookAndFeel.h"
+#include "../shared/KhensuEmptyState.h"
 #include "../shared/KhensuTheme.h"
 #include <array>
 
@@ -91,9 +92,7 @@ void ScoreCardPanel::paint(juce::Graphics& g)
     g.drawText("READINESS (heuristic)", header.withTrimmedRight(150), juce::Justification::centredLeft, true);
 
     if (!hasData_) {
-        g.setFont(KhensuTheme::bodyFont(13.0f));
-        g.setColour(KhensuTheme::textTertiary);
-        g.drawText("Load a track to see the readiness indicator.", b, juce::Justification::centredLeft);
+        KhensuEmptyState::paintInto(g, b, TRANS("Load a track to see the readiness indicator."), {}); // UXR-6
         return;
     }
 
@@ -107,20 +106,20 @@ void ScoreCardPanel::paint(juce::Graphics& g)
 
     auto heroRow = b.removeFromTop(70);
     auto scoreArea = heroRow.removeFromLeft(150);
-    g.setFont(KhensuTheme::metricFont(46.0f));
+    g.setFont(KhensuTheme::metricFont(type::hero));
     g.setColour(KhensuTheme::textPrimary);
     g.drawText(juce::String(static_cast<int>(std::round(score_))), scoreArea.removeFromLeft(90),
                juce::Justification::centredLeft, false);
-    g.setFont(KhensuTheme::labelFont(13.0f));
+    g.setFont(KhensuTheme::labelFont(type::body));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText("/ 100", scoreArea, juce::Justification::centredLeft, false);
 
     heroRow.removeFromLeft(8);
     auto tierArea = heroRow;
-    g.setFont(KhensuTheme::bodyFont(16.0f).boldened());
+    g.setFont(KhensuTheme::bodyFont(type::title).boldened());
     g.setColour(tierColour);
     g.drawText(tierLabel_, tierArea.removeFromTop(24), juce::Justification::centredLeft, false);
-    g.setFont(KhensuTheme::bodyFont(12.0f));
+    g.setFont(KhensuTheme::bodyFont(type::secondary));
     g.setColour(KhensuTheme::textSecondary);
     g.drawText(tierAudience_, tierArea.removeFromTop(20), juce::Justification::centredLeft, false);
 
@@ -142,24 +141,24 @@ void ScoreCardPanel::paint(juce::Graphics& g)
         }
 
         auto rangeArea = row.removeFromLeft(70).reduced(6, 4);
-        g.setFont(KhensuTheme::monoFont(11.0f));
+        g.setFont(KhensuTheme::monoFont(type::caption));
         g.setColour(isCurrent ? tierColourFor(i, static_cast<int>(allBands.size())) : KhensuTheme::textTertiary);
         g.drawText(juce::String(band.lo) + "-" + juce::String(band.hi), rangeArea, juce::Justification::centredLeft,
                    false);
 
         auto labelArea = row.removeFromLeft(160).reduced(2, 4);
-        g.setFont(KhensuTheme::bodyFont(12.0f).boldened());
+        g.setFont(KhensuTheme::bodyFont(type::secondary).boldened());
         g.setColour(isCurrent ? KhensuTheme::textPrimary : KhensuTheme::textSecondary);
         g.drawText(band.label, labelArea, juce::Justification::centredLeft, false);
 
         auto audienceArea = row.reduced(2, 4);
-        g.setFont(KhensuTheme::bodyFont(11.0f));
+        g.setFont(KhensuTheme::bodyFont(type::caption));
         g.setColour(KhensuTheme::textTertiary);
         g.drawText(band.audience, audienceArea.withTrimmedRight(isCurrent ? 60 : 0), juce::Justification::centredLeft,
                    false);
 
         if (isCurrent) {
-            g.setFont(KhensuTheme::bodyFont(12.0f).boldened());
+            g.setFont(KhensuTheme::bodyFont(type::secondary).boldened());
             g.setColour(tierColourFor(i, static_cast<int>(allBands.size())));
             g.drawText("<- you", audienceArea, juce::Justification::centredRight, false);
         }

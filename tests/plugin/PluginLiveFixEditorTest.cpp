@@ -162,11 +162,12 @@ TEST_CASE("Apply top fix picks the most severe open finding the chain can fix (O
     Fixture f;
     KhensuCopilotEditor ed(f.proc);
     Recommendation advice;
-    advice.id = "width";
-    advice.what = "Too narrow";
+    advice.id = "hiss";
+    advice.what = "Noisy";
     advice.severity = 90.0f;
     advice.safe_to_auto_apply = true;
-    advice.suggested_parameters = {{"stereo_width", 1.3f}}; // nothing the chain can do
+    // Nothing the chain can do (stereo_width maps onto the width stage since STU-10).
+    advice.suggested_parameters = {{"denoise_reduction_db", 6.0f}};
     Recommendation minor = eqFix(true);
     minor.id = "minor";
     minor.severity = 20.0f;

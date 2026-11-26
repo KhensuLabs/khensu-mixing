@@ -79,13 +79,13 @@ void TuningReferencePanel::paint(juce::Graphics& g)
     auto b = bodyArea();
     b.removeFromTop(28);
 
-    g.setFont(KhensuTheme::metricFont(22.0f));
+    g.setFont(KhensuTheme::metricFont(type::heading));
     g.setColour(drifting_ ? KhensuTheme::accentAmber : KhensuTheme::accentTeal);
     g.drawText("A=" + juce::String(refHz_, 1) + " Hz", b.removeFromTop(26), juce::Justification::centredLeft, false);
-    g.setFont(KhensuTheme::bodyFont(11.0f));
+    g.setFont(KhensuTheme::bodyFont(type::caption));
     g.setColour(KhensuTheme::textSecondary);
     g.drawText(verdict_, b.removeFromTop(16), juce::Justification::centredLeft, false);
-    g.setFont(KhensuTheme::labelFont(9.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(drifting_ ? KhensuTheme::accentAmber : KhensuTheme::textTertiary);
     g.drawText("Drift: " + juce::String(juce::roundToInt(driftRange_)) + " cents" +
                    (drifting_ ? juce::String(juce::CharPointer_UTF8("  \xe2\x9a\xa0 unstable")) : juce::String()),

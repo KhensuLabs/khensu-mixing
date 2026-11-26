@@ -30,6 +30,14 @@ class AgentApi : public virtual BridgeTransport {
     khensu::Result<juce::String, BridgeError> startAgentMixJob(const AgentMixOptions& options);
     /// GET /agent/mix/{id}: status, live progress (step log) and the result.
     khensu::Result<juce::var, BridgeError> getAgentMixJobStatus(const juce::String& jobId);
+    /// GET /agent/sessions?limit=N (AUTO-5): the sessions in khensu.db, most
+    /// recently updated first, each with its file paths (AgentSessionsResponse).
+    khensu::Result<juce::var, BridgeError> listAgentSessions(int limit = 100);
+    /// POST /agent/findings (AUTO-5): the measured findings of `filePath`
+    /// (or, when it is empty, of `sessionId`'s first file) against the
+    /// default ranges (AgentFindingsResponse). Decodes and measures the file.
+    khensu::Result<juce::var, BridgeError> agentFindings(const juce::String& filePath,
+                                                         const juce::String& sessionId = {});
     void cancelAgentMixJob(const juce::String& jobId);
     /// GET /copilot/providers: configured choice, detected local servers,
     /// GGUF status, cloud availability and the provider in use per purpose.

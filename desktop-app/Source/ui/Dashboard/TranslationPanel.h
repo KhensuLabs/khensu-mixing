@@ -1,6 +1,8 @@
 // desktop-app/Source/ui/Dashboard/TranslationPanel.h
 #pragma once
 #include "../shared/PanelCard.h"
+#include "../shared/ChartStyle.h"
+#include <khensu/ui/KhensuPalette.h>
 #include "../shared/MeterBarComponent.h"
 #include <khensu/analysis/AnalysisResult.h>
 
@@ -11,6 +13,8 @@ class TranslationPanel final : public PanelCard {
     explicit TranslationPanel(IAppController& c);
     void setData(const AnalysisResult& r);
     void paint(juce::Graphics& g) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
     void resized() override;
 
   private:
@@ -36,6 +40,11 @@ class TranslationPanel final : public PanelCard {
     static constexpr int kNumEnvs = 5;
     static constexpr int kNumBands = 3;
     float riskMatrix_[kNumEnvs][kNumBands]{};
+    juce::Rectangle<int> matrixArea() const;
+    juce::Rectangle<int> cellRect(int env, int band) const;
+    juce::String matrixSummary() const;
+    juce::Point<int> hoverPos_{-1, -1};
+    ui::chart::ChartSummary matrixSummary_; ///< VIS-8
 
     juce::Label summaryHeaderLabel_;
     juce::Label summaryBodyLabel_;

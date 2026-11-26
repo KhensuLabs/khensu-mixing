@@ -27,7 +27,7 @@ class ChordsPanel final : public PanelCard {
         textBox_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
         textBox_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
         textBox_.setFont(
-            juce::Font(juce::FontOptions{juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain}));
+            KhensuTheme::monoFont(type::secondary));
         addAndMakeVisible(textBox_);
 
         // Chart / MIDI export of the service's chord analysis.

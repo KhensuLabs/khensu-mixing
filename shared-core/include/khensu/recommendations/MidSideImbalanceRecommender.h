@@ -26,6 +26,13 @@ class MidSideImbalanceRecommender {
     /// full width reads 0.79 or more on 95% of tracks; at 0.70 the finding
     /// fires on 3.8% of releases and still catches every injected wide sub.
     static constexpr float kSideHeavyRatio = 0.70f;
+    /// STU-18: the crossover the fix monos the low end below - the
+    /// BassMonoMaker's default and the plugin's kSubBassMonoHz
+    /// (RecommendationDspMapper.h). The finding measures the side below
+    /// 100 Hz and gives no frequency of its own, so the fix takes the whole
+    /// measured band and the slope above it; the corpus's injected wide sub
+    /// (scripts/measure_genre_norms.py, "sub_wide") is widened below 120 Hz too.
+    static constexpr float kBassMonoHz = 120.0f;
     std::vector<Recommendation> recommend(const AnalysisResult& result, const GenreEntry& /*genre*/,
                                           const CreativeTarget& /*target*/) const
     {
@@ -47,6 +54,9 @@ class MidSideImbalanceRecommender {
             r.stage = ProcessingStage::MixBus;
             r.chain_position = 6;
             r.is_taste_decision = false;
+            // STU-18: renders as a BassMonoMaker (buildRecommendationChain)
+            // and sets the plugin's bass mono (RecommendationDspMapper).
+            r.suggested_parameters["bass_mono_hz"] = kBassMonoHz;
             r.what = "Sub-bass is too wide: side/mid energy ratio below 100 Hz is " +
                      std::to_string(ms.side_heavy_ratio).substr(0, 4) +
                      " (threshold: 0.70). "

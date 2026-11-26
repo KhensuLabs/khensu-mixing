@@ -7,6 +7,7 @@
 #include "AutoScanCompletion.h"
 #include "../shared/KhensuTheme.h" // ThemeListener
 #include "../shared/PanelCard.h"
+#include <khensu/ui/ChartKit.h>
 #include "../shared/PanelRunState.h"
 #include <vector>
 
@@ -57,6 +58,7 @@ class StreamingNormalizationPanel final : public PanelCard {
     juce::String note_;
     float integratedLufs_ = 0.0f, truePeak_ = 0.0f;
     std::vector<Row> rows_;
+    ui::chart::ChartSummary summary_; ///< VIS-8
     /// Re-applies every cached palette colour. Called at construction and on
     /// each theme change.
     void applyThemeColours();

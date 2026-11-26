@@ -41,6 +41,7 @@ class PlaybackTransportBar final : public juce::Component, private juce::Timer {
     void resized() override;
 
   private:
+    void showMonitorMenu();
     void timerCallback() override;
     void updateControls();
 
@@ -61,6 +62,10 @@ class PlaybackTransportBar final : public juce::Component, private juce::Timer {
     juce::ComboBox startFromBox_;
     /// UI-5: the compact meter rail - what is playing, measured live.
     MeterBridge meters_{controller_, MeterBridge::Layout::Compact};
+    /// STU-5: Full / Mono / Side / Sub and Dim, on the device output only.
+    juce::TextButton monitorButton_;
+    juce::Rectangle<int> monitorBadgeArea_; ///< where the amber badge is painted
+    juce::String monitorBadge_;             ///< its text ("" = not monitoring)
 
 
     /// Re-applies every cached palette colour. Called at construction and on

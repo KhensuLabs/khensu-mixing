@@ -18,7 +18,7 @@ SummaryPanel::SummaryPanel(IAppController& c) : PanelCard(c, "Summary")
     setExplainer(TRANS("Overview"), TRANS("A quick health check of the master: loudness, dynamics, phase, and artifacts. "
                              "Green means within typical bounds; amber and red flag areas to review. "
                              "BPM and key are available after deep analysis completes."));
-    headline_.setFont(khensu::KhensuTheme::uiFont(13.0f, juce::Font::plain));
+    headline_.setFont(khensu::KhensuTheme::uiFont(khensu::type::body, juce::Font::plain));
     addAndMakeVisible(headline_);
     for (auto* b : {&loudnessBadge_, &dynamicsBadge_, &phaseBadge_, &artifactBadge_, &bpmBadge_, &keyBadge_})
         addAndMakeVisible(*b);

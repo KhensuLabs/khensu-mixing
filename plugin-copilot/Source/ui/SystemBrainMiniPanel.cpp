@@ -27,7 +27,7 @@ void FeatureMiniRow::paint(juce::Graphics& g)
         g.setColour(PluginLookAndFeel::statusGood.withAlpha(0.18f));
         g.fillRoundedRectangle(badge.toFloat().reduced(2, 6), 3.0f);
         g.setColour(PluginLookAndFeel::statusGood);
-        g.setFont(khensu::ui::Palette::uiFont(8.0f, juce::Font::plain));
+        g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
         g.drawText("PLUGIN", badge, juce::Justification::centred);
     }
 
@@ -37,20 +37,20 @@ void FeatureMiniRow::paint(juce::Graphics& g)
     g.setColour(PluginLookAndFeel::accentBlue.withAlpha(0.16f));
     g.fillRoundedRectangle(chip.toFloat(), 3.0f);
     g.setColour(PluginLookAndFeel::accentBlue);
-    g.setFont(khensu::ui::Palette::uiFont(8.0f, juce::Font::plain));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
     g.drawText(category_, chip, juce::Justification::centred);
     nameRow.removeFromLeft(6);
 
     // Name
     g.setColour(PluginLookAndFeel::textPrimary);
-    g.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::bold));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::bold));
     g.drawText(name_, nameRow, juce::Justification::centredLeft, true);
 
     b.removeFromTop(2);
 
     // Short description
     g.setColour(PluginLookAndFeel::textMuted);
-    g.setFont(khensu::ui::Palette::uiFont(10.0f, juce::Font::plain));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
     g.drawText(shortDesc_, b, juce::Justification::centredLeft, true);
 
     // Separator
@@ -63,7 +63,7 @@ void FeatureMiniRow::paint(juce::Graphics& g)
 SystemBrainMiniPanel::SystemBrainMiniPanel(BackgroundRunner runner)
 {
     searchBox_.setTextToShowWhenEmpty("Search features...", PluginLookAndFeel::textMuted.withAlpha(0.7f));
-    searchBox_.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::plain));
+    searchBox_.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
     searchBox_.setColour(juce::TextEditor::backgroundColourId, PluginLookAndFeel::bgPanel);
     searchBox_.setColour(juce::TextEditor::textColourId, PluginLookAndFeel::textPrimary);
     searchBox_.setColour(juce::TextEditor::outlineColourId, PluginLookAndFeel::controlOutline);
@@ -182,16 +182,16 @@ void SystemBrainMiniPanel::paint(juce::Graphics& g)
     g.setColour(PluginLookAndFeel::bgPanel);
     g.fillRect(header);
     g.setColour(PluginLookAndFeel::accentTeal);
-    g.setFont(khensu::ui::Palette::uiFont(10.0f, juce::Font::bold));
+    g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::bold));
     g.drawText("SYSTEM BRAIN", header.reduced(8, 0), juce::Justification::centredLeft);
 
     if (loading_) {
         g.setColour(PluginLookAndFeel::textMuted);
-        g.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::plain));
+        g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
         g.drawText("Loading...", getLocalBounds().withTrimmedTop(headerH), juce::Justification::centred);
     } else if (!available_) {
         g.setColour(PluginLookAndFeel::textMuted);
-        g.setFont(khensu::ui::Palette::uiFont(11.0f, juce::Font::plain));
+        g.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
         g.drawText("Feature encyclopedia not found", getLocalBounds().withTrimmedTop(headerH + 28),
                    juce::Justification::centred);
     }

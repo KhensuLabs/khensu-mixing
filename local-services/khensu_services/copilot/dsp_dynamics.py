@@ -516,7 +516,26 @@ def _apply_multiband_compressor(audio: np.ndarray, sr: int,
 # Same isolate/duck/recombine structure as _apply_deesser, generalised to any
 # centre frequency and Q, with a real attack/release detector and a
 # max_reduction_db safety floor so extreme settings stay surgical.
+#
+# ENH-6 (keyed, as the native DynamicEqStage in shared-core/src/dsp/
+# ExtendedChainStages.cpp): `shape` 0 bell (the band above) / 1 low shelf
+# (band = zero-phase 4th-order low-pass at frequency_hz) / 2 high shelf
+# (high-pass), and `use_key` 1 = the detector runs on `key` - the render's key
+# signal, e.g. the vocal stem keying a cut in the bed - through the same band
+# filter, averaged over the key's channels. Without a key (or with use_key 0)
+# the stage keys on its own input. `key` is (channels, samples) or (samples,),
+# aligned to the input (zero-padded / trimmed to its length).
 # ---------------------------------------------------------------------------
+def _align_key(key: np.ndarray, n: int) -> np.ndarray:
+    """``key`` as (channels, n): trimmed, or zero-padded past its end (the
+    native renderer reads silence past the key's end)."""
+    k = np.asarray(key, dtype=np.float64)
+    k = k[np.newaxis, :] if k.ndim == 1 else k
+    if k.shape[1] >= n:
+        return k[:, :n]
+    return np.pad(k, ((0, 0), (0, n - k.shape[1])))
+
+
 def _apply_dynamic_eq(audio: np.ndarray, sr: int,
                       frequency_hz: float = 3000.0,
                       q: float = 2.0,
@@ -524,18 +543,26 @@ def _apply_dynamic_eq(audio: np.ndarray, sr: int,
                       ratio: float = 4.0,
                       attack_ms: float = 5.0,
                       release_ms: float = 120.0,
-                      max_reduction_db: float = 24.0) -> np.ndarray:
+                      max_reduction_db: float = 24.0,
+                      shape: float = 0.0,
+                      use_key: float = 0.0,
+                      key: np.ndarray | None = None) -> np.ndarray:
     from scipy.signal import butter, sosfiltfilt
 
     nyq = sr * 0.5
-    # Octave-symmetric band edges: bandwidth ≈ 1/q octaves around the centre.
-    k = 2.0 ** (1.0 / (2.0 * max(0.3, q)))
-    lo = frequency_hz / k
-    hi = min(nyq * 0.95, frequency_hz * k)
-    if lo >= hi or lo < 10.0:
-        return audio   # sample rate too low for the requested band
-
-    sos = butter(4, [lo / nyq, hi / nyq], btype="band", output="sos")
+    shape_i = int(round(float(shape)))
+    if shape_i in (1, 2):
+        # Shelf: the band is everything below (low) / above (high) frequency_hz.
+        cutoff = min(float(frequency_hz), nyq * 0.9)
+        sos = butter(4, cutoff / nyq, btype="low" if shape_i == 1 else "high", output="sos")
+    else:
+        # Octave-symmetric band edges: bandwidth ≈ 1/q octaves around the centre.
+        k = 2.0 ** (1.0 / (2.0 * max(0.3, q)))
+        lo = frequency_hz / k
+        hi = min(nyq * 0.95, frequency_hz * k)
+        if lo >= hi or lo < 10.0:
+            return audio   # sample rate too low for the requested band
+        sos = butter(4, [lo / nyq, hi / nyq], btype="band", output="sos")
 
     was_1d = audio.ndim == 1
     x = audio[np.newaxis, :] if was_1d else audio
@@ -545,8 +572,14 @@ def _apply_dynamic_eq(audio: np.ndarray, sr: int,
     bands = np.stack([sosfiltfilt(sos, x[c]) for c in range(x.shape[0])])
 
     # Linked-stereo detector: one envelope from the mean band level, applied to
-    # every channel, so gain riding never shifts the stereo image.
-    rect = np.abs(bands).mean(axis=0)
+    # every channel, so gain riding never shifts the stereo image. Keyed, the
+    # level is the key's band (same filter), averaged over its channels.
+    if float(use_key) >= 0.5 and key is not None and np.size(key) > 0:
+        kx = _align_key(key, x.shape[1])
+        key_bands = np.stack([sosfiltfilt(sos, kx[c]) for c in range(kx.shape[0])])
+        rect = np.abs(key_bands).mean(axis=0)
+    else:
+        rect = np.abs(bands).mean(axis=0)
     atk = float(np.exp(-1.0 / (max(0.1, attack_ms) * 0.001 * sr)))
     rel = float(np.exp(-1.0 / (max(1.0, release_ms) * 0.001 * sr)))
     env = _ar_follower(rect, atk, rel)

@@ -1,6 +1,7 @@
 #include "KhensuLookAndFeel.h"
 #include "ButtonRole.h"
 #include "KhensuTheme.h"
+#include "LiquidSmokeBackdrop.h"
 #include <cmath>
 #include <vector>
 
@@ -34,61 +35,6 @@ juce::Image boxBlurPass(const juce::Image& src, bool horizontal, int radius)
             juce::uint8* q = out.getPixelPointer(x, y);
             for (int c = 0; c < 4; ++c) q[c] = static_cast<juce::uint8>(acc[c] / count);
         }
-    }
-    return dst;
-}
-
-// Bilinear resize of an ARGB image to w x h (pixel-centre aligned, edges
-// clamped), 8-bit fixed-point weights. Separable and direct because it runs
-// once per window size over every window pixel: each source row is expanded
-// horizontally once, then each output row is a straight blend of two
-// expanded rows (a contiguous loop the compiler vectorises). Graphics::
-// drawImage's general transformed-image path cost several times as much.
-juce::Image upscaleBilinear(const juce::Image& src, int w, int h)
-{
-    const int sw = src.getWidth(), sh = src.getHeight();
-    juce::Image dst(juce::Image::ARGB, w, h, false, juce::SoftwareImageType());
-    const juce::Image::BitmapData in(src, juce::Image::BitmapData::readOnly);
-    juce::Image::BitmapData out(dst, juce::Image::BitmapData::writeOnly);
-    jassert(in.pixelStride == 4 && out.pixelStride == 4);
-
-    auto sample = [](int i, int dstSize, int srcSize, int& i0, int& i1, int& wt) {
-        float f = ((float)i + 0.5f) * (float)srcSize / (float)dstSize - 0.5f;
-        f = juce::jlimit(0.0f, (float)(srcSize - 1), f);
-        i0 = (int)f;
-        i1 = juce::jmin(i0 + 1, srcSize - 1);
-        wt = (int)((f - (float)i0) * 256.0f);
-    };
-
-    // Horizontally expanded source rows, channels scaled by 256 (uint16).
-    const size_t rowLen = static_cast<size_t>(w) * 4;
-    std::vector<juce::uint16> expanded(static_cast<size_t>(sh) * rowLen);
-    {
-        std::vector<int> x0(static_cast<size_t>(w)), x1(static_cast<size_t>(w)), wx(static_cast<size_t>(w));
-        for (int x = 0; x < w; ++x)
-            sample(x, w, sw, x0[(size_t)x], x1[(size_t)x], wx[(size_t)x]);
-        for (int sy = 0; sy < sh; ++sy) {
-            const juce::uint8* row = in.getLinePointer(sy);
-            juce::uint16* e = expanded.data() + static_cast<size_t>(sy) * rowLen;
-            for (int x = 0; x < w; ++x) {
-                const juce::uint8* a = row + x0[(size_t)x] * 4;
-                const juce::uint8* b = row + x1[(size_t)x] * 4;
-                const int fx = wx[(size_t)x];
-                for (int k = 0; k < 4; ++k)
-                    e[x * 4 + k] = static_cast<juce::uint16>(a[k] * (256 - fx) + b[k] * fx);
-            }
-        }
-    }
-
-    for (int y = 0; y < h; ++y) {
-        int y0, y1, wy;
-        sample(y, h, sh, y0, y1, wy);
-        const juce::uint16* top = expanded.data() + static_cast<size_t>(y0) * rowLen;
-        const juce::uint16* bottom = expanded.data() + static_cast<size_t>(y1) * rowLen;
-        juce::uint8* o = out.getLinePointer(y);
-        const juce::uint32 wb = static_cast<juce::uint32>(wy), wt = 256u - wb;
-        for (size_t i = 0; i < rowLen; ++i)
-            o[i] = static_cast<juce::uint8>((top[i] * wt + bottom[i] * wb + 32768u) >> 16);
     }
     return dst;
 }
@@ -138,13 +84,13 @@ juce::Font KhensuLookAndFeel::getLabelFont(juce::Label& label)
     // UX-15). Any other font (JUCE's default, never set) keeps the 13 px UI
     // font: the default face can render UTF-8 as mojibake.
     const auto font = label.getFont();
-    static const juce::String uiFace = khensu::KhensuTheme::uiFont(13.0f).getTypefaceName();
-    static const juce::String monoFace = khensu::KhensuTheme::monoFont(13.0f).getTypefaceName();
+    static const juce::String uiFace = khensu::KhensuTheme::uiFont(khensu::type::body).getTypefaceName();
+    static const juce::String monoFace = khensu::KhensuTheme::monoFont(khensu::type::body).getTypefaceName();
     const auto face = font.getTypefaceName();
-    static const juce::String numericFace = khensu::KhensuTheme::numericFont(13.0f).getTypefaceName(); // UI-4
+    static const juce::String numericFace = khensu::KhensuTheme::numericFont(khensu::type::body).getTypefaceName(); // UI-4
     if (face == uiFace || face == monoFace || face == numericFace)
         return font.withHeight(std::max(font.getHeight(), khensu::KhensuTheme::kMinTextPx));
-    return khensu::KhensuTheme::uiFont(13.0f, juce::Font::plain);
+    return khensu::KhensuTheme::uiFont(khensu::type::body, juce::Font::plain);
 }
 
 juce::Font KhensuLookAndFeel::getTextButtonFont(juce::TextButton& /*button*/, int buttonHeight)
@@ -161,57 +107,82 @@ void KhensuLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& bu
                                              bool shouldDrawButtonAsDown)
 {
     auto bounds = button.getLocalBounds().toFloat().reduced(1.0f);
-    auto cornerSize = 4.0f;
+    // LG-8: softer liquid-glass geometry (8 px, clamped for small icon buttons).
+    const float cornerSize = juce::jmin(8.0f, bounds.getHeight() * 0.35f);
 
-    // A disabled button must read as unavailable BEFORE it is hovered - it
-    // previously drew identically to an enabled one, so dead controls looked
-    // clickable (kimi audit P0 #2). Disabled also suppresses hover/down/focus
-    // affordances below, since none of them can actually fire.
     const bool enabled = button.isEnabled();
-
-    // UX-4 hierarchy: a primary (button_role::markPrimary) is filled; every
-    // other button is a light plate whose border carries it, so a card's one
-    // real action stands out from its eight helpers. A toggled-on button
-    // reads as selected, so it keeps the stronger fill.
     const bool primary = button_role::isPrimary(button);
-    const bool strong = primary || button.getToggleState();
-    juce::Colour baseColour = primary ? KhensuTheme::accentTeal.withAlpha(0.92f)
-                                       : backgroundColour.withAlpha(strong ? 0.60f : 0.22f);
+    const bool toggled = button.getToggleState();
+    const bool strong = primary || toggled;
+    const bool light = KhensuTheme::currentTheme() == KhensuTheme::Theme::Light;
+
+    // LG-13: soft teal ambient glow underneath enabled primary buttons.
+    if (primary && enabled && !shouldDrawButtonAsDown) {
+        const float glowAlpha = shouldDrawButtonAsHighlighted ? 0.30f : 0.20f;
+        auto glowRect = bounds.translated(0.0f, 2.0f).expanded(1.5f, 1.0f);
+        g.setColour(KhensuTheme::accentTeal.withAlpha(glowAlpha));
+        g.fillRoundedRectangle(glowRect, cornerSize + 1.5f);
+    }
+
+    juce::Colour baseColour = primary ? KhensuTheme::accentTeal.withAlpha(0.95f)
+                                      : backgroundColour.withAlpha(strong ? 0.62f : 0.26f);
 
     if (!enabled)
-        baseColour = baseColour.withMultipliedSaturation(0.25f).withAlpha(0.28f);
+        baseColour = baseColour.withMultipliedSaturation(0.25f).withMultipliedAlpha(0.45f);
     else if (shouldDrawButtonAsDown)
-        baseColour = baseColour.darker(0.3f).withAlpha(0.80f);
+        baseColour = baseColour.darker(0.24f).withAlpha(primary ? 0.92f : 0.80f);
     else if (shouldDrawButtonAsHighlighted)
-        baseColour = baseColour.brighter(0.08f).withAlpha(0.75f);
+        baseColour = baseColour.brighter(0.10f).withAlpha(primary ? 0.98f : 0.72f);
 
-    g.setColour(baseColour);
+    if (primary && enabled) {
+        // LG-13: vertical teal luminance gradient for flagship primary CTA.
+        juce::ColourGradient grad(baseColour.brighter(0.14f), bounds.getCentreX(), bounds.getY(),
+                                  baseColour.darker(0.12f), bounds.getCentreX(), bounds.getBottom(), false);
+        g.setGradientFill(grad);
+    } else {
+        g.setColour(baseColour);
+    }
     g.fillRoundedRectangle(bounds, cornerSize);
 
-    // Specular border: bright edge at the top-left falling to a subtle one at
-    // the bottom-right. Sourced from the border tokens rather than literal
-    // white -> near-black, which inverted correctly only in the dark themes and
-    // left a white-on-white rim plus a black gash in Light (kimi audit P1 #16).
-    const juce::Colour edgeBright = (enabled && shouldDrawButtonAsHighlighted)
-                                        ? KhensuTheme::borderActive.withMultipliedAlpha(1.6f)
-                                        : KhensuTheme::borderActive;
-    juce::ColourGradient borderGrad(enabled ? edgeBright : KhensuTheme::borderSubtle, bounds.getTopLeft(),
-                                    KhensuTheme::borderSubtle, bounds.getBottomRight(), false);
+    // Soft glass top sheen on enabled buttons.
+    if (enabled) {
+        const auto sheenTop = primary ? juce::Colours::white.withAlpha(0.24f)
+                                      : KhensuTheme::highlight.withMultipliedAlpha(light ? 1.0f : 1.8f);
+        juce::ColourGradient sheen(sheenTop, bounds.getCentreX(), bounds.getY(), sheenTop.withAlpha(0.0f),
+                                   bounds.getCentreX(), bounds.getY() + bounds.getHeight() * 0.52f, false);
+        g.setGradientFill(sheen);
+        g.fillRoundedRectangle(bounds, cornerSize);
+    }
+
+    // LG-9: interactive cursor-tracking specular sheen on hover.
+    if (enabled && shouldDrawButtonAsHighlighted) {
+        drawCursorSheen(g, bounds, cornerSize, button.getMouseXYRelative().toFloat(), primary ? 0.9f : 1.1f);
+    }
+
+    // LG-5: curved Fresnel specular border (bright top-left, subtle bounce bottom-right).
+    const juce::Colour edgeBright =
+        primary && enabled ? juce::Colours::white.withAlpha(0.42f)
+        : (enabled && shouldDrawButtonAsHighlighted) ? KhensuTheme::borderActive.withMultipliedAlpha(1.8f)
+                                                     : KhensuTheme::borderActive;
+    const juce::Colour edgeQuiet =
+        enabled ? KhensuTheme::borderSubtle : KhensuTheme::borderSubtle.withMultipliedAlpha(0.6f);
+    juce::ColourGradient borderGrad(enabled ? edgeBright : edgeQuiet, bounds.getTopLeft(), edgeQuiet,
+                                    bounds.getBottomRight(), false);
+    if (enabled && toggled && !primary)
+        borderGrad.addColour(0.5, KhensuTheme::accentTeal.withAlpha(0.45f));
     g.setGradientFill(borderGrad);
     g.drawRoundedRectangle(bounds, cornerSize, 1.0f);
 
-    // Hover feedback: a restrained brighter border, not a neon glow
-    // (kimi audit P0 - one accent, used sparingly).
-    if (enabled && shouldDrawButtonAsHighlighted) {
-        g.setColour(KhensuTheme::borderActive.withMultipliedAlpha(1.8f));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), cornerSize - 0.5f, 1.0f);
+    // Crisp top inner specular highlight on primary buttons (LG-13).
+    if (primary && enabled && bounds.getWidth() > cornerSize * 2.5f) {
+        g.setColour(juce::Colours::white.withAlpha(0.35f));
+        g.drawHorizontalLine(juce::roundToInt(bounds.getY() + 1.0f), bounds.getX() + cornerSize,
+                             bounds.getRight() - cornerSize);
     }
 
-    // Keyboard-focus ring (accessibility): a clear accent outline when the
-    // button holds keyboard focus, so tab-navigation is visible - the audit's
-    // focusRing token, applied.
+    // Keyboard-focus ring (accessibility).
     if (enabled && button.hasKeyboardFocus(false)) {
-        g.setColour(KhensuTheme::focusRing.withAlpha(0.9f));
+        g.setColour(KhensuTheme::focusRing.withAlpha(0.92f));
         g.drawRoundedRectangle(bounds.reduced(0.5f), cornerSize, 1.6f);
     }
 }
@@ -258,28 +229,44 @@ void KhensuLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int wi
     }
     const bool horizontal = style == juce::Slider::LinearHorizontal;
     const auto bounds = juce::Rectangle<int>(x, y, width, height).toFloat();
-    const float track = 4.0f;
+    const float track = 5.0f;
     const auto centre = bounds.getCentre();
     const auto start = horizontal ? juce::Point<float>(bounds.getX(), centre.y) : juce::Point<float>(centre.x, bounds.getBottom());
     const auto end = horizontal ? juce::Point<float>(bounds.getRight(), centre.y) : juce::Point<float>(centre.x, bounds.getY());
     const auto value = horizontal ? juce::Point<float>(sliderPos, centre.y) : juce::Point<float>(centre.x, sliderPos);
     const float alpha = slider.isEnabled() ? 1.0f : 0.4f;
 
+    // LG-13: recessed translucent glass channel.
     juce::Path back;
     back.startNewSubPath(start);
     back.lineTo(end);
-    g.setColour(KhensuTheme::borderActive.withMultipliedAlpha(alpha));
+    g.setColour(KhensuTheme::bgVoid.withAlpha(0.55f * alpha));
+    g.strokePath(back, juce::PathStrokeType(track + 1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setColour(KhensuTheme::borderActive.withMultipliedAlpha(0.75f * alpha));
     g.strokePath(back, juce::PathStrokeType(track, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
+    // Luminous active fill (soft halo + crisp core).
     juce::Path fill;
     fill.startNewSubPath(start);
     fill.lineTo(value);
+    g.setColour(KhensuTheme::accentTeal.withAlpha(0.24f * alpha));
+    g.strokePath(fill, juce::PathStrokeType(track + 4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     g.setColour(KhensuTheme::accentTeal.withMultipliedAlpha(alpha));
     g.strokePath(fill, juce::PathStrokeType(track, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-    const float thumb = juce::jmin(14.0f, (horizontal ? bounds.getHeight() : bounds.getWidth()) - 2.0f);
-    g.setColour(KhensuTheme::textPrimary.withMultipliedAlpha(alpha));
-    g.fillEllipse(juce::Rectangle<float>(thumb, thumb).withCentre(value));
+    // LG-13: frosted glass thumb pill with specular rim and subtle shadow.
+    const float thumb = juce::jmin(15.0f, (horizontal ? bounds.getHeight() : bounds.getWidth()) - 2.0f);
+    const auto thumbRect = juce::Rectangle<float>(thumb, thumb).withCentre(value);
+    g.setColour(KhensuTheme::shadowColour.withMultipliedAlpha(0.65f * alpha));
+    g.fillEllipse(thumbRect.translated(0.0f, 1.5f));
+    juce::ColourGradient thumbGrad(KhensuTheme::textPrimary.withMultipliedAlpha(0.95f * alpha), thumbRect.getTopLeft(),
+                                   KhensuTheme::bgOverlay.brighter(0.35f).withMultipliedAlpha(0.92f * alpha),
+                                   thumbRect.getBottomRight(), false);
+    g.setGradientFill(thumbGrad);
+    g.fillEllipse(thumbRect);
+    g.setColour(juce::Colours::white.withAlpha(0.55f * alpha));
+    g.drawEllipse(thumbRect.reduced(0.5f), 1.0f);
+
     if (slider.hasKeyboardFocus(true)) {
         g.setColour(KhensuTheme::focusRing);
         g.drawEllipse(juce::Rectangle<float>(thumb + 4.0f, thumb + 4.0f).withCentre(value), 1.5f);
@@ -290,7 +277,6 @@ void KhensuLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int wi
                                          float sliderPosProportional, float rotaryStartAngle, float rotaryEndAngle,
                                          juce::Slider& slider)
 {
-    auto outline = slider.findColour(juce::Slider::rotarySliderOutlineColourId);
     auto fill = slider.findColour(juce::Slider::rotarySliderFillColourId);
 
     auto bounds = juce::Rectangle<int>(x, y, width, height).toFloat().reduced(6.0f);
@@ -300,45 +286,65 @@ void KhensuLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int wi
     auto lineW = 3.5f;
     auto arcRadius = radius - lineW * 1.5f;
 
-    // Draw background track arc. bgRaised (not a fixed dark blue-grey) so the
-    // unfilled part of the track stays visible against a light surface
-    // (kimi audit P1 #16).
+    // Recessed background track arc.
     juce::Path backgroundArc;
     backgroundArc.addCentredArc(toX, toY, arcRadius, arcRadius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
+    g.setColour(KhensuTheme::bgVoid.withAlpha(0.45f));
+    g.strokePath(backgroundArc,
+                 juce::PathStrokeType(lineW + 2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     g.setColour(KhensuTheme::bgRaised);
     g.strokePath(backgroundArc,
                  juce::PathStrokeType(lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
+    const auto valArcAngle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
     if (slider.isEnabled()) {
-        // Draw active fill arc (neon cyan)
-        auto valArcAngle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
+        // LG-13: two-pass glowing value arc (wide low-alpha halo + crisp core).
         juce::Path valueArc;
         valueArc.addCentredArc(toX, toY, arcRadius, arcRadius, 0.0f, rotaryStartAngle, valArcAngle, true);
+        g.setColour(fill.withAlpha(0.24f));
+        g.strokePath(valueArc,
+                     juce::PathStrokeType(lineW + 4.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         g.setColour(fill);
         g.strokePath(valueArc,
                      juce::PathStrokeType(lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-        // Draw pointer needle as a modern glowing cyan line from cap edge to track edge
-        juce::Path needle;
-        auto needleStart = radius * 0.40f;
-        auto needleLength = radius * 0.85f;
-        needle.startNewSubPath(toX + needleStart * std::sin(valArcAngle), toY - needleStart * std::cos(valArcAngle));
-        needle.lineTo(toX + needleLength * std::sin(valArcAngle), toY - needleLength * std::cos(valArcAngle));
-        g.setColour(KhensuTheme::accentTeal);
-        g.strokePath(needle, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
-    // Draw center cap (sleek dark glass circular dial)
-    auto capRadius = radius * 0.38f;
-    g.setColour(KhensuTheme::bgVoid.brighter(0.04f));
-    g.fillEllipse(toX - capRadius, toY - capRadius, capRadius * 2.0f, capRadius * 2.0f);
+    // LG-13: beveled glass center cap with drop shadow and radial specular sheen.
+    const float capRadius = radius * 0.48f;
+    const auto capRect = juce::Rectangle<float>(toX - capRadius, toY - capRadius, capRadius * 2.0f, capRadius * 2.0f);
+    g.setColour(KhensuTheme::shadowColour.withAlpha(0.5f));
+    g.fillEllipse(capRect.translated(0.0f, 2.0f));
 
-    // Draw spec border on cap - theme border tokens, so the rim inverts with
-    // the palette instead of being a fixed white->near-black sweep.
-    juce::ColourGradient capBorder(KhensuTheme::borderActive, toX - capRadius, toY - capRadius,
-                                   KhensuTheme::borderSubtle, toX + capRadius, toY + capRadius, false);
+    juce::ColourGradient capGrad(KhensuTheme::bgOverlay.brighter(0.18f), toX - capRadius * 0.45f,
+                                 toY - capRadius * 0.45f, KhensuTheme::bgVoid.brighter(0.03f), toX + capRadius,
+                                 toY + capRadius, true);
+    g.setGradientFill(capGrad);
+    g.fillEllipse(capRect);
+
+    juce::ColourGradient capBorder(KhensuTheme::borderActive.brighter(0.4f), capRect.getTopLeft(),
+                                   KhensuTheme::borderSubtle, capRect.getBottomRight(), false);
     g.setGradientFill(capBorder);
-    g.drawEllipse(toX - capRadius, toY - capRadius, capRadius * 2.0f, capRadius * 2.0f, 1.0f);
+    g.drawEllipse(capRect.reduced(0.5f), 1.0f);
+
+    if (slider.isEnabled()) {
+        // Luminous indicator pip + pointer needle.
+        const float sinA = std::sin(valArcAngle);
+        const float cosA = std::cos(valArcAngle);
+        const float needleStart = capRadius * 0.45f;
+        const float needleEnd = radius * 0.86f;
+        juce::Path needle;
+        needle.startNewSubPath(toX + needleStart * sinA, toY - needleStart * cosA);
+        needle.lineTo(toX + needleEnd * sinA, toY - needleEnd * cosA);
+        g.setColour(fill.withAlpha(0.32f));
+        g.strokePath(needle, juce::PathStrokeType(4.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour(fill.brighter(0.25f));
+        g.strokePath(needle, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        const float pipX = toX + (capRadius * 0.68f) * sinA;
+        const float pipY = toY - (capRadius * 0.68f) * cosA;
+        g.setColour(juce::Colours::white.withAlpha(0.9f));
+        g.fillEllipse(pipX - 1.8f, pipY - 1.8f, 3.6f, 3.6f);
+    }
 }
 
 void KhensuLookAndFeel::drawGlassmorphicBackground(juce::Graphics& g, juce::Rectangle<int> bounds,
@@ -395,40 +401,34 @@ namespace {
 
 juce::Colour glassFill(GlassPanelVariant variant)
 {
-    return (variant == GlassPanelVariant::Raised) ? KhensuTheme::bgRaised.withAlpha(0.92f)
-                                                  : KhensuTheme::bgSurface.withAlpha(0.62f);
+    return (variant == GlassPanelVariant::Raised) ? KhensuTheme::bgRaised.withAlpha(0.84f)
+                                                  : KhensuTheme::bgSurface.withAlpha(0.56f);
 }
 
 /// Shared body of both drawGlassPanel() overloads; `drawBackdrop` paints the
 /// blurred backdrop (clipped to the panel's rounded shape) or nothing.
-/// `tintedCover` (local coordinates, may be empty) is the part of the panel
-/// that `drawBackdrop` covers with an opaque backdrop that already includes
-/// the glass fill: the fill is not drawn again there, and the shadow - which
-/// that opaque backdrop hides completely - is not drawn under its interior.
 template <typename DrawBackdrop>
 void drawGlassPanelImpl(juce::Graphics& g, juce::Rectangle<int> bounds, GlassPanelVariant variant,
                         juce::Rectangle<int> tintedCover, DrawBackdrop&& drawBackdrop)
 {
     auto b = bounds.toFloat().reduced(0.5f);
-    constexpr float radius = 6.0f;
-    constexpr int inset = 1 + static_cast<int>(radius); // pixels fully inside the rounded shape
+    // LG-8: softer liquid-glass geometry (12 px, clamped for small panels).
+    const float radius = juce::jmin(12.0f, juce::jmin(b.getWidth(), b.getHeight()) * 0.35f);
+    const int inset = 1 + static_cast<int>(radius);
     tintedCover = tintedCover.getIntersection(bounds);
+    const bool light = KhensuTheme::currentTheme() == KhensuTheme::Theme::Light;
 
-    // ── Shadow ──────────────────────────────────────────────────────
-    // Depth comes from the shared shadowColour token (kimi audit) so every
-    // raised surface casts a consistent shadow instead of ad-hoc alphas.
+    // ── Ambient + Contact Shadow ────────────────────────────────────
     {
-        float shadowScale = (variant == GlassPanelVariant::Raised) ? 1.3f : 1.0f;
-        float shadowOffset = (variant == GlassPanelVariant::Raised) ? 8.0f : 4.0f;
-        auto shadow = b.translated(0.0f, shadowOffset).expanded(shadowOffset * 0.5f);
+        const float shadowScale = (variant == GlassPanelVariant::Raised) ? 1.35f : 0.95f;
+        const float shadowOffset = (variant == GlassPanelVariant::Raised) ? 10.0f : 5.0f;
+        auto shadow = b.translated(0.0f, shadowOffset).expanded(shadowOffset * 0.45f);
         juce::ColourGradient sg(KhensuTheme::shadowColour.withMultipliedAlpha(shadowScale), shadow.getCentreX(),
                                 shadow.getY(), juce::Colours::transparentBlack, shadow.getCentreX(), shadow.getBottom(),
                                 false);
         g.setGradientFill(sg);
         g.saveState();
         if (!tintedCover.isEmpty()) {
-            // Only the shadow's rim outside the panel can show: skip the
-            // interior, which the opaque backdrop paints over anyway.
             g.excludeClipRegion(bounds.reduced(inset, 1).getIntersection(tintedCover));
             g.excludeClipRegion(bounds.reduced(1, inset).getIntersection(tintedCover));
         }
@@ -436,17 +436,7 @@ void drawGlassPanelImpl(juce::Graphics& g, juce::Rectangle<int> bounds, GlassPan
         g.restoreState();
     }
 
-    // GlowAccent's radial accent glow was retired (kimi audit P0 - no
-    // per-panel colour halos). The variant is kept for source compatibility
-    // but now renders identically to Default; a highlighted panel instead
-    // gets a slightly stronger border below.
-
-    // ── Fill ────────────────────────────────────────────────────────
-    // The transparent tint lets whatever's behind the panel read through -
-    // real-time backdrop blur (renderBlurredBackdrop(), cached by the caller)
-    // when supplied, otherwise the app's background glow reads through sharp
-    // as before. Either way, transparency + gradient sheen + a rim-light
-    // border still do most of the work selling "glass".
+    // ── Fill + Live Refracted Backdrop + Micro-Grain ────────────────
     if (variant == GlassPanelVariant::Void) {
         g.setColour(KhensuTheme::bgBase);
         g.fillRoundedRectangle(b, radius);
@@ -455,45 +445,79 @@ void drawGlassPanelImpl(juce::Graphics& g, juce::Rectangle<int> bounds, GlassPan
 
         g.setColour(glassFill(variant));
         g.saveState();
-        if (!tintedCover.isEmpty()) g.excludeClipRegion(tintedCover); // fill already in the backdrop
+        if (!tintedCover.isEmpty()) g.excludeClipRegion(tintedCover);
         g.fillRoundedRectangle(b, radius);
         g.restoreState();
 
-        // Soft top-to-bottom sheen from the shared highlight token: light
-        // catching the front face of glass, fading by mid-panel.
-        juce::ColourGradient sheen(KhensuTheme::highlight, b.getCentreX(), b.getY(),
-                                   KhensuTheme::highlight.withAlpha(0.0f), b.getCentreX(),
-                                   b.getY() + b.getHeight() * 0.45f, false);
+        // LG-7: etched-crystal micro-grain texture (tileable 128x128 blue-noise).
+        if (!light) {
+            const auto& grain = LiquidSmokeBackdrop::microGrainTexture();
+            if (grain.isValid()) {
+                g.saveState();
+                juce::Path clip;
+                clip.addRoundedRectangle(b, radius);
+                g.reduceClipRegion(clip);
+                g.setFillType(juce::FillType(grain, juce::AffineTransform()));
+                g.fillRect(b);
+                g.restoreState();
+            }
+        }
+
+        // Soft curved liquid-glass top sheen catching ambient light.
+        const auto sheenTop = light ? juce::Colours::white.withAlpha(0.40f)
+                                    : juce::Colours::white.withAlpha(variant == GlassPanelVariant::Raised ? 0.08f : 0.055f);
+        juce::ColourGradient sheen(sheenTop, b.getCentreX(), b.getY(), sheenTop.withAlpha(0.0f), b.getCentreX(),
+                                   b.getY() + b.getHeight() * 0.42f, false);
         g.setGradientFill(sheen);
-        // The sheen is fully transparent below 45%: filling only the top part
-        // gives the same pixels for under half the fill cost.
         g.saveState();
-        g.reduceClipRegion(bounds.withHeight((int)std::ceil(b.getHeight() * 0.45f) + 2));
+        g.reduceClipRegion(bounds.withHeight(static_cast<int>(std::ceil(b.getHeight() * 0.44f)) + 2));
         g.fillRoundedRectangle(b, radius);
         g.restoreState();
+
+        // Subtle inner edge-lensing glow along the bottom-right rim (LG-6).
+        if (!light) {
+            juce::ColourGradient bounce(KhensuTheme::accentTeal.withAlpha(0.0f), b.getCentreX(),
+                                        b.getBottom() - juce::jmin(28.0f, b.getHeight() * 0.3f),
+                                        KhensuTheme::accentTeal.withAlpha(0.035f), b.getRight(), b.getBottom(), false);
+            g.setGradientFill(bounce);
+            g.fillRoundedRectangle(b, radius);
+        }
     }
 
-    // ── Border ──────────────────────────────────────────────────────
-    // A gradient rim instead of a flat colour - lighter at the top-left
-    // (where the implied light source hits) fading toward the bottom-right,
-    // which reads as a refractive glass edge rather than a plain outline.
+    // ── LG-5: Layered Curved Fresnel Specular Rim ───────────────────
     if (variant != GlassPanelVariant::Void) {
-        juce::Colour borderBase =
-            (variant == GlassPanelVariant::Raised) ? KhensuTheme::borderActive : KhensuTheme::borderSubtle;
-        juce::ColourGradient rim(borderBase.brighter(0.5f), b.getX(), b.getY(), borderBase.darker(0.2f), b.getRight(),
-                                 b.getBottom(), false);
+        // Outer 1 px dark separation hairline (gives physical glass thickness).
+        if (!light) {
+            g.setColour(KhensuTheme::shadowColour.withAlpha(0.45f));
+            g.drawRoundedRectangle(b.expanded(0.5f), radius + 0.5f, 1.0f);
+        }
+
+        // Curved Fresnel rim: bright top-left specular (slightly teal-tinted),
+        // falling to transparent mid-edge, rising softly at bottom-right bounce.
+        const auto rimTopLeft =
+            light ? juce::Colours::white.withAlpha(0.85f)
+                  : juce::Colours::white.interpolatedWith(KhensuTheme::accentTeal, 0.16f)
+                        .withAlpha(variant == GlassPanelVariant::Raised ? 0.28f : 0.21f);
+        const auto rimMid = KhensuTheme::borderSubtle.withMultipliedAlpha(0.85f);
+        const auto rimBounce =
+            light ? KhensuTheme::borderSubtle
+                  : KhensuTheme::accentTeal.interpolatedWith(juce::Colours::white, 0.35f).withAlpha(0.08f);
+
+        juce::ColourGradient rim(rimTopLeft, b.getX(), b.getY(), rimBounce, b.getRight(), b.getBottom(), false);
+        rim.addColour(0.45, rimMid);
         g.setGradientFill(rim);
         g.drawRoundedRectangle(b, radius, 1.0f);
-    }
 
-    // ── Top-left inner highlight (glass specular) ───────────────────
-    // The `highlight` token exists for exactly this edge; hardcoded white drew
-    // an invisible sheen on the Light theme's white surfaces (kimi audit P1
-    // #16). Doubled to keep the same visual weight the literal 10% white had.
-    if (variant != GlassPanelVariant::Void) {
-        g.setColour(KhensuTheme::highlight.withMultipliedAlpha(2.0f));
-        g.drawLine(b.getX() + radius, b.getY() + 0.5f, b.getRight() - radius, b.getY() + 0.5f, 1.0f);
-        g.drawLine(b.getX() + 0.5f, b.getY() + radius, b.getX() + 0.5f, b.getBottom() - radius, 1.0f);
+        // Crisp inner top specular lip following the rounded top edge.
+        if (b.getWidth() > radius * 2.5f && b.getHeight() > 16.0f) {
+            const auto lip = light ? juce::Colours::white.withAlpha(0.65f) : juce::Colours::white.withAlpha(0.14f);
+            juce::ColourGradient topLip(lip.withAlpha(0.0f), b.getX() + radius * 0.5f, b.getY() + 1.0f,
+                                        lip.withAlpha(0.0f), b.getRight() - radius * 0.5f, b.getY() + 1.0f, false);
+            topLip.addColour(0.28, lip);
+            topLip.addColour(0.72, lip.withMultipliedAlpha(0.65f));
+            g.setGradientFill(topLip);
+            g.drawLine(b.getX() + radius * 0.7f, b.getY() + 1.0f, b.getRight() - radius * 0.7f, b.getY() + 1.0f, 1.0f);
+        }
     }
 }
 
@@ -514,13 +538,29 @@ juce::uint64 backdropPaletteKey()
     return key;
 }
 
+struct BackdropCacheEntry {
+    juce::Rectangle<int> bounds;
+    juce::uint64 palette = 0;
+    juce::uint64 smokeGen = 0;
+    juce::uint32 tint = 0;
+    juce::Image image; // 160x90 native blurred+tinted image for fast GPU sampling
+};
+BackdropCacheEntry& backdropCacheSlot(int idx)
+{
+    static BackdropCacheEntry entries[4];
+    return entries[idx & 3];
+}
+juce::Rectangle<int>& lastBackdropAppBounds()
+{
+    static juce::Rectangle<int> b;
+    return b;
+}
+
 } // namespace
 
 void KhensuLookAndFeel::drawGlassPanel(juce::Graphics& g, juce::Rectangle<int> bounds, GlassPanelVariant variant,
                                        juce::Colour accentColour, const juce::Image& blurredBackdrop)
 {
-    // accentColour is retained in the signature for source compatibility but
-    // no longer drives a per-panel glow (kimi audit P0).
     juce::ignoreUnused(accentColour);
     drawGlassPanelImpl(g, bounds, variant, {}, [&](juce::Rectangle<float> b, float radius) {
         if (!blurredBackdrop.isValid()) return;
@@ -534,21 +574,133 @@ void KhensuLookAndFeel::drawGlassPanel(juce::Graphics& g, juce::Rectangle<int> b
 void KhensuLookAndFeel::drawGlassPanel(juce::Graphics& g, juce::Rectangle<int> bounds, GlassPanelVariant variant,
                                        const juce::Image& appBackdrop, juce::Rectangle<int> backdropSource)
 {
-    // The panel area the backdrop actually covers (all of it, unless the panel
-    // extends past the app bounds), in local coordinates.
-    const auto src = appBackdrop.isValid() ? backdropSource.getIntersection(appBackdrop.getBounds())
-                                           : juce::Rectangle<int>();
+    if (!appBackdrop.isValid() || backdropSource.isEmpty()) {
+        drawGlassPanelImpl(g, bounds, variant, {}, [](juce::Rectangle<float>, float) {});
+        return;
+    }
+
+    const auto appB = lastBackdropAppBounds();
+    const bool isLowResSmoke = (appBackdrop.getWidth() == LiquidSmokeBackdrop::kBufW &&
+                                appBackdrop.getHeight() == LiquidSmokeBackdrop::kBufH && !appB.isEmpty());
+
+    if (isLowResSmoke) {
+        // LG-2 + LG-6: map panel rect into the 160x90 blurred+tinted smoke texture
+        // with a subtle 1.04x optical-refraction zoom around the panel centre.
+        const float sx = static_cast<float>(appBackdrop.getWidth()) / static_cast<float>(appB.getWidth());
+        const float sy = static_cast<float>(appBackdrop.getHeight()) / static_cast<float>(appB.getHeight());
+        const float cx = (static_cast<float>(backdropSource.getCentreX()) - static_cast<float>(appB.getX())) * sx;
+        const float cy = (static_cast<float>(backdropSource.getCentreY()) - static_cast<float>(appB.getY())) * sy;
+        constexpr float kRefractZoom = 1.04f;
+        const float sw = juce::jmax(1.0f, static_cast<float>(backdropSource.getWidth()) * sx / kRefractZoom);
+        const float sh = juce::jmax(1.0f, static_cast<float>(backdropSource.getHeight()) * sy / kRefractZoom);
+        const int rx = juce::jlimit(0, appBackdrop.getWidth() - 1, juce::roundToInt(cx - sw * 0.5f));
+        const int ry = juce::jlimit(0, appBackdrop.getHeight() - 1, juce::roundToInt(cy - sh * 0.5f));
+        const int rw = juce::jlimit(1, appBackdrop.getWidth() - rx, juce::roundToInt(sw));
+        const int rh = juce::jlimit(1, appBackdrop.getHeight() - ry, juce::roundToInt(sh));
+
+        drawGlassPanelImpl(g, bounds, variant, bounds, [&](juce::Rectangle<float> b, float radius) {
+            g.saveState();
+            clipToPanel(g, b, radius);
+            g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+            g.drawImage(appBackdrop, bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight(), rx, ry, rw,
+                        rh);
+            g.restoreState();
+        });
+        return;
+    }
+
+    const auto src = backdropSource.getIntersection(appBackdrop.getBounds());
     const auto cover = src.translated(bounds.getX() - backdropSource.getX(), bounds.getY() - backdropSource.getY());
     drawGlassPanelImpl(g, bounds, variant, cover, [&](juce::Rectangle<float> b, float radius) {
         if (src.isEmpty()) return;
         g.saveState();
         clipToPanel(g, b, radius);
-        // Same-size source and destination: a plain translated copy, no
-        // resampling (the stretched small image cost ~1.7 ms per card).
-        g.drawImage(appBackdrop, cover.getX(), cover.getY(), src.getWidth(), src.getHeight(), src.getX(),
-                    src.getY(), src.getWidth(), src.getHeight());
+        g.drawImage(appBackdrop, cover.getX(), cover.getY(), src.getWidth(), src.getHeight(), src.getX(), src.getY(),
+                    src.getWidth(), src.getHeight());
         g.restoreState();
     });
+}
+
+void KhensuLookAndFeel::drawCursorSheen(juce::Graphics& g, juce::Rectangle<float> bounds, float cornerRadius,
+                                        juce::Point<float> cursorPos, float strength)
+{
+    if (bounds.isEmpty() || strength <= 0.0f) return;
+    const bool light = KhensuTheme::currentTheme() == KhensuTheme::Theme::Light;
+    const float r = juce::jlimit(48.0f, 160.0f, juce::jmax(bounds.getWidth(), bounds.getHeight()) * 0.42f);
+    const auto tint = light ? KhensuTheme::accentTeal : juce::Colours::white.interpolatedWith(KhensuTheme::accentTeal, 0.25f);
+
+    g.saveState();
+    juce::Path clip;
+    clip.addRoundedRectangle(bounds, cornerRadius);
+    g.reduceClipRegion(clip);
+    juce::ColourGradient glow(tint.withAlpha((light ? 0.08f : 0.065f) * strength), cursorPos.x, cursorPos.y,
+                              tint.withAlpha(0.0f), cursorPos.x + r, cursorPos.y, true);
+    g.setGradientFill(glow);
+    g.fillRect(bounds);
+    g.restoreState();
+
+    // Localized rim brightening near the cursor.
+    juce::ColourGradient rimGlow(tint.withAlpha((light ? 0.26f : 0.24f) * strength), cursorPos.x, cursorPos.y,
+                                 tint.withAlpha(0.0f), cursorPos.x + r * 0.75f, cursorPos.y, true);
+    g.setGradientFill(rimGlow);
+    g.drawRoundedRectangle(bounds, cornerRadius, 1.0f);
+}
+
+void KhensuLookAndFeel::drawFrostedRail(juce::Graphics& g, juce::Rectangle<int> bounds, juce::Rectangle<int> appBounds,
+                                        juce::Rectangle<int> regionInAppSpace, bool topEdgeHighlight,
+                                        bool rightEdgeHighlight)
+{
+    if (bounds.isEmpty()) return;
+    const bool light = KhensuTheme::currentTheme() == KhensuTheme::Theme::Light;
+
+    if (!appBounds.isEmpty() && !regionInAppSpace.isEmpty()) {
+        auto backdrop = blurredAppBackdrop(appBounds, KhensuTheme::bgBase.withAlpha(light ? 0.84f : 0.76f));
+        if (backdrop.isValid()) {
+            const float sx = static_cast<float>(backdrop.getWidth()) / static_cast<float>(appBounds.getWidth());
+            const float sy = static_cast<float>(backdrop.getHeight()) / static_cast<float>(appBounds.getHeight());
+            const int rx = juce::jlimit(0, backdrop.getWidth() - 1,
+                                        juce::roundToInt((regionInAppSpace.getX() - appBounds.getX()) * sx));
+            const int ry = juce::jlimit(0, backdrop.getHeight() - 1,
+                                        juce::roundToInt((regionInAppSpace.getY() - appBounds.getY()) * sy));
+            const int rw = juce::jlimit(1, backdrop.getWidth() - rx, juce::roundToInt(regionInAppSpace.getWidth() * sx));
+            const int rh =
+                juce::jlimit(1, backdrop.getHeight() - ry, juce::roundToInt(regionInAppSpace.getHeight() * sy));
+            g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+            g.drawImage(backdrop, bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight(), rx, ry, rw, rh);
+        } else {
+            g.fillAll(KhensuTheme::bgBase);
+        }
+    } else {
+        g.fillAll(KhensuTheme::bgBase);
+    }
+
+    // Subtle etched micro-grain on dark rails.
+    if (!light) {
+        const auto& grain = LiquidSmokeBackdrop::microGrainTexture();
+        if (grain.isValid()) {
+            g.setFillType(juce::FillType(grain, juce::AffineTransform()));
+            g.fillRect(bounds);
+        }
+    }
+
+    if (topEdgeHighlight) {
+        const auto rim = light ? KhensuTheme::borderActive : juce::Colours::white.withAlpha(0.14f);
+        juce::ColourGradient topGrad(rim.withMultipliedAlpha(0.4f), 0.0f, 0.0f, rim.withMultipliedAlpha(0.4f),
+                                     static_cast<float>(bounds.getWidth()), 0.0f, false);
+        topGrad.addColour(0.35, rim);
+        topGrad.addColour(0.65, KhensuTheme::accentTeal.withAlpha(light ? 0.25f : 0.18f));
+        g.setGradientFill(topGrad);
+        g.fillRect(bounds.getX(), bounds.getY(), bounds.getWidth(), 1);
+    }
+
+    if (rightEdgeHighlight) {
+        const auto rim = light ? KhensuTheme::borderSubtle : juce::Colours::white.withAlpha(0.10f);
+        juce::ColourGradient rightGrad(rim, static_cast<float>(bounds.getRight() - 1), 0.0f,
+                                       KhensuTheme::borderSubtle, static_cast<float>(bounds.getRight() - 1),
+                                       static_cast<float>(bounds.getHeight()), false);
+        g.setGradientFill(rightGrad);
+        g.fillRect(bounds.getRight() - 1, bounds.getY(), 1, bounds.getHeight());
+    }
 }
 
 juce::Image KhensuLookAndFeel::glassBackdrop(juce::Rectangle<int> appBounds, GlassPanelVariant variant)
@@ -560,70 +712,49 @@ juce::Image KhensuLookAndFeel::glassBackdrop(juce::Rectangle<int> appBounds, Gla
 juce::Image KhensuLookAndFeel::blurredAppBackdrop(juce::Rectangle<int> appBounds, juce::Colour tint)
 {
     if (appBounds.isEmpty()) return {};
+    lastBackdropAppBounds() = appBounds;
 
-    // Four entries: the main window plus one other top-level surface (a
-    // dialog), each with up to two glass tints, can alternate without
-    // rebuilding each other's backdrop every paint.
-    struct Entry {
-        juce::Rectangle<int> bounds;
-        juce::uint64 palette = 0;
-        juce::uint32 tint = 0;
-        juce::Image image;
-    };
-    static Entry entries[4];
     static int nextSlot = 0;
-
     const auto palette = backdropPaletteKey();
-    for (const auto& e : entries)
-        if (e.image.isValid() && e.bounds == appBounds && e.palette == palette && e.tint == tint.getARGB())
+    const auto smokeGen = LiquidSmokeBackdrop::instance().generation();
+    for (int i = 0; i < 4; ++i) {
+        const auto& e = backdropCacheSlot(i);
+        if (e.image.isValid() && e.bounds == appBounds && e.palette == palette && e.smokeGen == smokeGen &&
+            e.tint == tint.getARGB())
             return e.image;
+    }
 
-    // The same downsample + box blur a per-panel backdrop used, done once for
-    // the whole app area, tinted (a constant blend, so tinting before the
-    // bilinear upscale equals tinting after, to rounding), then scaled up
-    // once to full size.
-    auto small = renderBlurredBackdropSoftware(appBounds, appBounds);
+    // LG-2: take the live 160x90 smoke frame, apply 1 fast separable box blur +
+    // glass tint, and upload as a tiny native texture for GPU bilinear refraction.
+    auto small = boxBlurPass(LiquidSmokeBackdrop::instance().smokeSoftwareImage(), true, 2);
+    small = boxBlurPass(small, false, 2);
     if (!tint.isTransparent()) {
         juce::Graphics g(small);
-        g.fillAll(tint); // the same blend the per-paint fill did
+        g.fillAll(tint);
     }
-    auto native = juce::NativeImageType().convert(upscaleBilinear(small, appBounds.getWidth(), appBounds.getHeight()));
-    entries[nextSlot] = {appBounds, palette, tint.getARGB(), native};
+    auto native = juce::NativeImageType().convert(small);
+    backdropCacheSlot(nextSlot) = {appBounds, palette, smokeGen, tint.getARGB(), native};
     nextSlot = (nextSlot + 1) % 4;
     return native;
 }
 
 void KhensuLookAndFeel::drawAppBackground(juce::Graphics& g, juce::Rectangle<int> bounds)
 {
-    auto b = bounds.toFloat();
-    const float w = b.getWidth(), h = b.getHeight();
-    if (w <= 0.0f || h <= 0.0f) return;
-
-    // Base wash: a lifted teal-black at the top-left settling into the window
-    // void - the "radial-gradient(... #0b1416 0%, #050608 55%)" from the design.
-    {
-        juce::ColourGradient base(KhensuTheme::bgBase, w * 0.22f, -h * 0.10f, KhensuTheme::bgVoid, w * 0.55f, h * 0.60f,
-                                  true);
-        g.setGradientFill(base);
-        g.fillRect(b);
+    if (bounds.isEmpty()) return;
+    // LG-1: hardware bilinear upscale of the live 160x90 liquid smoke field.
+    const auto& smoke = LiquidSmokeBackdrop::instance().smokeImage();
+    if (smoke.isValid()) {
+        g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+        g.drawImage(smoke, bounds.toFloat(), juce::RectanglePlacement::stretchToFit);
+        return;
     }
 
-    // One faint, static light source top-left (UI-3): the studio look is a
-    // near-monochrome base with one accent. The magenta and low-centre aurora
-    // orbs were decoration with a second hue; they are gone.
-    const bool light = KhensuTheme::currentTheme() == KhensuTheme::Theme::Light;
-    const float orbAlpha = light ? 0.02f : 0.035f;
-    const float span = juce::jmax(w, h);
-
-    auto orb = [&g](juce::Colour c, float cx, float cy, float r, float a) {
-        if (r <= 0.0f) return;
-        juce::ColourGradient gg(c.withAlpha(a), cx, cy, c.withAlpha(0.0f), cx, cy + r, true);
-        gg.addColour(0.55, c.withAlpha(a * 0.35f));
-        g.setGradientFill(gg);
-        g.fillEllipse(cx - r, cy - r, r * 2.0f, r * 2.0f);
-    };
-
-    orb(KhensuTheme::accentTeal, w * 0.02f, -h * 0.06f, span * 0.42f, orbAlpha);
+    // Fallback wash if smoke image is unavailable.
+    auto b = bounds.toFloat();
+    juce::ColourGradient base(KhensuTheme::bgBase, b.getWidth() * 0.22f, -b.getHeight() * 0.10f, KhensuTheme::bgVoid,
+                              b.getWidth() * 0.55f, b.getHeight() * 0.60f, true);
+    g.setGradientFill(base);
+    g.fillRect(b);
 }
 
 juce::Image KhensuLookAndFeel::renderBlurredBackdrop(juce::Rectangle<int> regionInAppSpace,

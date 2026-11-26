@@ -23,7 +23,7 @@ class SectionSpectralBar final : public juce::Component {
         if (values_.empty()) return;
 
         // Use custom font helper
-        g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::plain));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
         g.setColour(KhensuTheme::textSecondary);
         g.drawText("HARSHNESS EVOLUTION (BY SECTION)", getLocalBounds().withHeight(12),
                    juce::Justification::centredLeft, false);

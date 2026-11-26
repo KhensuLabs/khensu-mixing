@@ -37,7 +37,7 @@ ArrangementPanel::ArrangementPanel(IAppController& c) : PanelCard(c, "Arrangemen
     run_.onRetry([this] { runAnalysis(); });
     run_.setIdle(TRANS("Requires separated stems (run Isolate Stems first)."));
 
-    flagLabel_.setFont(KhensuTheme::labelFont(9.5f));
+    flagLabel_.setFont(KhensuTheme::labelFont(type::caption));
     flagLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(flagLabel_);
 }
@@ -126,7 +126,7 @@ void ArrangementPanel::paint(juce::Graphics& g)
 
     for (int e = 0; e < 5; ++e) {
         const float y = grid.getY() + e * rowH;
-        g.setFont(KhensuTheme::labelFont(8.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textSecondary);
         g.drawText(kElementLabels[e], juce::Rectangle<float>(grid.getX(), y, labelW - 6.0f, rowH).toNearestInt(),
                    juce::Justification::centredLeft, false);

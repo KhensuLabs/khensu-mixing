@@ -75,7 +75,7 @@ void GrooveTimingPanel::paint(juce::Graphics& g)
     PanelCard::paint(g);
     if (!showsResult()) return;
     const auto text = textArea_;
-    g.setFont(KhensuTheme::labelFont(10.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(ft::spreadTone(result_.timingStdMs) == ft::Tone::Moderate ? KhensuTheme::accentAmber
                                                                           : KhensuTheme::textPrimary);
     g.drawFittedText(ft::grooveSummary(result_), text, juce::Justification::topLeft, 6, 1.0f);
@@ -107,7 +107,7 @@ void GrooveTimingPanel::paint(juce::Graphics& g)
         g.fillEllipse(x - 2.0f, y - 2.0f, 4.0f, 4.0f);
     }
     g.setColour(KhensuTheme::textTertiary);
-    g.setFont(KhensuTheme::labelFont(8.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.drawText(TRANS("late"), r.withHeight(10.0f).reduced(4.0f, 0.0f), juce::Justification::centredRight, false);
     g.drawText(TRANS("early"), r.withTop(r.getBottom() - 10.0f).reduced(4.0f, 0.0f),
                juce::Justification::centredRight, false);
@@ -167,7 +167,7 @@ void HarmonyTimelinePanel::paint(juce::Graphics& g)
     const float w = strip.getWidth();
 
     // Chord blocks: each lasts until the next chord (the last to the end).
-    g.setFont(KhensuTheme::labelFont(9.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     for (size_t i = 0; i < result_.progression.size(); ++i) {
         const auto& c = result_.progression[i];
         const double end = i + 1 < result_.progression.size() ? result_.progression[i + 1].timeSec : spanSec_;
@@ -185,7 +185,7 @@ void HarmonyTimelinePanel::paint(juce::Graphics& g)
     }
 
     // Key: the initial key at the left, a marker + label at each change.
-    g.setFont(KhensuTheme::labelFont(9.0f).boldened());
+    g.setFont(KhensuTheme::labelFont(type::caption).boldened());
     if (result_.initialKey.has_value()) {
         g.setColour(KhensuTheme::textSecondary);
         g.drawText(ft::keyName(*result_.initialKey), keyRow.withTrimmedLeft(2), juce::Justification::centredLeft,
@@ -201,7 +201,7 @@ void HarmonyTimelinePanel::paint(juce::Graphics& g)
 
     // Time axis + the progression as text below the strip.
     g.setColour(KhensuTheme::textTertiary);
-    g.setFont(KhensuTheme::labelFont(8.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     auto axis = area.removeFromTop(12);
     const int ticks = 4;
     for (int t = 0; t <= ticks; ++t) {
@@ -216,7 +216,7 @@ void HarmonyTimelinePanel::paint(juce::Graphics& g)
         for (const auto& c : result_.progression)
             chords.add(c.chord);
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(KhensuTheme::labelFont(9.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawFittedText(chords.joinIntoString(" - "), area, juce::Justification::topLeft,
                          juce::jmax(1, area.getHeight() / 12), 1.0f);
     }
@@ -270,10 +270,10 @@ void ReverbTailPanel::paint(juce::Graphics& g)
     // Big RT60 readout + room character.
     auto top = b.removeFromTop(34);
     g.setColour(result_.rt60Sec.has_value() ? KhensuTheme::textPrimary : KhensuTheme::textTertiary);
-    g.setFont(KhensuTheme::metricFont(20.0f));
+    g.setFont(KhensuTheme::metricFont(type::heading));
     g.drawText(ft::rt60Text(result_.rt60Sec), top.removeFromLeft(top.getWidth() / 2), juce::Justification::centredLeft,
                true);
-    g.setFont(KhensuTheme::labelFont(10.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textSecondary);
     juce::String detail = ft::spaceCharacter(result_.rt60Sec);
     if (result_.rt60Sec.has_value()) detail << "  (" << TRANS("fit") << " R2 " << juce::String(result_.fitR2, 2) << ")";
@@ -284,7 +284,7 @@ void ReverbTailPanel::paint(juce::Graphics& g)
     auto label = b.removeFromTop(14);
     g.setColour(ft::tailTone(result_.tailLabel) == ft::Tone::Moderate ? KhensuTheme::accentAmber
                                                                       : KhensuTheme::textPrimary);
-    g.setFont(KhensuTheme::labelFont(10.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.drawText(ft::tailLabelText(result_.tailLabel) + "  (" + TRANS("tail ratio") + " " +
                    juce::String(result_.tailEnergyRatio, 2) + ")",
                label, juce::Justification::centredLeft, true);
@@ -302,7 +302,7 @@ void ReverbTailPanel::paint(juce::Graphics& g)
 
     if (result_.note.isNotEmpty()) {
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::labelFont(9.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawFittedText(result_.note, b, juce::Justification::topLeft, juce::jmax(1, b.getHeight() / 12), 1.0f);
     }
 }
@@ -379,7 +379,7 @@ void StemPhasePanel::paint(juce::Graphics& g)
     if (!showsResult()) return;
     auto b = rowsArea_;
     constexpr int kRowH = 18;
-    g.setFont(KhensuTheme::labelFont(10.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     const int maxRows = juce::jmax(0, b.getHeight() / kRowH);
     int shown = 0;
     for (const auto& p : result_.pairs) {

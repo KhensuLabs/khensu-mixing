@@ -88,7 +88,7 @@ HumanizePanel::HumanizePanel(IAppController& c) : PanelCard(c, "Analog Feel")
     };
     addAndMakeVisible(intensity_);
 
-    intensityCaption_.setFont(KhensuTheme::labelFont(10.0f));
+    intensityCaption_.setFont(KhensuTheme::labelFont(type::caption));
     intensityCaption_.setText(TRANS("Moderate"), juce::dontSendNotification);
     addAndMakeVisible(intensityCaption_);
 
@@ -98,7 +98,7 @@ HumanizePanel::HumanizePanel(IAppController& c) : PanelCard(c, "Analog Feel")
     wowRateSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 40, 16);
     addAndMakeVisible(wowRateSlider_);
     wowRateLabel_.setText(TRANS("Wow Rate:"), juce::dontSendNotification);
-    wowRateLabel_.setFont(KhensuTheme::labelFont(9.0f));
+    wowRateLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(wowRateLabel_);
 
     // Depth Setup
@@ -107,7 +107,7 @@ HumanizePanel::HumanizePanel(IAppController& c) : PanelCard(c, "Analog Feel")
     depthSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 40, 16);
     addAndMakeVisible(depthSlider_);
     depthLabel_.setText(TRANS("Wow Depth:"), juce::dontSendNotification);
-    depthLabel_.setFont(KhensuTheme::labelFont(9.0f));
+    depthLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(depthLabel_);
 
     // Level Var Setup
@@ -116,7 +116,7 @@ HumanizePanel::HumanizePanel(IAppController& c) : PanelCard(c, "Analog Feel")
     levelVarSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 40, 16);
     addAndMakeVisible(levelVarSlider_);
     levelVarLabel_.setText(TRANS("Level Var:"), juce::dontSendNotification);
-    levelVarLabel_.setFont(KhensuTheme::labelFont(9.0f));
+    levelVarLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(levelVarLabel_);
 
     // Noise Floor Setup
@@ -125,7 +125,7 @@ HumanizePanel::HumanizePanel(IAppController& c) : PanelCard(c, "Analog Feel")
     noiseFloorSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 40, 16);
     addAndMakeVisible(noiseFloorSlider_);
     noiseFloorLabel_.setText(TRANS("Noise Floor:"), juce::dontSendNotification);
-    noiseFloorLabel_.setFont(KhensuTheme::labelFont(9.0f));
+    noiseFloorLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(noiseFloorLabel_);
 
     humanizeButton_.onClick = [this] { runHumanize(); };
@@ -159,13 +159,13 @@ HumanizePanel::HumanizePanel(IAppController& c) : PanelCard(c, "Analog Feel")
     cleanMetaButton_.onClick = [this] { runCleanMetadata(); };
     addAndMakeVisible(cleanMetaButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(10.0f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::caption));
     statusLabel_.setText(
         TRANS("Renders a copy with analog character and A/Bs it against the original. Drag & drop external stems to sum them."),
         juce::dontSendNotification);
     addAndMakeVisible(statusLabel_);
 
-    reportLabel_.setFont(KhensuTheme::labelFont(9.0f));
+    reportLabel_.setFont(KhensuTheme::labelFont(type::caption));
     reportLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(reportLabel_);
 }
@@ -554,7 +554,7 @@ void HumanizePanel::paint(juce::Graphics& g)
 
     // Per-stem lane labels (sliders are child components, positioned in
     // resized()); drawn to the left of each slider.
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     for (const auto& lane : stemLanes_) {
         if (lane.intensity == nullptr) continue;
         const auto sb = lane.intensity->getBounds();
@@ -580,7 +580,7 @@ void HumanizePanel::paint(juce::Graphics& g)
         }
     } else {
         g.setColour(KhensuTheme::textTertiary);
-        g.setFont(KhensuTheme::labelFont(9.5f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.drawText("Load a session to see the waveform lane.", laneArea_, juce::Justification::centred, false);
     }
 

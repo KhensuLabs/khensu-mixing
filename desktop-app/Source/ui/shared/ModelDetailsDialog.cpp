@@ -32,7 +32,7 @@ ModelDetailsDialog::ModelDetailsDialog(BackgroundRunner runInBackground)
 {
     jassert(runInBackground_ != nullptr);
     applyThemeColours();
-    headerLabel_.setFont(KhensuTheme::labelFont(11.0f));
+    headerLabel_.setFont(KhensuTheme::labelFont(type::caption));
     headerLabel_.setText(TRANS("Bundled learned models"), juce::dontSendNotification);
     addAndMakeVisible(headerLabel_);
 
@@ -40,7 +40,7 @@ ModelDetailsDialog::ModelDetailsDialog(BackgroundRunner runInBackground)
     body_.setReadOnly(true);
     body_.setCaretVisible(false);
     body_.setScrollbarsShown(true);
-    body_.setFont(KhensuTheme::monoFont(11.0f));
+    body_.setFont(KhensuTheme::monoFont(type::caption));
     body_.setText(TRANS("Loading model manifest..."), juce::dontSendNotification);
     addAndMakeVisible(body_);
 

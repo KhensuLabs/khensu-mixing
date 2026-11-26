@@ -15,11 +15,59 @@ float loadOr(const std::atomic<float>* value, float fallback) noexcept
 {
     return value != nullptr ? value->load(std::memory_order_relaxed) : fallback;
 }
+
+// A band 4-6 with nothing bound sits at the plugin's defaults.
+constexpr float kDefaultBandFreq = 1000.0f;
+constexpr float kDefaultBandQ = 1.0f;
 } // namespace
 
-int CopilotCorrectiveDsp::bandShape(const std::atomic<float>* type) noexcept
+void CopilotCorrectiveDsp::bindParameters(const Parameters& parameters)
 {
-    return juce::jlimit(0, 2, juce::roundToInt(loadParam(type)));
+    parameters_ = parameters;
+    const std::atomic<float>* legacy[3][5] = {
+        {parameters.eqOn, parameters.eqFreq, parameters.eqGainDb, parameters.eqQ, parameters.eqType},
+        {parameters.eq2On, parameters.eq2Freq, parameters.eq2GainDb, parameters.eq2Q, parameters.eq2Type},
+        {parameters.eq3On, parameters.eq3Freq, parameters.eq3GainDb, parameters.eq3Q, parameters.eq3Type}};
+    for (size_t i = 0; i < bound_.size(); ++i) {
+        const auto& ext = parameters.bands[i];
+        auto& b = bound_[i];
+        b.ext = ext;
+        const auto pick = [&](std::atomic<float>* own, int field) -> const std::atomic<float>* {
+            if (own != nullptr || i >= 3) return own;
+            return legacy[i][field];
+        };
+        b.on = pick(ext.on, 0);
+        b.freq = pick(ext.freq, 1);
+        b.gainDb = pick(ext.gainDb, 2);
+        b.q = pick(ext.q, 3);
+        b.type = pick(ext.type, 4);
+    }
+}
+
+int CopilotCorrectiveDsp::bandType(int index) const noexcept
+{
+    const auto& b = bound_[static_cast<size_t>(index)];
+    // Kind 1..3 = notch / high-pass / low-pass; 0 = the v3 shape.
+    const int kind = juce::jlimit(0, 3, juce::roundToInt(loadParam(b.ext.kind)));
+    if (kind > 0) return 2 + kind;
+    return juce::jlimit(0, 2, juce::roundToInt(loadParam(b.type)));
+}
+
+int CopilotCorrectiveDsp::bandMode(int index) const noexcept
+{
+    return juce::jlimit(0, 2, juce::roundToInt(loadParam(bound_[static_cast<size_t>(index)].ext.mode)));
+}
+
+dsp::RealtimeEqBand::Dynamics CopilotCorrectiveDsp::bandDynamics(int index) const noexcept
+{
+    const auto& ext = bound_[static_cast<size_t>(index)].ext;
+    dsp::RealtimeEqBand::Dynamics d;
+    d.on = loadSwitch(ext.dynOn);
+    d.thresholdDb = loadOr(ext.dynThreshDb, -30.0f);
+    d.rangeDb = juce::jmax(0.0f, loadOr(ext.dynRangeDb, 6.0f));
+    d.attackMs = loadOr(ext.dynAttackMs, 5.0f);
+    d.releaseMs = loadOr(ext.dynReleaseMs, 120.0f);
+    return d;
 }
 
 void CopilotCorrectiveDsp::prepareToPlay(double sampleRate, int samplesPerBlock, int preparedChannels)
@@ -33,9 +81,10 @@ void CopilotCorrectiveDsp::prepareToPlay(double sampleRate, int samplesPerBlock,
 
     hpf_.prepare(spec);
     lpf_.prepare(spec);
-    peak_.prepare(spec);
-    peak2_.prepare(spec);
-    peak3_.prepare(spec);
+    for (auto& band : bands_) band.prepare(sampleRate_, preparedChannels_);
+    transient_.prepare(sampleRate_);
+    saturation_.prepare(sampleRate_);
+    bassMono_.prepare(sampleRate_);
     deessSplit_.prepare(spec);
     comp_.prepare(spec);
     crossover_.prepare(spec);
@@ -55,55 +104,66 @@ void CopilotCorrectiveDsp::prepareToPlay(double sampleRate, int samplesPerBlock,
     dryWet_.setMixingRule(juce::dsp::DryWetMixingRule::linear);
     outGain_.setRampDurationSeconds(kParamSmoothingSeconds);
 
-    auto initSmooth = [this](juce::SmoothedValue<float>& value, const std::atomic<float>* source) {
+    auto initSmooth = [this](juce::SmoothedValue<float>& value, float start) {
         value.reset(sampleRate_, kParamSmoothingSeconds);
-        value.setCurrentAndTargetValue(loadParam(source));
+        value.setCurrentAndTargetValue(start);
     };
-    initSmooth(smHpfFreq_, parameters_.hpfFreq);
-    initSmooth(smLpfFreq_, parameters_.lpfFreq);
-    initSmooth(smEqFreq_, parameters_.eqFreq);
-    initSmooth(smEqGainDb_, parameters_.eqGainDb);
-    initSmooth(smEqQ_, parameters_.eqQ);
-    initSmooth(smEq2Freq_, parameters_.eq2Freq);
-    initSmooth(smEq2GainDb_, parameters_.eq2GainDb);
-    initSmooth(smEq2Q_, parameters_.eq2Q);
-    initSmooth(smEq3Freq_, parameters_.eq3Freq);
-    initSmooth(smEq3GainDb_, parameters_.eq3GainDb);
-    initSmooth(smEq3Q_, parameters_.eq3Q);
-    initSmooth(smCompThresh_, parameters_.compThreshDb);
-    initSmooth(smCompRatio_, parameters_.compRatio);
-    initSmooth(smCompAttack_, parameters_.compAttackMs);
-    initSmooth(smCompRelease_, parameters_.compReleaseMs);
-    initSmooth(smCompLowThresh_, parameters_.compLowThreshDb);
-    initSmooth(smCompMidThresh_, parameters_.compMidThreshDb);
-    initSmooth(smCompHighThresh_, parameters_.compHighThreshDb);
-    initSmooth(smCrossoverLowFreq_, parameters_.crossoverLowFreq);
-    initSmooth(smCrossoverHighFreq_, parameters_.crossoverHighFreq);
-    initSmooth(smChainMix_, parameters_.chainMix);
-    smDeessFreq_.reset(sampleRate_, kParamSmoothingSeconds);
-    smDeessFreq_.setCurrentAndTargetValue(loadOr(parameters_.deessFreq, 6500.0f));
-    smDeessThresh_.reset(sampleRate_, kParamSmoothingSeconds);
-    smDeessThresh_.setCurrentAndTargetValue(loadOr(parameters_.deessThreshDb, -30.0f));
-    smDeessRange_.reset(sampleRate_, kParamSmoothingSeconds);
-    smDeessRange_.setCurrentAndTargetValue(loadOr(parameters_.deessRangeDb, 6.0f));
-    eqShape_ = {bandShape(parameters_.eqType), bandShape(parameters_.eq2Type), bandShape(parameters_.eq3Type)};
+    initSmooth(smHpfFreq_, loadParam(parameters_.hpfFreq));
+    initSmooth(smLpfFreq_, loadParam(parameters_.lpfFreq));
+    for (size_t i = 0; i < bound_.size(); ++i) {
+        // Bands 1-3 keep their v4 behaviour (an unbound value reads 0).
+        const bool legacy = i < 3;
+        initSmooth(smBandFreq_[i], legacy ? loadParam(bound_[i].freq) : loadOr(bound_[i].freq, kDefaultBandFreq));
+        initSmooth(smBandGain_[i], loadParam(bound_[i].gainDb));
+        initSmooth(smBandQ_[i], legacy ? loadParam(bound_[i].q) : loadOr(bound_[i].q, kDefaultBandQ));
+    }
+    initSmooth(smCompThresh_, loadParam(parameters_.compThreshDb));
+    initSmooth(smCompRatio_, loadParam(parameters_.compRatio));
+    initSmooth(smCompAttack_, loadParam(parameters_.compAttackMs));
+    initSmooth(smCompRelease_, loadParam(parameters_.compReleaseMs));
+    initSmooth(smCompLowThresh_, loadParam(parameters_.compLowThreshDb));
+    initSmooth(smCompMidThresh_, loadParam(parameters_.compMidThreshDb));
+    initSmooth(smCompHighThresh_, loadParam(parameters_.compHighThreshDb));
+    initSmooth(smCrossoverLowFreq_, loadParam(parameters_.crossoverLowFreq));
+    initSmooth(smCrossoverHighFreq_, loadParam(parameters_.crossoverHighFreq));
     // A null chain-mix binding (direct test callers) means fully wet.
-    if (parameters_.chainMix == nullptr) smChainMix_.setCurrentAndTargetValue(1.0f);
+    initSmooth(smChainMix_, loadOr(parameters_.chainMix, 1.0f));
+    initSmooth(smDeessFreq_, loadOr(parameters_.deessFreq, 6500.0f));
+    initSmooth(smDeessThresh_, loadOr(parameters_.deessThreshDb, -30.0f));
+    initSmooth(smDeessRange_, loadOr(parameters_.deessRangeDb, 6.0f));
+    initSmooth(smTsAttack_, loadOr(parameters_.tsAttackDb, 0.0f));
+    initSmooth(smTsSustain_, loadOr(parameters_.tsSustainDb, 0.0f));
+    initSmooth(smSatDrive_, loadOr(parameters_.satDriveDb, 6.0f));
+    initSmooth(smSatWarmth_, loadOr(parameters_.satWarmth, 0.5f));
+    initSmooth(smSatMix_, loadOr(parameters_.satMix, 1.0f));
+    initSmooth(smSatTrim_, loadOr(parameters_.satTrimDb, 0.0f));
+    initSmooth(smBassMonoFreq_, loadOr(parameters_.bassMonoFreq, dsp::RealtimeBassMono::kDefaultCrossoverHz));
+    initSmooth(smWidth_, loadOr(parameters_.widthAmount, 1.0f));
+    width_.reset(smWidth_.getCurrentValue());
+    for (int i = 0; i < kNumBands; ++i) {
+        bandType_[static_cast<size_t>(i)] = bandType(i);
+        bandMode_[static_cast<size_t>(i)] = bandMode(i);
+        bands_[static_cast<size_t>(i)].setDynamics(bandDynamics(i));
+    }
 
     // Stage switches start at their current state: a project loaded with a
     // stage on must not fade it in on the first block.
     const float fadeStep =
         1.0f / static_cast<float>(juce::jmax(1, juce::roundToInt(sampleRate_ * kStageFadeSeconds)));
-    for (auto* fade : {&hpfFade_, &lpfFade_, &eqFade_, &eq2Fade_, &eq3Fade_, &compFade_, &multibandFade_, &deessFade_})
+    for (auto* fade : {&hpfFade_, &lpfFade_, &compFade_, &multibandFade_, &deessFade_, &tsFade_, &satFade_,
+                       &bassMonoFade_, &widthFade_})
         fade->step = fadeStep;
+    for (auto& fade : bandFades_) fade.step = fadeStep;
     hpfFade_.snap(loadSwitch(parameters_.hpfOn));
     lpfFade_.snap(loadSwitch(parameters_.lpfOn));
-    eqFade_.snap(loadSwitch(parameters_.eqOn));
-    eq2Fade_.snap(loadSwitch(parameters_.eq2On));
-    eq3Fade_.snap(loadSwitch(parameters_.eq3On));
+    for (size_t i = 0; i < bandFades_.size(); ++i) bandFades_[i].snap(loadSwitch(bound_[i].on));
     compFade_.snap(loadSwitch(parameters_.compOn));
     multibandFade_.snap(loadSwitch(parameters_.compMultiband));
     deessFade_.snap(loadSwitch(parameters_.deessOn));
+    tsFade_.snap(loadSwitch(parameters_.tsOn));
+    satFade_.snap(loadSwitch(parameters_.satOn));
+    bassMonoFade_.snap(loadSwitch(parameters_.bassMonoOn));
+    widthFade_.snap(loadSwitch(parameters_.widthOn));
 
     advanceSmoothers(0);
     updateCoefficients(true);
@@ -125,24 +185,16 @@ void CopilotCorrectiveDsp::updateCoefficients(bool force) noexcept
     const auto freq = [nyquistGuard](const juce::SmoothedValue<float>& value) {
         return juce::jlimit(10.0f, nyquistGuard, value.getCurrentValue());
     };
-    const auto q = [](const juce::SmoothedValue<float>& value) { return juce::jmax(0.05f, value.getCurrentValue()); };
 
     if (force || smHpfFreq_.isSmoothing()) applyCoefficientValues(hpf_, AC::makeHighPass(sampleRate_, freq(smHpfFreq_)));
     if (force || smLpfFreq_.isSmoothing()) applyCoefficientValues(lpf_, AC::makeLowPass(sampleRate_, freq(smLpfFreq_)));
-    // A band's shape (OVH-8): bell, low shelf or high shelf.
-    const auto band = [&](int shape, const juce::SmoothedValue<float>& f, const juce::SmoothedValue<float>& qv,
-                          const juce::SmoothedValue<float>& gainDb) {
-        const float gain = juce::Decibels::decibelsToGain(gainDb.getCurrentValue());
-        if (shape == 1) return AC::makeLowShelf(sampleRate_, freq(f), q(qv), gain);
-        if (shape == 2) return AC::makeHighShelf(sampleRate_, freq(f), q(qv), gain);
-        return AC::makePeakFilter(sampleRate_, freq(f), q(qv), gain);
-    };
-    if (force || smEqFreq_.isSmoothing() || smEqGainDb_.isSmoothing() || smEqQ_.isSmoothing())
-        applyCoefficientValues(peak_, band(eqShape_[0], smEqFreq_, smEqQ_, smEqGainDb_));
-    if (force || smEq2Freq_.isSmoothing() || smEq2GainDb_.isSmoothing() || smEq2Q_.isSmoothing())
-        applyCoefficientValues(peak2_, band(eqShape_[1], smEq2Freq_, smEq2Q_, smEq2GainDb_));
-    if (force || smEq3Freq_.isSmoothing() || smEq3GainDb_.isSmoothing() || smEq3Q_.isSmoothing())
-        applyCoefficientValues(peak3_, band(eqShape_[2], smEq3Freq_, smEq3Q_, smEq3GainDb_));
+    // Each band (OVH-8 shapes, STU-10 kinds / channels); the band clamps the
+    // frequency and Q exactly as the v4 bands did and re-designs only when
+    // something changed.
+    for (size_t i = 0; i < bands_.size(); ++i)
+        bands_[i].setBand(static_cast<dsp::RealtimeEqBand::Type>(bandType_[i]),
+                          static_cast<dsp::RealtimeEqBand::Channels>(bandMode_[i]), smBandFreq_[i].getCurrentValue(),
+                          smBandQ_[i].getCurrentValue(), smBandGain_[i].getCurrentValue(), force);
     if (force || smDeessFreq_.isSmoothing())
         applyCoefficientValues(deessSplit_, AC::makeLowPass(sampleRate_, freq(smDeessFreq_), 0.7071f));
 }
@@ -163,22 +215,24 @@ void CopilotCorrectiveDsp::advanceSmoothers(int numSamples)
     bool filtersMoved = false;
     filtersMoved |= advance(smHpfFreq_, loadParam(parameters_.hpfFreq));
     filtersMoved |= advance(smLpfFreq_, loadParam(parameters_.lpfFreq));
-    filtersMoved |= advance(smEqFreq_, loadParam(parameters_.eqFreq));
-    filtersMoved |= advance(smEqGainDb_, loadParam(parameters_.eqGainDb));
-    filtersMoved |= advance(smEqQ_, loadParam(parameters_.eqQ));
-    filtersMoved |= advance(smEq2Freq_, loadParam(parameters_.eq2Freq));
-    filtersMoved |= advance(smEq2GainDb_, loadParam(parameters_.eq2GainDb));
-    filtersMoved |= advance(smEq2Q_, loadParam(parameters_.eq2Q));
-    filtersMoved |= advance(smEq3Freq_, loadParam(parameters_.eq3Freq));
-    filtersMoved |= advance(smEq3GainDb_, loadParam(parameters_.eq3GainDb));
-    filtersMoved |= advance(smEq3Q_, loadParam(parameters_.eq3Q));
+    for (size_t i = 0; i < bound_.size(); ++i) {
+        const bool legacy = i < 3;
+        filtersMoved |= advance(smBandFreq_[i], legacy ? loadParam(bound_[i].freq)
+                                                       : loadOr(bound_[i].freq, kDefaultBandFreq));
+        filtersMoved |= advance(smBandGain_[i], loadParam(bound_[i].gainDb));
+        filtersMoved |= advance(smBandQ_[i], legacy ? loadParam(bound_[i].q) : loadOr(bound_[i].q, kDefaultBandQ));
+    }
     filtersMoved |= advance(smDeessFreq_, loadOr(parameters_.deessFreq, 6500.0f));
-    // A shape change rebuilds the band at once (a switch, not a ramp).
-    const std::array<int, 3> shapes{bandShape(parameters_.eqType), bandShape(parameters_.eq2Type),
-                                    bandShape(parameters_.eq3Type)};
-    if (shapes != eqShape_) {
-        eqShape_ = shapes;
-        filtersMoved = true;
+    // A type or channel change rebuilds the band at once (a switch, not a ramp).
+    for (int i = 0; i < kNumBands; ++i) {
+        const auto k = static_cast<size_t>(i);
+        const int type = bandType(i), mode = bandMode(i);
+        if (type != bandType_[k] || mode != bandMode_[k]) {
+            bandType_[k] = type;
+            bandMode_[k] = mode;
+            filtersMoved = true;
+        }
+        bands_[k].setDynamics(bandDynamics(i));
     }
     // A ramp that just finished reports isSmoothing() == false, so rebuild
     // every filter whenever any of them moved this sub-block.
@@ -212,6 +266,17 @@ void CopilotCorrectiveDsp::advanceSmoothers(int numSamples)
     compLow_.setThreshold(smCompLowThresh_.getCurrentValue());
     compMid_.setThreshold(smCompMidThresh_.getCurrentValue());
     compHigh_.setThreshold(smCompHighThresh_.getCurrentValue());
+
+    // STU-10 stages.
+    advance(smTsAttack_, loadOr(parameters_.tsAttackDb, 0.0f));
+    advance(smTsSustain_, loadOr(parameters_.tsSustainDb, 0.0f));
+    advance(smSatDrive_, loadOr(parameters_.satDriveDb, 6.0f));
+    advance(smSatWarmth_, loadOr(parameters_.satWarmth, 0.5f));
+    advance(smSatMix_, loadOr(parameters_.satMix, 1.0f));
+    advance(smSatTrim_, loadOr(parameters_.satTrimDb, 0.0f));
+    advance(smBassMonoFreq_, loadOr(parameters_.bassMonoFreq, dsp::RealtimeBassMono::kDefaultCrossoverHz));
+    advance(smWidth_, juce::jlimit(0.0f, 2.0f, loadOr(parameters_.widthAmount, 1.0f)));
+    bassMono_.setCrossover(smBassMonoFreq_.getCurrentValue());
 }
 
 void CopilotCorrectiveDsp::readStageTargets() noexcept
@@ -224,9 +289,8 @@ void CopilotCorrectiveDsp::readStageTargets() noexcept
     };
     target(hpfFade_, loadSwitch(parameters_.hpfOn), [this] { hpf_.reset(); });
     target(lpfFade_, loadSwitch(parameters_.lpfOn), [this] { lpf_.reset(); });
-    target(eqFade_, loadSwitch(parameters_.eqOn), [this] { peak_.reset(); });
-    target(eq2Fade_, loadSwitch(parameters_.eq2On), [this] { peak2_.reset(); });
-    target(eq3Fade_, loadSwitch(parameters_.eq3On), [this] { peak3_.reset(); });
+    for (size_t i = 0; i < bandFades_.size(); ++i)
+        target(bandFades_[i], loadSwitch(bound_[i].on), [this, i] { bands_[i].reset(); });
     target(deessFade_, loadSwitch(parameters_.deessOn), [this] {
         deessSplit_.reset();
         deessEnv_ = 0.0f;
@@ -248,15 +312,17 @@ void CopilotCorrectiveDsp::readStageTargets() noexcept
         comp_.reset();
     }
     multibandFade_.target = multiband ? 1.0f : 0.0f;
+    target(tsFade_, loadSwitch(parameters_.tsOn), [this] { transient_.reset(); });
+    target(satFade_, loadSwitch(parameters_.satOn), [this] { saturation_.reset(); });
+    target(bassMonoFade_, loadSwitch(parameters_.bassMonoOn), [this] { bassMono_.reset(); });
+    target(widthFade_, loadSwitch(parameters_.widthOn), [this] { width_.reset(smWidth_.getCurrentValue()); });
 }
 
 void CopilotCorrectiveDsp::reset() noexcept
 {
     hpf_.reset();
     lpf_.reset();
-    peak_.reset();
-    peak2_.reset();
-    peak3_.reset();
+    for (auto& band : bands_) band.reset();
     deessSplit_.reset();
     deessEnv_ = 0.0f;
     comp_.reset();
@@ -264,6 +330,10 @@ void CopilotCorrectiveDsp::reset() noexcept
     compLow_.reset();
     compMid_.reset();
     compHigh_.reset();
+    transient_.reset();
+    saturation_.reset();
+    bassMono_.reset();
+    width_.reset(smWidth_.getCurrentValue());
     outGain_.reset();
     dryWet_.reset();
 }
@@ -365,11 +435,19 @@ void CopilotCorrectiveDsp::processSubBlock(juce::dsp::AudioBlock<float> block)
             filter.process(context);
         };
     };
+    // The block's channels as a pointer table, for the shared-core stages.
+    const auto withChannels = [](juce::dsp::AudioBlock<float>& b, auto&& fn) {
+        std::array<float*, dsp::kRealtimeMaxChannels> ptrs{};
+        const int nch = static_cast<int>(juce::jmin(b.getNumChannels(), ptrs.size()));
+        for (int c = 0; c < nch; ++c) ptrs[static_cast<size_t>(c)] = b.getChannelPointer(static_cast<size_t>(c));
+        fn(ptrs.data(), nch, static_cast<int>(b.getNumSamples()));
+    };
     runStage(hpfFade_, block, iirStage(hpf_));
     runStage(lpfFade_, block, iirStage(lpf_));
-    runStage(eqFade_, block, iirStage(peak_));
-    runStage(eq2Fade_, block, iirStage(peak2_));
-    runStage(eq3Fade_, block, iirStage(peak3_));
+    for (size_t i = 0; i < bands_.size(); ++i)
+        runStage(bandFades_[i], block, [this, i, &withChannels](juce::dsp::AudioBlock<float>& b) {
+            withChannels(b, [this, i](float* const* ch, int nch, int ns) { bands_[i].process(ch, nch, ns); });
+        });
     runStage(deessFade_, block, [this](juce::dsp::AudioBlock<float>& b) { processDeEsser(b); });
     bool compRan = false;
     runStage(compFade_, block, [this, &compRan](juce::dsp::AudioBlock<float>& b) {
@@ -431,6 +509,31 @@ void CopilotCorrectiveDsp::processSubBlock(juce::dsp::AudioBlock<float> block)
     // The multiband ramp only advances while the compressor runs; when the
     // compressor is off, land the switch at its target immediately.
     if (compFade_.silent()) multibandFade_.value = multibandFade_.target;
+
+    // STU-10: colour, then space.
+    runStage(tsFade_, block, [this, &withChannels](juce::dsp::AudioBlock<float>& b) {
+        dsp::RealtimeTransientShaper::Settings s;
+        s.attackGainDb = smTsAttack_.getCurrentValue();
+        s.sustainGainDb = smTsSustain_.getCurrentValue();
+        s.attackMs = loadOr(parameters_.tsAttackMs, 3.0f);
+        s.releaseMs = loadOr(parameters_.tsReleaseMs, 200.0f);
+        withChannels(b, [this, &s](float* const* ch, int nch, int ns) { transient_.process(ch, nch, ns, s); });
+    });
+    runStage(satFade_, block, [this, &withChannels](juce::dsp::AudioBlock<float>& b) {
+        dsp::RealtimeSaturation::Settings s;
+        s.driveDb = smSatDrive_.getCurrentValue();
+        s.warmth = smSatWarmth_.getCurrentValue();
+        s.mix = smSatMix_.getCurrentValue();
+        s.trimDb = smSatTrim_.getCurrentValue();
+        withChannels(b, [this, &s](float* const* ch, int nch, int ns) { saturation_.process(ch, nch, ns, s); });
+    });
+    runStage(bassMonoFade_, block, [this, &withChannels](juce::dsp::AudioBlock<float>& b) {
+        withChannels(b, [this](float* const* ch, int nch, int ns) { bassMono_.process(ch, nch, ns); });
+    });
+    runStage(widthFade_, block, [this, &withChannels](juce::dsp::AudioBlock<float>& b) {
+        const float w = smWidth_.getCurrentValue();
+        withChannels(b, [this, w](float* const* ch, int nch, int ns) { width_.process(ch, nch, ns, w); });
+    });
 
     outGain_.setGainDecibels(loadParam(parameters_.outGainDb));
     juce::dsp::ProcessContextReplacing<float> context(block);

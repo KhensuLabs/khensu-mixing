@@ -17,6 +17,11 @@
 // Drawing is vector-only (any size, any scale) and uses khensu::ui::Palette
 // with the studio tokens (StudioStyle.h): neutral fills, the teal accent for
 // "in range", amber/red only for a level over its target / ceiling.
+//
+// VIS-6: setStopped(true) marks the values as analysed, not live (the desktop
+// shows the analysed song while the transport is stopped): every data colour
+// is drawn desaturated and dimmed. The owner draws the caption that says so.
+// The plugin never sets it (its meters are always live).
 // THREAD_CONTEXT(UIThread) - except the StereoSampleRing producer side.
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -39,7 +44,16 @@ class AnimatedMeter : public juce::Component {
     /// something visible moved.
     virtual void advance(double dt) = 0;
 
+    /// VIS-6: draw the values as analysed (stopped) rather than live.
+    void setStopped(bool stopped);
+    bool isStopped() const noexcept { return stopped_; }
+
+  protected:
+    /// A data colour as drawn now: unchanged while live, greyed while stopped.
+    juce::Colour ink(juce::Colour c) const noexcept;
+
   private:
+    bool stopped_ = false;
     double lastFrame_ = -1.0;
     juce::VBlankAttachment vblank_;
 };

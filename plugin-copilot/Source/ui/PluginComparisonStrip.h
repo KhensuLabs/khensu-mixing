@@ -90,7 +90,7 @@ class PluginComparisonStrip final : public juce::Component {
             b->setColour(juce::TextButton::textColourOffId, PluginLookAndFeel::textMuted);
         }
 
-        matchLabel_.setFont(khensu::ui::Palette::uiFont(10.0f, juce::Font::plain));
+        matchLabel_.setFont(khensu::ui::Palette::uiFont(khensu::type::caption, juce::Font::plain));
         matchLabel_.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(matchLabel_);
         updateMatchLabel();

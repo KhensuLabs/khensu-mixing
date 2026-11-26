@@ -105,7 +105,9 @@ KhensuKnob::Layout KhensuKnob::layoutFor(juce::Rectangle<float> area, bool hasLa
 }
 
 //==============================================================================
-KhensuKnobLookAndFeel::KhensuKnobLookAndFeel()
+KhensuKnobLookAndFeel::KhensuKnobLookAndFeel() { applyPalette(); }
+
+void KhensuKnobLookAndFeel::applyPalette()
 {
     setColour(juce::Slider::thumbColourId, Palette::textPrimary);
     setColour(juce::Slider::rotarySliderFillColourId, Palette::accentTeal);
@@ -345,6 +347,18 @@ juce::Rectangle<int> KhensuKnob::valueEditorBounds() const
     return local.withSizeKeepingCentre(w, 20);
 }
 
+void KhensuKnob::applyValueEditorColours()
+{
+    if (valueEditor_ == nullptr) return;
+    auto& ed = *valueEditor_;
+    ed.setColour(juce::TextEditor::backgroundColourId, studio::surfaceRaised());
+    ed.setColour(juce::TextEditor::textColourId, Palette::textPrimary);
+    ed.setColour(juce::TextEditor::highlightColourId, Palette::accentTeal.withAlpha(0.35f));
+    ed.setColour(juce::TextEditor::outlineColourId, Palette::accentTeal.withAlpha(0.7f));
+    ed.setColour(juce::TextEditor::focusedOutlineColourId, Palette::accentTeal);
+    ed.setColour(juce::CaretComponent::caretColourId, Palette::textPrimary);
+}
+
 void KhensuKnob::showValueEditor()
 {
     if (!isEnabled()) return;
@@ -355,17 +369,12 @@ void KhensuKnob::showValueEditor()
         ed.setJustification(juce::Justification::centred);
         ed.setSelectAllWhenFocused(true);
         ed.setIndents(2, 1);
-        ed.setColour(juce::TextEditor::backgroundColourId, studio::surfaceRaised());
-        ed.setColour(juce::TextEditor::textColourId, Palette::textPrimary);
-        ed.setColour(juce::TextEditor::highlightColourId, Palette::accentTeal.withAlpha(0.35f));
-        ed.setColour(juce::TextEditor::outlineColourId, Palette::accentTeal.withAlpha(0.7f));
-        ed.setColour(juce::TextEditor::focusedOutlineColourId, Palette::accentTeal);
-        ed.setColour(juce::CaretComponent::caretColourId, Palette::textPrimary);
         ed.onReturnKey = [this] { hideValueEditor(true); };
         ed.onEscapeKey = [this] { hideValueEditor(false); };
         ed.onFocusLost = [this] { hideValueEditor(true); };
         addChildComponent(ed);
     }
+    applyValueEditorColours(); // the current palette, every time it opens (STU-6)
     auto& ed = *valueEditor_;
     ed.setTitle((getTitle().isNotEmpty() ? getTitle() : label_) + " " + TRANS("value"));
     ed.setBounds(valueEditorBounds());

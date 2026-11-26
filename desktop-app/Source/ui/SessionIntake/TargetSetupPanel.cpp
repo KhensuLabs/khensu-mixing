@@ -20,7 +20,7 @@ void TargetSetupPanel::configurePct(juce::Slider& s, double initial)
 void TargetSetupPanel::configureRowLabel(juce::Label& l, const juce::String& text)
 {
     l.setText(text, juce::dontSendNotification);
-    l.setFont(khensu::KhensuTheme::uiFont(13.0f, juce::Font::plain));
+    l.setFont(khensu::KhensuTheme::uiFont(khensu::type::body, juce::Font::plain));
     l.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     addAndMakeVisible(l);
 }
@@ -75,7 +75,7 @@ TargetSetupPanel::TargetSetupPanel(const GenreDatabase& genres)
     addAndMakeVisible(quickStartCombo);
 
     headerLabel.setText(TRANS("TARGET SETUP"), juce::dontSendNotification);
-    headerLabel.setFont(khensu::KhensuTheme::uiFont(16.0f, juce::Font::bold));
+    headerLabel.setFont(khensu::KhensuTheme::uiFont(khensu::type::title, juce::Font::bold));
     addAndMakeVisible(headerLabel);
 
     // Genre combo from DB (item ids are 1-based; index 0 reserved for "unset").
@@ -121,7 +121,7 @@ TargetSetupPanel::TargetSetupPanel(const GenreDatabase& genres)
 
     configureRowLabel(keyLabel, "Key");
     keyValueLabel.setText(TRANS("(auto-detected on load)"), juce::dontSendNotification);
-    keyValueLabel.setFont(khensu::KhensuTheme::uiFont(13.0f, juce::Font::plain));
+    keyValueLabel.setFont(khensu::KhensuTheme::uiFont(khensu::type::body, juce::Font::plain));
     addAndMakeVisible(keyValueLabel);
 
     configureRowLabel(energyLabel, "Energy");

@@ -37,6 +37,7 @@ set(KHENSU_JUCE_ROOT_MODULES
     juce_dsp
     juce_opengl
     juce_osc
+    juce_midi_ci  # STU-13: MIDI-CI property exchange (MidiCiResponder)
 )
 
 # ${out} = the given modules plus every JUCE module they depend on.

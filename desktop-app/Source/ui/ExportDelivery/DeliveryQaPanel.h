@@ -3,9 +3,14 @@
 // operate on the current master — compliance sheet (+PDF), codec/transcode
 // artifact audit, dither preview, headphone-vs-speaker crossfeed A/B, plus the
 // reference-matched chain and A/B critique (which take a second file). All
-// bridge traffic runs off the message thread. THREAD_CONTEXT(UIThread)
+// bridge traffic runs off the message thread.
+// UXR-1: the tools are grouped by goal - Check, Preview, Fix (packaging is the
+// Delivery Package card) - with one primary, "Run delivery check", and each
+// result shows as rows (status, value, target) instead of a monospace log.
+// THREAD_CONTEXT(UIThread)
 #pragma once
 #include "../shared/PanelCard.h"
+#include "DeliveryResultView.h"
 #include <khensu/ipc/HttpServiceBridge.h>
 #include <memory>
 #include <string>
@@ -33,9 +38,17 @@ class DeliveryQaPanel final : public PanelCard {
                                    const std::vector<ipc::HttpServiceBridge::CodecPlatformInfo>& live);
     void setBusy(bool busy, const juce::String& what = {});
     void showResult(const juce::String& text);
+    void showResult(DeliveryResult result);
     // Run a bridge call off-thread; `call` returns a formatted result string.
     void run(const juce::String& what, std::function<juce::String()> call);
+    /// UXR-1: the same, for a call that returns rows.
+    void runResult(const juce::String& what, std::function<DeliveryResult()> call);
     void chooseSecondFileThen(const juce::String& what, std::function<juce::String(const juce::String&)> call);
+    void chooseSecondFileThenResult(const juce::String& what, std::function<DeliveryResult(const juce::String&)> call);
+    /// UXR-1: compliance sheet / codec audit / stream preview replies as rows.
+    static DeliveryResult complianceResult(const juce::var& v);
+    static DeliveryResult codecAuditResult(const juce::var& v);
+    static DeliveryResult streamPreviewResult(const juce::var& v);
     /// CE-DEL-3: runs /delivery/stream_preview with the chosen platform /
     /// codec / device and loads the loudness-matched codec preview into the
     /// A/B "B" slot.
@@ -58,12 +71,14 @@ class DeliveryQaPanel final : public PanelCard {
     juce::String streamDevice_;              ///< "" = no device profile
 
 #if KHENSU_TESTS
-    const juce::String resultTextForTesting() const { return results_.getText(); }
+    const juce::String resultTextForTesting() const { return results_.result().toText(); }
 #endif
 
   private:
 
-    juce::TextButton complianceBtn_{TRANS("Compliance sheet")};
+    // UXR-1 section headings (Check / Preview / Fix) and the pointer to packaging.
+    juce::Label checkHeading_, previewHeading_, fixHeading_, packageNote_;
+    juce::TextButton complianceBtn_{TRANS("Run delivery check")};
     juce::TextButton codecBtn_{TRANS("Codec audit")};
     juce::TextButton ditherBtn_{TRANS("Dither preview")};
     juce::TextButton crossfeedBtn_{TRANS("Crossfeed A/B")};
@@ -100,7 +115,9 @@ class DeliveryQaPanel final : public PanelCard {
     void openCodecPicker();
     /// The injected base URL (test seam, WIRE-13), else the default service.
     std::string bridgeUrl() const;
-    juce::TextEditor results_;
+    DeliveryResultView results_;
+    /// Rows a chooseSecondFileThenResult call is producing (shown in place of its text).
+    std::shared_ptr<DeliveryResult> pendingRows_;
     juce::Label statusLabel_;
     std::unique_ptr<juce::FileChooser> chooser_;
     bool busy_ = false;

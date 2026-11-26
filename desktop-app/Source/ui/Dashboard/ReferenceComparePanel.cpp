@@ -92,7 +92,7 @@ ReferenceComparePanel::ReferenceComparePanel(IAppController& c) : PanelCard(c, "
     };
     addAndMakeVisible(addBlindReferenceButton_);
 
-    blindSetLabel_.setFont(khensu::KhensuTheme::uiFont(9.5f, juce::Font::plain));
+    blindSetLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
     blindSetLabel_.setColour(juce::Label::textColourId, KhensuTheme::textSecondary);
     addAndMakeVisible(blindSetLabel_);
     updateBlindReferenceControls();
@@ -464,14 +464,14 @@ void ReferenceComparePanel::paint(juce::Graphics& g)
 
     if (loading_) {
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
         g.drawText(TRANS("Analyzing reference..."), b, juce::Justification::centred);
         return;
     }
 
     if (deltas_.empty()) {
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(khensu::KhensuTheme::uiFont(11.0f, juce::Font::plain));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
         juce::String msg = targetFilePath_.isEmpty() ? TRANS("Load a session to enable reference comparison.")
                                                      : TRANS("Load a reference track to compare against your mix.");
         g.drawText(msg, b, juce::Justification::centred, true);
@@ -498,7 +498,7 @@ void ReferenceComparePanel::paint(juce::Graphics& g)
         };
 
         auto callout = b.removeFromTop(15);
-        g.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::bold));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
         if (std::abs(worst->gain_db) < 0.5f) {
             g.setColour(KhensuTheme::accentTeal);
             g.drawText(TRANS("Tonal balance closely matches the reference."), callout,
@@ -529,7 +529,7 @@ void ReferenceComparePanel::paint(juce::Graphics& g)
     // Delta table header
     auto headerRow = b.removeFromTop(16);
     g.setColour(KhensuTheme::textSecondary);
-    g.setFont(khensu::KhensuTheme::uiFont(9.0f, juce::Font::bold));
+    g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
     g.drawText("DIM", headerRow.removeFromLeft(70), juce::Justification::centredLeft);
     g.drawText("YOUR", headerRow.removeFromLeft(54), juce::Justification::centred);
     g.drawText("REF", headerRow.removeFromLeft(54), juce::Justification::centred);
@@ -545,11 +545,11 @@ void ReferenceComparePanel::paint(juce::Graphics& g)
     for (const auto& row : deltas_) {
         auto r = b.removeFromTop(rowH);
 
-        g.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::bold));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
         g.setColour(KhensuTheme::textSecondary);
         g.drawText(row.dim, r.removeFromLeft(70), juce::Justification::centredLeft);
 
-        g.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::plain));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::plain));
         g.setColour(KhensuTheme::textPrimary);
         g.drawText(row.targetStr, r.removeFromLeft(54), juce::Justification::centred);
         g.setColour(KhensuTheme::textSecondary);
@@ -568,7 +568,7 @@ void ReferenceComparePanel::paint(juce::Graphics& g)
             g.fillRoundedRectangle(barX, (float)r.getY() + 1.0f, barW2, (float)r.getHeight() - 2.0f, 2.0f);
         }
         g.setColour(dc);
-        g.setFont(khensu::KhensuTheme::uiFont(10.0f, juce::Font::bold));
+        g.setFont(khensu::KhensuTheme::uiFont(khensu::type::caption, juce::Font::bold));
         g.drawText(row.deltaStr, r, juce::Justification::centredRight);
     }
 }

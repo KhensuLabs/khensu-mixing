@@ -1,5 +1,6 @@
 // desktop-app/Source/ui/ExportDelivery/AlbumConsistencyView.cpp
 #include "AlbumConsistencyView.h"
+#include "../shared/KhensuEmptyState.h"
 #include "../shared/ChartStyle.h"
 #include "../shared/FixDifferenceView.h"
 #include <algorithm>
@@ -135,8 +136,10 @@ void AlbumConsistencyView::paint(juce::Graphics& g)
     g.setFont(KhensuTheme::labelFont(KhensuTheme::kFontLabel));
     g.drawText(TRANS("Album consistency"), getLocalBounds().removeFromTop(16), juce::Justification::centredLeft, false);
     if (model_.tracks.size() < 2) {
-        g.drawText(status_.isNotEmpty() ? status_ : TRANS("Add two or more tracks to the project to compare them."),
-                   getLocalBounds().withTrimmedTop(18), juce::Justification::centred, true);
+        KhensuEmptyState::paintInto(g, getLocalBounds().withTrimmedTop(18),
+                                    status_.isNotEmpty() ? status_
+                                                         : TRANS("Add two or more tracks to the project to compare them."),
+                                    {}); // UXR-6
         return;
     }
     const auto la = loudArea(), ta = toneArea();
@@ -154,7 +157,7 @@ void AlbumConsistencyView::paint(juce::Graphics& g)
     lo -= 2.0f;
     hi += 2.0f;
     auto yL = [&](float v) { return la.getBottom() - (v - lo) / std::max(1.0f, hi - lo) * la.getHeight(); };
-    g.setFont(KhensuTheme::labelFont(10.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText(juce::String(juce::roundToInt(hi)), juce::Rectangle<float>(0.0f, la.getY() - 6.0f, 40.0f, 12.0f), juce::Justification::centredRight, false);
     g.drawText(juce::String(juce::roundToInt(lo)), juce::Rectangle<float>(0.0f, la.getBottom() - 6.0f, 40.0f, 12.0f), juce::Justification::centredRight, false);

@@ -2,6 +2,8 @@
 #include "HiResSpectrogramView.h"
 #include "KhensuTheme.h"
 #include <khensu/ui/VizPalette.h>
+#include "ReducedMotion.h"
+#include "VizMaps.h"
 #include <algorithm>
 #include <cmath>
 
@@ -18,11 +20,7 @@ juce::String clockText(double sec, bool tenths)
            + (tenths ? juce::String(s, 1).paddedLeft('0', 4) : juce::String(static_cast<int>(s)).paddedLeft('0', 2));
 }
 
-juce::String hzText(float hz)
-{
-    if (hz >= 1000.0f) return juce::String(hz / 1000.0f, hz >= 10000.0f ? 1 : 2) + " kHz";
-    return juce::String(juce::roundToInt(hz)) + " Hz";
-}
+juce::String hzText(float hz) { return ui::viz::freqReadout(hz); }
 
 juce::Colour severityColour(float severity)
 {
@@ -35,8 +33,7 @@ juce::Colour severityColour(float severity)
 
 HiResSpectrogramView::HiResSpectrogramView()
 {
-    for (size_t i = 0; i < lut_.size(); ++i)
-        lut_[i] = ui::viz::spectrogram(static_cast<float>(i) / 255.0f).getPixelARGB();
+    lut_ = ui::viz::spectrogramLut(); // VIS-2: the one spectrogram map
     setTitle(TRANS("Detailed spectrogram"));
     setTooltip(TRANS("Level over time and frequency. Scroll to zoom, drag to pan, double-click for the whole song, "
                      "click to play from there."));
@@ -93,7 +90,15 @@ void HiResSpectrogramView::setTimeline(std::shared_ptr<const TrackTimeline> time
         const auto k = static_cast<size_t>(static_cast<double>(all.size() - 1) * 0.995);
         std::nth_element(all.begin(), all.begin() + static_cast<long>(k), all.end());
         topDb_ = all[k];
-        fHi_ = std::min(16000.0, timeline_->sampleRate * 0.49);
+        // VIS-3: the axis is the standard 20 Hz - 20 kHz; the measured bands
+        // (30 Hz - 16 kHz) sit on it by their centres.
+        bandHz_ = timeline_->bandHz;
+        if (bandHz_.size() != bands) {
+            bandHz_.resize(bands);
+            const double hi = std::min(16000.0, timeline_->sampleRate * 0.49);
+            for (size_t b = 0; b < bands; ++b)
+                bandHz_[b] = static_cast<float>(30.0 * std::pow(hi / 30.0, (static_cast<double>(b) + 0.5) / static_cast<double>(bands)));
+        }
         viewStart_ = targetStart_ = 0.0;
         viewEnd_ = targetEnd_ = timeline_->durationSec;
     }
@@ -167,6 +172,24 @@ juce::String HiResSpectrogramView::noteName(float hz)
     return juce::String(names[midi % 12]) + juce::String(midi / 12 - 1);
 }
 
+double HiResSpectrogramView::bandPosAt(float hz) const
+{
+    const size_t n = bandHz_.size();
+    if (n == 0 || !(hz > 0.0f)) return -1.0;
+    if (n == 1) return 0.0;
+    // Half a band beyond the first and last centres is still measured.
+    const double lo = std::log(static_cast<double>(bandHz_.front())), hi = std::log(static_cast<double>(bandHz_.back()));
+    const double step = (hi - lo) / static_cast<double>(n - 1);
+    const double lh = std::log(static_cast<double>(hz));
+    if (lh < lo - 0.5 * step || lh > hi + 0.5 * step) return -1.0;
+    const auto it = std::upper_bound(bandHz_.begin(), bandHz_.end(), hz);
+    if (it == bandHz_.begin()) return 0.0;
+    if (it == bandHz_.end()) return static_cast<double>(n - 1);
+    const auto b0 = static_cast<size_t>(it - bandHz_.begin()) - 1;
+    const double a = std::log(static_cast<double>(bandHz_[b0])), b = std::log(static_cast<double>(bandHz_[b0 + 1]));
+    return static_cast<double>(b0) + (b > a ? (lh - a) / (b - a) : 0.0);
+}
+
 int HiResSpectrogramView::frameAt(double sec) const
 {
     if (timeline_ == nullptr || timeline_->spectrogramDb.empty() || timeline_->frameSec <= 0.0) return -1;
@@ -191,7 +214,7 @@ void HiResSpectrogramView::setTargetView(double start, double end, bool animate)
     start = juce::jlimit(0.0, std::max(0.0, dur - span), start);
     targetStart_ = start;
     targetEnd_ = start + span;
-    if (!animate) {
+    if (!animate || ui::motion::reduced()) { // VIS-7: no glide with reduced motion
         viewStart_ = targetStart_;
         viewEnd_ = targetEnd_;
         viewDirty_ = true;
@@ -245,6 +268,11 @@ void HiResSpectrogramView::renderViewImage()
     const float floorDb = topDb_ - rangeDb_;
     const float scale = 255.0f / rangeDb_;
     std::vector<float> column(static_cast<size_t>(bands));
+    // Each row's fractional band position on the standard axis (< 0: not measured).
+    std::vector<double> rowBand(static_cast<size_t>(h));
+    for (int y = 0; y < h; ++y)
+        rowBand[static_cast<size_t>(y)] =
+            bandPosAt(static_cast<float>(fLo_ * std::pow(fHi_ / fLo_, (static_cast<double>(h - y) - 0.5) / h)));
 
     juce::Image::BitmapData bd(viewImage_, juce::Image::BitmapData::writeOnly);
     for (int x = 0; x < w; ++x) {
@@ -279,13 +307,17 @@ void HiResSpectrogramView::renderViewImage()
         }
         for (int y = 0; y < h; ++y) {
             // Row y covers a fractional band position; interpolate between bands.
-            const double bp = (static_cast<double>(h - y) - 0.5) / h * bands - 0.5;
+            const double bp = rowBand[static_cast<size_t>(y)];
+            auto* px = reinterpret_cast<juce::PixelARGB*>(bd.getPixelPointer(x, y));
+            if (bp < 0.0) {
+                px->setARGB(0, 0, 0, 0);
+                continue;
+            }
             const int b0 = juce::jlimit(0, bands - 1, static_cast<int>(std::floor(bp)));
             const int b1 = std::min(bands - 1, b0 + 1);
             const float fr = static_cast<float>(juce::jlimit(0.0, 1.0, bp - b0));
             const float db = column[static_cast<size_t>(b0)] + (column[static_cast<size_t>(b1)] - column[static_cast<size_t>(b0)]) * fr;
             const int idx = juce::jlimit(0, 255, static_cast<int>((db - floorDb) * scale));
-            auto* px = reinterpret_cast<juce::PixelARGB*>(bd.getPixelPointer(x, y));
             *px = lut_[static_cast<size_t>(idx)];
         }
     }
@@ -296,7 +328,7 @@ void HiResSpectrogramView::paint(juce::Graphics& g)
     const auto plot = plotArea();
     if (timeline_ == nullptr || timeline_->spectrogramDb.empty() || plot.isEmpty()) {
         g.setColour(KhensuTheme::textSecondary);
-        g.setFont(KhensuTheme::bodyFont(12.0f));
+        g.setFont(KhensuTheme::bodyFont(type::secondary));
         g.drawText(status_.isNotEmpty() ? status_ : TRANS("Measuring the spectrogram..."), getLocalBounds(),
                    juce::Justification::centred, false);
         return;
@@ -308,6 +340,8 @@ void HiResSpectrogramView::paint(juce::Graphics& g)
         juce::Path clip;
         clip.addRoundedRectangle(plot, 4.0f);
         g.reduceClipRegion(clip);
+        g.setColour(KhensuTheme::bgVoid); // the strips outside the measured range
+        g.fillRect(plot);
         g.drawImageAt(viewImage_, static_cast<int>(plot.getX()), static_cast<int>(plot.getY()));
         // A soft inner vignette gives the plot depth without hiding data.
         juce::ColourGradient top(juce::Colours::black.withAlpha(0.28f), plot.getX(), plot.getY(), // theme-exempt(drawn over the always-dark spectrogram map)
@@ -328,17 +362,15 @@ void HiResSpectrogramView::paint(juce::Graphics& g)
 
 void HiResSpectrogramView::drawAxes(juce::Graphics& g, juce::Rectangle<float> plot)
 {
-    g.setFont(KhensuTheme::labelFont(9.5f));
-    // Frequency: decade-ish ticks with faint grid lines across the plot.
-    for (float hz : {50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f}) {
-        if (hz < fLo_ || hz > fHi_) continue;
+    g.setFont(KhensuTheme::labelFont(type::caption));
+    // Frequency: the standard axis's ticks (VIS-3) with faint grid lines across the plot.
+    for (const float hz : ui::viz::kFreqTicksHz) {
         const float y = yAtHz(hz);
         g.setColour(juce::Colours::white.withAlpha(0.07f)); // theme-exempt(drawn over the always-dark spectrogram map)
         g.drawHorizontalLine(juce::roundToInt(y), plot.getX(), plot.getRight());
         g.setColour(KhensuTheme::textTertiary);
-        const juce::String label = hz >= 1000.0f ? juce::String(juce::roundToInt(hz / 1000.0f)) + "k"
-                                                 : juce::String(juce::roundToInt(hz));
-        g.drawText(label, juce::Rectangle<float>(0.0f, y - 6.0f, kFreqAxisW - 6.0f, 12.0f),
+        const float ty = juce::jlimit(plot.getY(), plot.getBottom() - 12.0f, y - 6.0f);
+        g.drawText(ui::viz::freqTickLabel(hz), juce::Rectangle<float>(0.0f, ty, kFreqAxisW - 6.0f, 12.0f),
                    juce::Justification::centredRight, false);
     }
     // Time: a step that keeps labels at least ~70 px apart.
@@ -362,7 +394,7 @@ void HiResSpectrogramView::drawSections(juce::Graphics& g, juce::Rectangle<float
     const auto strip = juce::Rectangle<float>(plot.getX(), 0.0f, plot.getWidth(), kSectionH);
     if (sections_.empty()) return;
     juce::StringArray groups;
-    g.setFont(KhensuTheme::labelFont(9.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     for (const auto& s : sections_) {
         const float x0 = std::max(strip.getX(), xAtTime(s.start_sec));
         const float x1 = std::min(strip.getRight(), xAtTime(s.end_sec));
@@ -422,14 +454,18 @@ void HiResSpectrogramView::drawCursor(juce::Graphics& g, juce::Rectangle<float> 
     const int f = frameAt(t);
     const auto& sg = timeline_->spectrogramDb;
     const int bands = static_cast<int>(sg.front().size());
-    const double frac = std::log(hz / fLo_) / std::log(fHi_ / fLo_);
-    const int band = juce::jlimit(0, bands - 1, static_cast<int>(frac * bands));
-    const float db = f >= 0 ? sg[static_cast<size_t>(f)][static_cast<size_t>(band)] : -120.0f;
+    const double bp = bandPosAt(hz);
     juce::String text = clockText(t, true) + "   " + hzText(hz);
     if (const auto note = noteName(hz); note.isNotEmpty()) text << "  " << note;
-    text << "   " << juce::String(db - topDb_, 1) << " dB";
+    if (bp < 0.0) {
+        text << "   " << TRANS("not measured");
+    } else {
+        const int band = juce::jlimit(0, bands - 1, juce::roundToInt(bp));
+        const float db = f >= 0 ? sg[static_cast<size_t>(f)][static_cast<size_t>(band)] : -120.0f;
+        text << "   " << juce::String(db - topDb_, 1) << " dB";
+    }
 
-    const auto font = KhensuTheme::monoFont(11.0f);
+    const auto font = KhensuTheme::monoFont(type::caption);
     g.setFont(font);
     const float tw = juce::GlyphArrangement::getStringWidth(font, text) + 16.0f;
     auto chip = juce::Rectangle<float>(hover_.x + 12.0f, hover_.y - 26.0f, tw, 20.0f);
@@ -456,18 +492,18 @@ void HiResSpectrogramView::drawSlice(juce::Graphics& g, juce::Rectangle<float> p
     if (f < 0) return;
     const float floorDb = topDb_ - rangeDb_;
     auto xFor = [&](float db) { return area.getX() + juce::jlimit(0.0f, 1.0f, (db - floorDb) / rangeDb_) * area.getWidth(); };
-    auto yFor = [&](int b) { return area.getBottom() - (static_cast<float>(b) + 0.5f) / bands * area.getHeight(); };
+    auto yFor = [&](int b) { return yAtHz(bandHz_[static_cast<size_t>(b)]); };
 
     // This moment, filled with the map's own colours.
     juce::Path fill, line;
-    fill.startNewSubPath(area.getX(), area.getBottom());
+    fill.startNewSubPath(area.getX(), yFor(0));
     for (int b = 0; b < bands; ++b) {
         const float x = xFor(sg[static_cast<size_t>(f)][static_cast<size_t>(b)]), y = yFor(b);
         fill.lineTo(x, y);
         if (b == 0) line.startNewSubPath(x, y);
         else line.lineTo(x, y);
     }
-    fill.lineTo(area.getX(), area.getY());
+    fill.lineTo(area.getX(), yFor(bands - 1));
     fill.closeSubPath();
     juce::ColourGradient grad(ui::viz::spectrogram(0.15f).withAlpha(0.5f), area.getX(), 0.0f,
                               ui::viz::spectrogram(0.95f).withAlpha(0.85f), area.getRight(), 0.0f, false);
@@ -491,7 +527,7 @@ void HiResSpectrogramView::drawSlice(juce::Graphics& g, juce::Rectangle<float> p
         juce::PathStrokeType(1.0f).createDashedStroke(dashed, mean, dashes, 2);
         g.fillPath(dashed);
     }
-    g.setFont(KhensuTheme::labelFont(9.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     g.drawText(fromHover ? TRANS("At cursor") : TRANS("At playhead"),
                area.withHeight(13.0f).translated(0.0f, area.getHeight() + 2.0f), juce::Justification::centred, false);
@@ -506,7 +542,7 @@ void HiResSpectrogramView::drawLegend(juce::Graphics& g, juce::Rectangle<float> 
         grad.addColour(i / 8.0, ui::viz::spectrogram(1.0f - i / 8.0f));
     g.setGradientFill(grad);
     g.fillRoundedRectangle(bar, 3.0f);
-    g.setFont(KhensuTheme::labelFont(8.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textTertiary);
     const auto lbl = [&](float y, const juce::String& t) {
         g.drawText(t, juce::Rectangle<float>(bar.getRight() + 1.0f, y - 6.0f, kLegendW - 8.0f, 12.0f),

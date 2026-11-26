@@ -86,7 +86,7 @@ void MasteringAgentPanel::IterationChartComponent::paint(juce::Graphics& g)
     plot(lufsSeries, -30.0f, 0.0f, KhensuTheme::accentBlue);
     plot(crestSeries, 0.0f, 24.0f, KhensuTheme::accentAmber);
 
-    g.setFont(KhensuTheme::labelFont(8.0f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::accentBlue);
     g.drawText("LUFS", inner.removeFromTop(10.f), juce::Justification::topLeft);
     g.setColour(KhensuTheme::accentAmber);
@@ -109,7 +109,7 @@ void MasteringAgentPanel::ConvergenceTrajectoryComponent::paint(juce::Graphics& 
     g.drawVerticalLine((int)centre.x, inner.getY(), inner.getBottom());
 
     if (deltas.size() < 2) {
-        g.setFont(KhensuTheme::labelFont(8.f));
+        g.setFont(KhensuTheme::labelFont(type::caption));
         g.setColour(KhensuTheme::textSecondary);
         g.drawText("Convergence to target", getLocalBounds().toFloat(), juce::Justification::centred);
         return;
@@ -132,7 +132,7 @@ void MasteringAgentPanel::ConvergenceTrajectoryComponent::paint(juce::Graphics& 
     g.setColour(KhensuTheme::accentAmber.withAlpha(0.7f));
     g.strokePath(path, juce::PathStrokeType(1.3f));
 
-    g.setFont(KhensuTheme::labelFont(7.5f));
+    g.setFont(KhensuTheme::labelFont(type::caption));
     g.setColour(KhensuTheme::textSecondary);
     g.drawText("CONVERGENCE (-> target)", getLocalBounds().toNearestInt().removeFromTop(10),
                juce::Justification::centred);
@@ -190,7 +190,7 @@ MasteringAgentPanel::MasteringAgentPanel(IAppController& c, std::string baseUrl)
     : controller_(c), baseUrl_(std::move(baseUrl))
 {
     applyThemeColours();
-    genreLabel_.setFont(KhensuTheme::labelFont(11.f));
+    genreLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(genreLabel_);
 
     for (const auto& g : controller_.genreDatabase().listAll())
@@ -198,7 +198,7 @@ MasteringAgentPanel::MasteringAgentPanel(IAppController& c, std::string baseUrl)
     if (genreBox_.getNumItems() > 0) genreBox_.setSelectedItemIndex(0, juce::dontSendNotification);
     addAndMakeVisible(genreBox_);
 
-    iterLabel_.setFont(KhensuTheme::labelFont(11.f));
+    iterLabel_.setFont(KhensuTheme::labelFont(type::caption));
     addAndMakeVisible(iterLabel_);
 
     iterSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -221,9 +221,9 @@ MasteringAgentPanel::MasteringAgentPanel(IAppController& c, std::string baseUrl)
     rejectCandidateButton_.setVisible(false);
     addChildComponent(rejectCandidateButton_);
 
-    statusLabel_.setFont(KhensuTheme::labelFont(12.f));
+    statusLabel_.setFont(KhensuTheme::labelFont(type::secondary));
     addAndMakeVisible(statusLabel_);
-    guardrailLabel_.setFont(KhensuTheme::labelFont(10.f));
+    guardrailLabel_.setFont(KhensuTheme::labelFont(type::caption));
     guardrailLabel_.setJustificationType(juce::Justification::centredLeft);
     guardrailLabel_.setMinimumHorizontalScale(0.65f);
     addAndMakeVisible(guardrailLabel_);
@@ -255,7 +255,7 @@ void MasteringAgentPanel::paint(juce::Graphics& g)
     g.setColour(KhensuTheme::accentTeal.withAlpha(0.12f));
     g.fillRect(header);
     g.setColour(KhensuTheme::accentTeal);
-    g.setFont(juce::Font(juce::FontOptions{15.f, juce::Font::bold}));
+    g.setFont(KhensuTheme::uiFont(type::subtitle, juce::Font::bold));
     g.drawText("  AI Mastering Agent - iterative self-correction", header.toNearestInt(),
                juce::Justification::centredLeft);
 }
@@ -515,10 +515,10 @@ void MasteringAgentPanel::onJobFinished(const ipc::HttpServiceBridge::MasteringJ
         card->headerLabel_.setText((it.converged ? TRANS("Iteration %n  + converged") : TRANS("Iteration %n"))
                                        .replace("%n", juce::String(it.iteration)),
                                    juce::dontSendNotification);
-        card->headerLabel_.setFont(juce::Font(juce::FontOptions{13.f, juce::Font::bold}));
+        card->headerLabel_.setFont(KhensuTheme::uiFont(type::body, juce::Font::bold));
 
         card->critiqueLabel_.setText(it.critique, juce::dontSendNotification);
-        card->critiqueLabel_.setFont(KhensuTheme::labelFont(11.f));
+        card->critiqueLabel_.setFont(KhensuTheme::labelFont(type::caption));
         card->critiqueLabel_.setMinimumHorizontalScale(0.7f);
 
         juce::StringArray parts;
@@ -538,7 +538,7 @@ void MasteringAgentPanel::onJobFinished(const ipc::HttpServiceBridge::MasteringJ
             parts.add(TRANS("Artifact score") + ": " + juce::String(*it.artifactScoreDelta >= 0 ? "+" : "") +
                       juce::String(*it.artifactScoreDelta, 3));
         card->metricsLabel_.setText(parts.joinIntoString("   |   "), juce::dontSendNotification);
-        card->metricsLabel_.setFont(KhensuTheme::labelFont(10.f));
+        card->metricsLabel_.setFont(KhensuTheme::labelFont(type::caption));
         card->applyColours(); // live theme colours (UIX-22)
 
         self->cardsContent_.addAndMakeVisible(*card);

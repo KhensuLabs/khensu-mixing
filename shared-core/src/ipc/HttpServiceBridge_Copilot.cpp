@@ -810,13 +810,15 @@ CopilotApi::startApplyChainJob(const juce::String& filePath, const juce::String&
                                       const juce::String& sourceRecommendationId,
                                       const std::map<juce::String, juce::String>& stemPaths, bool genreRelative,
                                       bool genreActionAllowed, const juce::String& abstainedReason,
-                                      const juce::String& targetStem, const juce::String& decisionHash)
+                                      const juce::String& targetStem, const juce::String& decisionHash,
+                                      const juce::String& keyStem)
 {
     auto reqObj = buildApplyRequestObj(filePath, outputPath, sessionId, sourceRecommendationId, stemPaths, targetStem);
     reqObj->setProperty(apif::ApplyChainRequest::genre_relative, genreRelative);
     reqObj->setProperty(apif::ApplyChainRequest::genre_action_allowed, genreActionAllowed);
     if (abstainedReason.isNotEmpty()) reqObj->setProperty(apif::ApplyChainRequest::abstained_reason, abstainedReason);
     if (decisionHash.isNotEmpty()) reqObj->setProperty(apif::ApplyChainRequest::decision_hash, decisionHash);
+    if (keyStem.isNotEmpty()) reqObj->setProperty(apif::ApplyChainRequest::key_stem, keyStem);
 
     juce::Array<juce::var> effectsArr;
     for (const auto& eff : chain) {
@@ -1125,13 +1127,16 @@ khensu::Result<juce::String, BridgeError>
 CopilotApi::startMasteringAgentJob(const juce::String& filePath, const juce::String& genreId,
                                           const std::vector<EffectSpec>& initialChain, int maxIterations,
                                           bool genreActionAllowed, const juce::String& abstainedReason,
-                                          const std::map<juce::String, juce::String>& stemPaths)
+                                          const std::map<juce::String, juce::String>& stemPaths,
+                           const juce::String& style, double strength)
 {
     juce::DynamicObject::Ptr reqObj = new juce::DynamicObject();
     reqObj->setProperty(apif::MasteringAgentRequest::file_path, filePath);
     reqObj->setProperty(apif::MasteringAgentRequest::genre_id, genreId);
     reqObj->setProperty(apif::MasteringAgentRequest::max_iterations, maxIterations);
     reqObj->setProperty(apif::MasteringAgentRequest::genre_action_allowed, genreActionAllowed);
+    reqObj->setProperty(apif::MasteringAgentRequest::style, style.isNotEmpty() ? style : juce::String("balanced"));
+    reqObj->setProperty(apif::MasteringAgentRequest::strength, juce::jlimit(0.0, 1.0, strength));
     if (abstainedReason.isNotEmpty()) reqObj->setProperty(apif::MasteringAgentRequest::abstained_reason, abstainedReason);
     if (!stemPaths.empty()) {
         juce::DynamicObject::Ptr stemsObj = new juce::DynamicObject();
@@ -1178,6 +1183,11 @@ CopilotApi::getMasteringAgentJobStatus(const juce::String& job_id)
             res.finalOutputPath = resultObj->getProperty(apif::MasteringAgentResult::final_output_path).toString();
             res.decisionHash = resultObj->getProperty(apif::MasteringAgentResult::decision_hash).toString();
             res.guardrail = resultObj->getProperty(apif::MasteringAgentResult::guardrail);
+            res.style = resultObj->getProperty(apif::MasteringAgentResult::style).toString();
+            if (const auto st = resultObj->getProperty(apif::MasteringAgentResult::strength); st.isDouble() || st.isInt())
+                res.strength = static_cast<double>(st);
+            res.styleSummary = resultObj->getProperty(apif::MasteringAgentResult::style_summary).toString();
+            res.targets = resultObj->getProperty(apif::MasteringAgentResult::targets);
             if (auto* itersArr = resultObj->getProperty(apif::MasteringAgentResult::iterations).getArray()) {
                 for (const auto& it : *itersArr) {
                     auto* itObj = it.getDynamicObject();
@@ -1219,6 +1229,101 @@ CopilotApi::getMasteringAgentJobStatus(const juce::String& job_id)
 void CopilotApi::cancelMasteringAgentJob(const juce::String& job_id)
 {
     postIgnoringResult("/copilot/mastering_agent/" + job_id + "/cancel");
+}
+
+
+
+// ---- ENH-4: per-file smart batch ----
+khensu::Result<CopilotApi::SmartBatchStart, BridgeError> CopilotApi::startSmartBatch(const SmartBatchRequest& r)
+{
+    namespace R = apif::SmartBatchRequest;
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    juce::Array<juce::var> files;
+    for (const auto& f : r.filePaths)
+        files.add(f);
+    o->setProperty(R::file_paths, juce::var(files));
+    if (r.outputDir.isNotEmpty()) o->setProperty(R::output_dir, r.outputDir);
+    o->setProperty(R::suffix, r.suffix);
+    o->setProperty(R::fix, r.fix);
+    o->setProperty(R::master, r.master);
+    if (r.genreId.isNotEmpty()) o->setProperty(R::genre_id, r.genreId);
+    o->setProperty(R::genre_action_allowed, r.genreActionAllowed);
+    if (r.abstainedReason.isNotEmpty()) o->setProperty(R::abstained_reason, r.abstainedReason);
+    o->setProperty(R::style, r.style.isNotEmpty() ? r.style : juce::String("balanced"));
+    o->setProperty(R::strength, juce::jlimit(0.0, 1.0, r.strength));
+    o->setProperty(R::target_lufs, juce::jlimit(-40.0, -3.0, r.targetLufs));
+    if (r.loudnessOffsetDb != 0.0) o->setProperty(R::loudness_offset_db, juce::jlimit(-6.0, 6.0, r.loudnessOffsetDb));
+    if (r.ceilingDbtp.has_value()) o->setProperty(R::ceiling_dbtp, juce::jlimit(-3.0, -0.1, *r.ceilingDbtp));
+
+    const auto resp = postJson("/copilot/batch/smart/start", juce::var(o.get()));
+    if (resp.is_err()) return forwardError<SmartBatchStart>(resp);
+    const auto& v = resp.value();
+    SmartBatchStart out;
+    out.jobId = v[apif::SmartBatchStartResponse::job_id].toString();
+    out.outputDir = v[apif::SmartBatchStartResponse::output_dir].toString();
+    out.totalFiles = static_cast<int>(v[apif::SmartBatchStartResponse::total_files]);
+    if (out.jobId.isEmpty()) return shapeError<SmartBatchStart>("No job id in the smart batch reply");
+    return khensu::Result<SmartBatchStart, BridgeError>::ok(std::move(out));
+}
+
+khensu::Result<CopilotApi::SmartBatchStatus, BridgeError> CopilotApi::getSmartBatchStatus(const juce::String& jobId)
+{
+    const auto resp = getJson("/copilot/batch/smart/status/" + jobId, pollOptions());
+    if (resp.is_err()) return forwardError<SmartBatchStatus>(resp);
+    const auto& v = resp.value();
+    if (!v.isObject()) return shapeError<SmartBatchStatus>("Status response is not valid JSON");
+    namespace S = apif::SmartBatchStatusResponse;
+    namespace P = apif::SmartBatchProgress;
+    namespace F = apif::SmartBatchFileResult;
+    auto optNum = [](const juce::var& x) -> std::optional<double> {
+        if (x.isDouble() || x.isInt() || x.isInt64()) return static_cast<double>(x);
+        return std::nullopt;
+    };
+    auto strings = [](const juce::var& x) {
+        juce::StringArray a;
+        if (auto* arr = x.getArray())
+            for (const auto& e : *arr)
+                a.add(e.toString());
+        return a;
+    };
+    SmartBatchStatus st;
+    st.status = v[S::status].toString();
+    if (v[S::error].isString()) st.error = v[S::error].toString();
+    st.outputDir = v[S::output_dir].toString();
+    const auto prog = v[S::progress];
+    st.total = static_cast<int>(prog[P::total]);
+    st.done = static_cast<int>(prog[P::done]);
+    st.failed = static_cast<int>(prog[P::failed]);
+    if (prog[P::current].isString()) st.current = prog[P::current].toString();
+    if (prog[P::stage].isString()) st.stage = prog[P::stage].toString();
+    if (auto* arr = v[S::results].getArray())
+        for (const auto& e : *arr) {
+            SmartBatchFileResult r;
+            r.filePath = e[F::file_path].toString();
+            r.outputPath = e[F::output_path].toString();
+            r.status = e[F::status].toString();
+            if (e[F::error].isString()) r.error = e[F::error].toString();
+            if (e[F::fix_summary].isString()) r.fixSummary = e[F::fix_summary].toString();
+            if (e[F::master_summary].isString()) r.masterSummary = e[F::master_summary].toString();
+            r.beforeLufs = optNum(e[F::before_lufs]);
+            r.beforeTruePeak = optNum(e[F::before_true_peak_dbtp]);
+            r.afterLufs = optNum(e[F::after_lufs]);
+            r.afterTruePeak = optNum(e[F::after_true_peak_dbtp]);
+            r.findingsBefore = static_cast<int>(e[F::findings_before]);
+            r.findingsAfter = static_cast<int>(e[F::findings_after]);
+            r.findingsCleared = static_cast<int>(e[F::findings_cleared]);
+            r.keptSteps = static_cast<int>(e[F::kept_steps]);
+            r.mastered = static_cast<bool>(e[F::mastered]);
+            r.cleared = strings(e[F::cleared]);
+            r.remaining = strings(e[F::remaining]);
+            st.results.push_back(std::move(r));
+        }
+    return khensu::Result<SmartBatchStatus, BridgeError>::ok(std::move(st));
+}
+
+void CopilotApi::cancelSmartBatch(const juce::String& jobId)
+{
+    postIgnoringResult("/copilot/batch/smart/" + jobId + "/cancel");
 }
 
 
@@ -1462,6 +1567,11 @@ khensu::Result<int, BridgeError> CopilotApi::clearGenreExamples()
     if (resp.is_err()) return forwardError<int>(resp);
     return khensu::Result<int, BridgeError>::ok(
         static_cast<int>(resp.value()[khensu::api::fields::GenreExamplesClearResponse::removed]));
+}
+
+khensu::Result<juce::var, BridgeError> CopilotApi::genreExamplesSummary()
+{
+    return getJson(khensu::api::routes::get_genre_examples.path, objectResponse());
 }
 
 khensu::Result<HttpServiceBridge::ModelManifest, BridgeError> CopilotApi::getModelManifest()

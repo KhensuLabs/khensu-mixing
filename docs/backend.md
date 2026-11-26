@@ -246,6 +246,16 @@ at −70); `pan_balance` bands report the shared `width` plus `side_share`
   in `settings.json` resolves to them first, then the OS store. On macOS the
   service never runs `/usr/bin/security` (it prompted at every read).
 
+## Keyed renders
+
+`/copilot/apply_chain` (and the section and batch chain routes) take
+`key_stem`: the name of a separated stem in the request's `stem_paths` (batch
+files: `file_stem_paths`) that a keyed DynamicEQ follows - the masking fix
+ducks a part only while the competing stem plays. The key file is charged to
+the decode budget (413 over it). An unknown name, a missing or unreadable
+file is not an error: the stage keys on its own input and the result carries
+`warnings`. Region renders and plain graph renders don't send a key yet.
+
 ## Event streams
 
 Server-sent event routes (`/copilot/chat/stream`, the render's
@@ -289,6 +299,63 @@ hand-rolled copy:
   that changes the output — the audit found apply-chain, section-chain, the
   mastering agent and `/separate` keyed on the file alone, so a second request
   with different settings joined the first one's job.
+
+**Per-file smart batch (ENH-4).** `/copilot/batch/smart/start`, `status/{id}`
+and `{id}/cancel` (`copilot/batch_smart.py`, `router_batch_smart.py`) run on
+`long_job_executor`. The dedup fingerprint includes each file's mtime and
+size. `input_dir`, every `file_paths` entry and `output_dir` pass
+`require_local_path` before any filesystem call (a UNC / network path is a
+403), and outputs go through `validate_output_path`. Per file: measure, fix
+with the verified `agent_loop.run_agent` (only findings with a renderable fix;
+advice-only and denoise are skipped), optionally master in a style, then
+re-check against the original under the guardrail. It writes
+`<name>_smart.wav` and reports LUFS and true peak before / after and findings
+before / after / cleared.
+
+**Reference folder scan (REFS-1).** `analysis/reference_scan.py` +
+`router_reference_scan.py`, stored in `reference_scan_roots` /
+`reference_scan_items` (migration 017): `GET/POST /references/scan/roots`,
+`POST /references/scan/roots/remove`, `POST /references/scan/start` (a long
+job, 429 cap), `GET /references/scan/status/{id}`,
+`POST /references/scan/{id}/cancel`, `GET /references/scan/current`,
+`GET /references/scan/items | packs | summary`,
+`POST /references/scan/items/genre` and
+`GET /references/scan/thumbnail/{id}`. A network path or the config dir is a
+403, a missing folder a 404. The walk is incremental (size + mtime); tags
+come from mutagen plus the WAV RIFF INFO chunk; thumbnails (160 px, Pillow)
+go to `<config>/cache/reference_thumbs`. Genre: the tag, folder names, the
+genre probe, then the ranker on a 30 s excerpt (confidence capped at 0.5).
+New and changed songs are added to the embeddings index with their genre and
+a `scanned` tag; a user's genre correction survives rescans and is stored as
+a genre example (GEN-1). A root with rescan-on-launch is rescanned 45 s after
+the service starts (a timer in `server.py`'s lifespan, cancelled on
+shutdown). `GET /embeddings/index` resolves its backend and reads the index
+on the I/O pool (a cold huggingface_hub import took 75 s on the event loop -
+the stuck "Reading your library...", UXR-4).
+
+## Headless CLI and MCP (ENH-3)
+
+`khensu_services/cli.py` runs in process and calls the job routes' own
+handlers and job stores, so each command gets the route's validation, output
+path checks, guardrails and executors: `analyze`, `targets`, `fix` (findings
+from `/agent/findings`, one chain by the desktop's Fix all safe merge rule,
+`--top`, `--include-denoise`, rendered through `/copilot/apply_chain` and
+re-measured), `master` (`/mastering_agent` with `--style` / `--strength`;
+the best safe candidate copied to `--out`), `deliver` (`--platforms`,
+`--match-loudness`, `--package` and its options, `--list`), `album`
+(consistency, the CD plan, `--render` for WAV / cue / DDP, `--apply-gains`)
+and `batch` (analyse, fix, master per file into `khensu_batch/`; one bad file
+does not stop the run). Every command takes `--json` (`-` = stdout) and
+`--fail-on`; progress goes to stderr. Exit codes: 0 ok, 1 `--fail-on`
+reached, 2 usage, 3 error. `warm_engine()` imports librosa's numba kernels on
+the main thread before any job, since a cold process otherwise spent over
+60 s compiling inside the first render and tripped the post-render
+guardrail's timeout. The app's `--fix` runs natively with no service;
+`--master` runs `khensu_services.cli master` in the bundled runtime and falls
+back to a native loudness master (`HeadlessCli.cpp`). `mcp_server.py` adds
+`fix`, `master`, `platform_masters`, `delivery_package`, `album_master` and
+`separate_stems` over HTTP; each fails cleanly on an older service that lacks
+the route.
 
 ## Recommendation engine
 
@@ -351,7 +418,12 @@ fallback** that runs with no API key and no network call:
   text if nothing scores above zero.
 - Chain generation: a rule-based chain builder.
 - Mastering agent: fully rule-based render→critique→adjust loop (see
-  `ml-models.md`).
+  `ml-models.md`). It takes `style` (`warm` | `balanced` | `open` | `loud`)
+  and `strength` (0-1, default 0.5); Balanced leaves the genre targets
+  unchanged and adds no seed stages, so the default request renders exactly
+  as before. The result carries `style`, `strength`, `style_summary` and the
+  `targets` it mastered toward (`MasteringAgentTargets`). The formulas are
+  in `dsp-and-math.md` §8.
 - Explanations: a plain-text template.
 
 `llm_config.py` handles provider selection/keys; `decision_hash()` gives every

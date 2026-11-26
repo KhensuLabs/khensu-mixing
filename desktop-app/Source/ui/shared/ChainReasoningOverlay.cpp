@@ -16,7 +16,7 @@ ChainReasoningOverlay::ChainReasoningOverlay(const Recommendation& rec)
     addAndMakeVisible(card_);
 
     titleLabel_.setText(juce::String(rec.what), juce::dontSendNotification);
-    titleLabel_.setFont(khensu::KhensuTheme::uiFont(15.0f, juce::Font::bold));
+    titleLabel_.setFont(khensu::KhensuTheme::uiFont(khensu::type::subtitle, juce::Font::bold));
     titleLabel_.setMinimumHorizontalScale(0.6f);
     card_.addAndMakeVisible(titleLabel_);
 

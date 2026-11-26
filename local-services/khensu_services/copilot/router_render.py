@@ -416,6 +416,11 @@ class ApplyChainRequest(RequestModel):
     abstained_reason: str = ""
     target_stem: str = "mix"
     stem_paths: dict[str, str] = Field(default_factory=dict)
+    # ENH-6: the stem (a key of stem_paths, e.g. "vocals") whose signal keys
+    # the chain's DynamicEQ stages with use_key 1 - the native renderer's
+    # ChainRender::keyStem. Unknown or missing -> they key on their own input
+    # and the response carries a warning; never an error.
+    key_stem: str = Field(default="", max_length=64)
 
 
 class ApplyChainResponse(ResponseModel):
@@ -440,15 +445,59 @@ class ApplyChainResponse(ResponseModel):
     # (true-peak/clipping/mono-fold) the UI must not silently present as an
     # improvement. None only if the source file was unavailable to compare.
     guardrail: RenderGuardrail | None = None
+    # Non-fatal render notes, e.g. a key stem that could not be used (ENH-6).
+    warnings: list[str] | None = None
+
+
+def resolve_key_stem(key_stem: str, stem_paths: dict[str, str] | None) -> tuple[str | None, list[str]]:
+    """ENH-6: the key signal's file for ``key_stem``, looked up in the
+    request's ``stem_paths``. An unknown stem or a missing file is not an
+    error: ``(None, [warning])``, and the keyed stages key on their own input
+    (as the native renderer does when ``getStemFile`` finds nothing)."""
+    name = (key_stem or "").strip()
+    if not name:
+        return None, []
+    paths = stem_paths or {}
+    path = paths.get(name)
+    if path is None:
+        lowered = {k.strip().lower(): v for k, v in paths.items()}
+        path = lowered.get(name.lower())
+    if not path:
+        return None, [f"Key stem '{name}' is not among the declared stems; "
+                      "the dynamic EQ keyed on its own input."]
+    if not os.path.isfile(path):
+        return None, [f"Key stem '{name}' file was not found; "
+                      "the dynamic EQ keyed on its own input."]
+    return path, []
+
+
+async def resolve_key_stem_checked(key_stem: str, stem_paths: dict[str, str] | None
+                                   ) -> tuple[str | None, list[str]]:
+    """resolve_key_stem plus the decode budget: a key over the budget is a
+    413 like any other render input; an unreadable one falls back at render
+    time with a warning."""
+    key_path, warnings = resolve_key_stem(key_stem, stem_paths)
+    if key_path:
+        await _require_audio_decode_budget(key_path, allow_probe_errors=True)
+    return key_path, warnings
+
+
+def warnings_kw(warnings: list[str]) -> dict:
+    """``{"warnings": [...]}`` only when there are any, so the field stays
+    off the wire otherwise (the routes exclude unset fields)."""
+    return {"warnings": list(warnings)} if warnings else {}
 
 
 def _chain_render_fn(file_path: str, effects: list[dict], graph: dict | None,
-                     normalize: bool) -> Callable[[str], dict]:
+                     normalize: bool, key_path: str | None = None) -> Callable[[str], dict]:
     """The render step for a flat chain or a graph, as a pipeline render_fn.
-    Looks the renderers up at call time so tests can patch them."""
+    Looks the renderers up at call time so tests can patch them. ``key_path``
+    (ENH-6) is only passed when set, so patched renderers without it work."""
+    kw = {"key_path": key_path} if key_path else {}
     if graph:
-        return lambda quarantine: apply_graph(file_path, quarantine, graph, normalize=normalize)
-    return lambda quarantine: apply_pedalboard_chain(file_path, quarantine, effects, normalize=normalize)
+        return lambda quarantine: apply_graph(file_path, quarantine, graph, normalize=normalize, **kw)
+    return lambda quarantine: apply_pedalboard_chain(file_path, quarantine, effects, normalize=normalize,
+                                                     **kw)
 
 
 def _guardrail_conflict(exc: PostRenderGuardrailError, source_path: str, output_path: str) -> HTTPException:
@@ -474,6 +523,7 @@ async def apply_chain(req: ApplyChainRequest) -> ApplyChainResponse:
     if not os.path.isfile(req.file_path):
         not_found(f"File not found: {req.file_path}")
     await _require_audio_decode_budget(req.file_path)
+    key_path, key_warnings = await resolve_key_stem_checked(req.key_stem, req.stem_paths)
 
     # Containment: the rendered WAV may only be written under the user's home,
     # temp, or the source file's directory (parity with /separate/start).
@@ -490,7 +540,7 @@ async def apply_chain(req: ApplyChainRequest) -> ApplyChainResponse:
         # -> quarantine -> render -> guardrail -> promote (audit AI-01 / S2).
         result, guardrail, _validation = await run_blocking(
             render_through_pipeline, req.file_path, req.output_path,
-            _chain_render_fn(req.file_path, effect_list, graph, req.normalize),
+            _chain_render_fn(req.file_path, effect_list, graph, req.normalize, key_path),
             effects=None if graph else effect_list, graph=graph)
     except RenderBlocked as blocked:
         return ApplyChainResponse(status="blocked", output_path="", render_state=RENDER_STATE_BLOCKED,
@@ -519,6 +569,7 @@ async def apply_chain(req: ApplyChainRequest) -> ApplyChainResponse:
         harmonic_reports=result.get("harmonic_reports", []),
         stage_levels=result.get("stage_levels", []),
         guardrail=guardrail,
+        **warnings_kw(key_warnings + list(result.get("warnings") or [])),
     )
 
 
@@ -562,9 +613,10 @@ def _run_apply_job(job_id: str, req: ApplyChainRequest) -> None:
 
         graph = _graph_dict(req.graph)
         effect_list = _effect_dicts(req.effects)
+        key_path, key_warnings = resolve_key_stem(req.key_stem, req.stem_paths)
         result, guardrail, _validation = render_through_pipeline(
             req.file_path, req.output_path,
-            _chain_render_fn(req.file_path, effect_list, graph, req.normalize),
+            _chain_render_fn(req.file_path, effect_list, graph, req.normalize, key_path),
             effects=None if graph else effect_list, graph=graph,
             should_cancel=lambda: job_cancel_requested(_apply_jobs, job_id))
         _log_applied_event("chain_applied", req.session_id, req.source_recommendation_id,
@@ -580,6 +632,7 @@ def _run_apply_job(job_id: str, req: ApplyChainRequest) -> None:
             "harmonic_reports": result.get("harmonic_reports", []),
             "stage_levels": result.get("stage_levels", []),
             "guardrail": guardrail,
+            **warnings_kw(key_warnings + list(result.get("warnings") or [])),
         }
         # Echoed so a render can be traced to its model decision even when no
         # session_id was sent (the provenance event is session-scoped).
@@ -615,6 +668,7 @@ async def apply_chain_start(req: ApplyChainRequest) -> dict:
     attribution = validate_stem_attribution(req.file_path, req.target_stem, req.stem_paths)
     if not attribution["ok"]:
         conflict("; ".join(attribution["blocks"]))
+    await resolve_key_stem_checked(req.key_stem, req.stem_paths)
 
     from khensu_services.common.output_paths import validate_output_path, reject_output_alias
     validate_output_path(req.output_path, req.file_path)
